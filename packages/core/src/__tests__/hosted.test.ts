@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   VapiIntegration,
   ElevenLabsIntegration,
+  BlandIntegration,
   runHostedCall,
   MockLLMClient,
   getIntegration,
@@ -100,9 +101,49 @@ test("ElevenLabs integration maps roles and status", async () => {
   assert.equal(state.transcript?.[1]?.role, "target");
 });
 
+test("Bland integration creates an agent, places a task call, and maps transcript", async () => {
+  const bland = new BlandIntegration(
+    fakeFetch({
+      "POST https://api.bland.ai/v1/agents": { agent: { agent_id: "bland_agent_1" } },
+      "POST https://api.bland.ai/v1/calls": { call_id: "bland_call_1" },
+      "GET https://api.bland.ai/v1/calls/bland_call_1": {
+        completed: true,
+        transcripts: [
+          { user: "assistant", text: "Hi, I'm testing your line." },
+          { user: "user", text: "Okay, go ahead." },
+        ],
+      },
+    }),
+  );
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  const { externalAgentId } = await bland.createTestingAgent(acc, {
+    name: "T",
+    persona: { name: "T", systemPrompt: "You test voice agents." },
+  });
+  assert.equal(externalAgentId, "bland_agent_1");
+
+  const agent: HostedTestingAgent = {
+    id: "a",
+    accountId: acc.id,
+    provider: "bland",
+    externalAgentId,
+    name: "T",
+    createdAt: 0,
+    spec: { name: "T", persona: { name: "T", systemPrompt: "You test voice agents." } },
+  };
+  const { externalCallId } = await bland.placeCall(acc, agent, { phoneNumber: "+14155550123" });
+  assert.equal(externalCallId, "bland_call_1");
+
+  const state = await bland.getCall(acc, externalCallId);
+  assert.equal(state.status, "ended");
+  assert.equal(state.transcript?.[0]?.role, "agent");
+  assert.equal(state.transcript?.[1]?.role, "target");
+});
+
 test("built-in integrations are registered", () => {
   assert.ok(getIntegration("vapi"));
   assert.ok(getIntegration("elevenlabs"));
+  assert.ok(getIntegration("bland"));
   assert.equal(getIntegration("nope"), undefined);
 });
 

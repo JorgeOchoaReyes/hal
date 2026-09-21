@@ -16,6 +16,7 @@ export { StructuredConductor } from "./simulation/structured-conductor.js";
 export {
   validateStructuredTest,
   renderFixedMessage,
+  compileStructuredToPrompt,
   FIRST_MESSAGE,
   type StructuredTest,
   type StructuredCondition,
@@ -98,6 +99,7 @@ export {
   listIntegrations,
   VapiIntegration,
   ElevenLabsIntegration,
+  BlandIntegration,
   runHostedCall,
   type VoiceProviderIntegration,
   type ProviderAccount,

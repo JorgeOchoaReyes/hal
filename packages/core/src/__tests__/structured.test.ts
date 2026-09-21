@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   validateStructuredTest,
   renderFixedMessage,
+  compileStructuredToPrompt,
   StructuredConductor,
   MockLLMClient,
   type StructuredTest,
@@ -103,6 +104,22 @@ test("structured conductor emits FIRST_MESSAGE then a scripted action_followup",
   const a2 = await conductor.next(transcript);
   assert.equal((a2 as { text: string }).text, "Thanks");
   assert.equal(conductor.finished, true, "endcall marks the test complete");
+});
+
+test("compileStructuredToPrompt produces a deterministic script", () => {
+  const t: StructuredTest = {
+    role: "You are a patient cancelling an appointment",
+    conditions: [
+      { id: 0, condition: "FIRST_MESSAGE", action: "Hi, I need to cancel.", type: "standard", fixed_message: true },
+      { id: 1, condition: "The agent asks for your name", action: "Say John Smith", type: "standard", fixed_message: false },
+      { id: 2, condition: 1, action: "Thanks <endcall />", type: "action_followup", fixed_message: true },
+    ],
+  };
+  const prompt = compileStructuredToPrompt(t);
+  assert.ok(prompt.includes("ROLE: You are a patient"));
+  assert.ok(prompt.includes('Open the call with: "Hi, I need to cancel."'));
+  assert.ok(prompt.includes("WHEN The agent asks for your name"));
+  assert.ok(prompt.includes("On the turn after step #1"));
 });
 
 test("structured conductor fires the standard condition the matcher selects", async () => {

@@ -107,3 +107,37 @@ export function renderFixedMessage(action: string): { text: string; endCall: boo
   const r = renderAction(action);
   return { text: r.text, endCall: r.endCall };
 }
+
+/**
+ * Compile a Structured Test into a deterministic instruction prompt suitable as
+ * a hosted agent's system prompt / task (e.g. Bland, Vapi). This lets the exact
+ * branching decision tree run on a provider that executes a single prompt —
+ * ideal for deterministic tests where the platform (not HAL) drives the call.
+ */
+export function compileStructuredToPrompt(test: StructuredTest): string {
+  const lines: string[] = [
+    `ROLE: ${test.role}`,
+    "",
+    "You are the CALLER testing another voice AI. Follow this script deterministically.",
+    "Say fixed lines verbatim; for instruction steps, phrase a natural reply. End the call when told.",
+    "",
+  ];
+  for (const c of test.conditions) {
+    const kind = c.fixed_message ? "SAY VERBATIM" : "DO";
+    if (c.id === 0) {
+      const opener = c.action.trim() ? `Open the call with: "${renderFixedMessage(c.action).text}"` : "Wait for the other party to speak first.";
+      lines.push(`1. ${opener}`);
+      continue;
+    }
+    if (c.type === "action_followup") {
+      lines.push(`- On the turn after step #${c.condition}, ${kind}: ${strip(c)}`);
+    } else {
+      lines.push(`- WHEN ${String(c.condition)} → ${kind}: ${strip(c)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function strip(c: StructuredCondition): string {
+  return c.fixed_message ? `"${renderFixedMessage(c.action).text}"` : c.action;
+}

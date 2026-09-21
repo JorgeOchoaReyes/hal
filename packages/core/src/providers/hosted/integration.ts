@@ -40,6 +40,12 @@ export interface HostedTestingAgent {
   externalAgentId: string;
   name: string;
   createdAt: number;
+  /**
+   * The spec used to create the agent. Kept for task-based providers (e.g.
+   * Bland) that send the prompt inline at call time rather than referencing a
+   * persisted remote agent.
+   */
+  spec?: TestingAgentSpec;
 }
 
 export interface HostedTarget {
