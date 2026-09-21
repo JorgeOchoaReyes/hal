@@ -42,12 +42,17 @@ while developing, or self-host it as a shared regression suite.
 - **Provider templates.** One reusable recipe per way of placing a call (mock,
   Twilio telephony, WebRTC, SIP): each declares its config fields and required
   env, so the UI renders a form and builds a runnable target for you.
+- **Hosted testing agents.** Bring credentials for a voice platform (Vapi,
+  ElevenLabs); HAL provisions a testing agent there, stores it, and uses it to
+  place calls — then judges the transcript. No media server needed.
 - **Create simulations in the UI.** Compose a test from a provider template, a
-  caller persona, a turn-by-turn scenario, and pass criteria — no code. Saved to
-  disk so simulations and past runs survive restarts.
-- **Metrics & labels per call.** Every run is scored and labeled — pass/fail,
-  judge score, turn counts, target latency (p50/p95/max), verbosity, live-check
-  pass rate — surfaced live and on each simulation's run history.
+  caller persona, and either a linear turn-by-turn script **or a Structured Test**
+  (a `role` + `conditions` decision tree, with `FIRST_MESSAGE` and
+  `action_followup` sequencing) that adapts to what the agent says.
+- **Typed metrics.** User-defined metrics with output types **boolean** (affects
+  pass/fail), **rating** (0–100%), **numeric**, and **enum** — scored by the LLM
+  judge — plus objective per-call metrics & labels (latency p50/p95/max, turns,
+  verbosity, pass rates), surfaced live and in each simulation's run history.
 - **Live streaming UI.** Watch the transcript, live assertions, verdict, and
   metrics appear in real time as the call runs.
 - **Two ways to run it:** a self-hostable **web app** (Next.js) and a

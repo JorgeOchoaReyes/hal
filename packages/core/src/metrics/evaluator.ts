@@ -4,7 +4,7 @@ import {
   MetricDefinition,
   MetricResult,
   coerceMetricValue,
-  checkPassCondition,
+  evaluateMetricPass,
 } from "./definitions.js";
 
 /**
@@ -58,7 +58,7 @@ export async function evaluateMetrics(
       name: m.name,
       outputType: m.outputType,
       value,
-      passed: checkPassCondition(m, value),
+      passed: evaluateMetricPass(m, value),
       reasoning: found.reasoning,
     };
   });
@@ -67,13 +67,13 @@ export async function evaluateMetrics(
 function describeMetric(m: MetricDefinition): string {
   const parts = [`- id="${m.id}" name="${m.name}" type=${m.outputType}: ${m.description}`];
   if (m.outputType === "rating") {
-    const s = m.scale ?? { min: 1, max: 5 };
-    parts.push(`  (rate from ${s.min} to ${s.max})`);
+    const s = m.scale ?? { min: 0, max: 100 };
+    parts.push(`  (score from ${s.min} to ${s.max})`);
   }
   if (m.outputType === "enum") {
     parts.push(`  (one of: ${(m.options ?? []).join(", ")})`);
   }
-  if (m.outputType === "number" && m.unit) parts.push(`  (unit: ${m.unit})`);
+  if (m.outputType === "numeric" && m.unit) parts.push(`  (unit: ${m.unit})`);
   return parts.join("\n");
 }
 
@@ -84,7 +84,7 @@ function errorResult(m: MetricDefinition, detail: string): MetricResult {
       : m.outputType === "enum"
         ? (m.options?.[0] ?? "")
         : m.outputType === "rating"
-          ? (m.scale?.min ?? 1)
+          ? (m.scale?.min ?? 0)
           : 0;
   return {
     id: m.id,

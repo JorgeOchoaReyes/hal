@@ -1,0 +1,105 @@
+/**
+ * Structured Tests — a rule-based, branching scenario model matching Cekura's
+ * schema. Instead of a linear script, the testing agent is a `role` plus a set
+ * of `conditions`: each says WHEN a situation occurs and WHAT the agent does.
+ *
+ *   - id 0 must be FIRST_MESSAGE (the opening line; fixed_message: true).
+ *   - "standard" conditions fire when their (LLM-judged) trigger matches the
+ *     main agent's latest turn.
+ *   - "action_followup" conditions fire on the turn after the condition they
+ *     reference, regardless of what the main agent said (scripted sequences).
+ *   - fixed_message: true → speak `action` verbatim; false → interpret it as an
+ *     instruction and generate a natural reply.
+ */
+
+export type StructuredConditionType = "standard" | "action_followup";
+
+export interface StructuredCondition {
+  id: number;
+  /**
+   * "FIRST_MESSAGE" for id 0; an integer (referenced condition id) for
+   * action_followup; a free-text trigger description for standard conditions.
+   */
+  condition: string | number;
+  action: string;
+  type: StructuredConditionType;
+  fixed_message: boolean;
+}
+
+export interface StructuredTest {
+  role: string;
+  conditions: StructuredCondition[];
+  scenario_language?: string;
+}
+
+export const FIRST_MESSAGE = "FIRST_MESSAGE";
+
+/**
+ * Validate a structured test against Cekura's rules. Returns a list of error
+ * messages (empty when valid).
+ */
+export function validateStructuredTest(test: StructuredTest): string[] {
+  const errors: string[] = [];
+  const conditions = test.conditions ?? [];
+
+  if (!test.role || !test.role.trim()) errors.push("role is required");
+  if (conditions.length === 0) {
+    errors.push("at least one condition is required");
+    return errors;
+  }
+
+  // First condition rules.
+  const first = conditions[0]!;
+  if (first.id !== 0) errors.push("the first condition must have id 0");
+  if (first.condition !== FIRST_MESSAGE)
+    errors.push(`the first condition's condition must equal "${FIRST_MESSAGE}"`);
+  if (first.fixed_message !== true)
+    errors.push("the first condition (FIRST_MESSAGE) must have fixed_message: true");
+
+  const seen = new Set<number>();
+  for (const c of conditions) {
+    if (typeof c.id !== "number") errors.push(`condition id must be a number (got ${String(c.id)})`);
+    if (seen.has(c.id)) errors.push(`duplicate condition id ${c.id}`);
+    seen.add(c.id);
+
+    if (c.type !== "standard" && c.type !== "action_followup")
+      errors.push(`condition ${c.id}: type must be "standard" or "action_followup"`);
+    if (typeof c.fixed_message !== "boolean")
+      errors.push(`condition ${c.id}: fixed_message must be true or false`);
+
+    const isFirst = c.id === 0;
+    if (!isFirst && (!c.action || !c.action.trim()))
+      errors.push(`condition ${c.id}: action cannot be empty`);
+
+    if (c.type === "action_followup") {
+      if (typeof c.condition !== "number")
+        errors.push(`condition ${c.id}: action_followup condition must be an integer id`);
+      else if (!conditions.some((o) => o.id === c.condition))
+        errors.push(`condition ${c.id}: action_followup references unknown id ${c.condition}`);
+    } else if (!isFirst) {
+      if (typeof c.condition !== "string" || !c.condition.trim())
+        errors.push(`condition ${c.id}: standard condition must be a non-empty trigger string`);
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Turn a fixed-message action into spoken text: strip supported control tags
+ * (keeping the inner text of wrapping tags like <spell>) and detect <endcall>.
+ * Full tag semantics (audio, dtmf, ivr, functions, …) are platform features and
+ * are not simulated in text/mock mode — the tags are removed so they are never
+ * spoken literally.
+ */
+export function renderFixedMessage(action: string): { text: string; endCall: boolean } {
+  const endCall = /<endcall\s*\/?>/i.test(action);
+  const text = action
+    // keep inner text of paired tags: <spell>ABC</spell> -> ABC
+    .replace(/<([a-z_]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/gi, "$3")
+    // drop self-closing / standalone tags: <silence .../>, <endcall/>, <dtmf .../>
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { text, endCall };
+}

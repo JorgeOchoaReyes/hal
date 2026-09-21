@@ -53,7 +53,7 @@ test("checkPassCondition covers each output type", () => {
     true,
   );
   assert.equal(
-    checkPassCondition({ id: "a", name: "", description: "", outputType: "number", passIf: { kind: "between", min: 1, max: 3 } }, 2),
+    checkPassCondition({ id: "a", name: "", description: "", outputType: "numeric", passIf: { kind: "between", min: 1, max: 3 } }, 2),
     true,
   );
   // No passIf → informational (null).

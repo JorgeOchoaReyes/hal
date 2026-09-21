@@ -69,16 +69,40 @@ export default async function TestDetailPage({
         </p>
       </div>
 
-      <h2>Scenario script ({tc.scenario.steps.length} steps)</h2>
-      <div className="card">
-        <ol style={{ margin: 0, paddingLeft: 20 }}>
-          {tc.scenario.steps.map((s, i) => (
-            <li key={i} style={{ padding: "4px 0" }}>
-              {renderStep(s)}
-            </li>
-          ))}
-        </ol>
-      </div>
+      {tc.scenario.structured ? (
+        <>
+          <h2>Structured test</h2>
+          <div className="card">
+            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+              <strong>Role:</strong> {tc.scenario.structured.role}
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 20 }}>
+              {tc.scenario.structured.conditions.map((c) => (
+                <li key={c.id} style={{ padding: "4px 0" }}>
+                  <span className="tag">{c.type}</span>{" "}
+                  <span className="mono">
+                    {c.id === 0 ? "FIRST_MESSAGE" : c.type === "action_followup" ? `after #${c.condition}` : `“${c.condition}”`}
+                  </span>{" "}
+                  → {c.fixed_message ? <span className="mono">“{c.action}”</span> : <span className="muted">{c.action}</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      ) : (
+        <>
+          <h2>Scenario script ({tc.scenario.steps.length} steps)</h2>
+          <div className="card">
+            <ol style={{ margin: 0, paddingLeft: 20 }}>
+              {tc.scenario.steps.map((s, i) => (
+                <li key={i} style={{ padding: "4px 0" }}>
+                  {renderStep(s)}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      )}
 
       <h2>Pass criteria</h2>
       <div className="card">

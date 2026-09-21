@@ -11,6 +11,16 @@ export { createLLM, type LLMProvider } from "./llm/factory.js";
 // Simulation
 export { Conductor, type AgentAction } from "./simulation/conductor.js";
 export { ScenarioBuilder, scenario } from "./simulation/builder.js";
+export type { ConductorLike } from "./simulation/conductor.js";
+export { StructuredConductor } from "./simulation/structured-conductor.js";
+export {
+  validateStructuredTest,
+  renderFixedMessage,
+  FIRST_MESSAGE,
+  type StructuredTest,
+  type StructuredCondition,
+  type StructuredConditionType,
+} from "./simulation/structured.js";
 
 // Transports
 export * from "./transport/transport.js";
@@ -59,6 +69,9 @@ export {
 // Typed metric definitions (output types) + evaluator
 export {
   checkPassCondition,
+  evaluateMetricPass,
+  effectivePassCondition,
+  metricAffectsOutcome,
   coerceMetricValue,
   type MetricDefinition,
   type MetricResult,

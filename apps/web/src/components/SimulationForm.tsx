@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ScenarioStep, JudgeRule, MetricDefinition, BranchAction } from "@hal/core";
+import type {
+  ScenarioStep,
+  JudgeRule,
+  MetricDefinition,
+  BranchAction,
+  StructuredTest,
+  StructuredCondition,
+} from "@hal/core";
 
 interface ProviderView {
   id: string;
@@ -32,6 +39,14 @@ export default function SimulationForm() {
   ]);
   const [rules, setRules] = useState<JudgeRule[]>([{ kind: "min-turns", count: 3 }]);
   const [metrics, setMetrics] = useState<MetricDefinition[]>([]);
+  const [mode, setMode] = useState<"steps" | "structured">("steps");
+  const [structured, setStructured] = useState<StructuredTest>({
+    role: "You are a customer calling to book an appointment.",
+    conditions: [
+      { id: 0, condition: "FIRST_MESSAGE", action: "Hi, I'd like to book an appointment.", type: "standard", fixed_message: true },
+      { id: 1, condition: "The agent asks which day you want", action: "Ask for the first available Tuesday", type: "standard", fixed_message: false },
+    ],
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +88,8 @@ export default function SimulationForm() {
           providerId,
           targetConfig,
           persona: { name: personaName, systemPrompt: personaPrompt },
-          steps,
+          steps: mode === "steps" ? steps : undefined,
+          structured: mode === "structured" ? structured : undefined,
           judge: { mode: "all", rules, criteria: criteria.filter((c) => c.trim()), metrics },
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
@@ -162,7 +178,38 @@ export default function SimulationForm() {
         </Field>
       </section>
 
-      <StepEditor steps={steps} setSteps={setSteps} />
+      <section className="card">
+        <div className="card-row">
+          <h2 style={{ margin: 0 }}>Conversation model</h2>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className={`btn ${mode === "steps" ? "" : "secondary"}`}
+              onClick={() => setMode("steps")}
+            >
+              Linear steps
+            </button>
+            <button
+              type="button"
+              className={`btn ${mode === "structured" ? "" : "secondary"}`}
+              onClick={() => setMode("structured")}
+            >
+              Structured test
+            </button>
+          </div>
+        </div>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
+          {mode === "steps"
+            ? "A linear script the tester follows turn by turn."
+            : "A role + conditions decision tree — the tester adapts to what the agent says."}
+        </p>
+      </section>
+
+      {mode === "steps" ? (
+        <StepEditor steps={steps} setSteps={setSteps} />
+      ) : (
+        <StructuredEditor test={structured} setTest={setStructured} />
+      )}
       <JudgeEditor
         criteria={criteria}
         setCriteria={setCriteria}
@@ -351,6 +398,106 @@ function JudgeEditor({
   );
 }
 
+function StructuredEditor({ test, setTest }: { test: StructuredTest; setTest: (t: StructuredTest) => void }) {
+  function updateCondition(i: number, c: StructuredCondition) {
+    const conditions = [...test.conditions];
+    conditions[i] = c;
+    setTest({ ...test, conditions });
+  }
+  function addCondition() {
+    const nextId = Math.max(0, ...test.conditions.map((c) => c.id)) + 1;
+    setTest({
+      ...test,
+      conditions: [
+        ...test.conditions,
+        { id: nextId, condition: "The agent asks something", action: "", type: "standard", fixed_message: false },
+      ],
+    });
+  }
+  return (
+    <section className="card">
+      <h2 style={{ marginTop: 0 }}>Structured test</h2>
+      <label className="field">
+        <span className="field-label">Role (who the tester pretends to be)</span>
+        <textarea value={test.role} onChange={(e) => setTest({ ...test, role: e.target.value })} rows={2} />
+      </label>
+      <div className="field-label">Conditions</div>
+      <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+        id 0 is <span className="mono">FIRST_MESSAGE</span> (the opening line). Standard conditions
+        fire when their trigger matches the agent; action-followups fire on the next turn after the
+        referenced id. fixed = say verbatim; otherwise the action is an instruction.
+      </p>
+      {test.conditions.map((c, i) => (
+        <div className="card" key={c.id} style={{ background: "var(--panel-2)" }}>
+          <div className="rule-row" style={{ gridTemplateColumns: "48px 1fr 120px auto" }}>
+            <span className="mono muted">#{c.id}</span>
+            {c.id === 0 ? (
+              <span className="mono">FIRST_MESSAGE</span>
+            ) : c.type === "action_followup" ? (
+              <input
+                type="number"
+                value={typeof c.condition === "number" ? c.condition : 0}
+                onChange={(e) => updateCondition(i, { ...c, condition: Number(e.target.value) })}
+                placeholder="after id"
+              />
+            ) : (
+              <input
+                value={String(c.condition)}
+                placeholder="When… (e.g. The agent asks for your name)"
+                onChange={(e) => updateCondition(i, { ...c, condition: e.target.value })}
+              />
+            )}
+            <select
+              value={c.type}
+              disabled={c.id === 0}
+              onChange={(e) => {
+                const type = e.target.value as StructuredCondition["type"];
+                updateCondition(i, {
+                  ...c,
+                  type,
+                  condition: type === "action_followup" ? Math.max(0, c.id - 1) : "The agent asks something",
+                });
+              }}
+            >
+              <option value="standard">standard</option>
+              <option value="action_followup">action_followup</option>
+            </select>
+            {c.id === 0 ? (
+              <span />
+            ) : (
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setTest({ ...test, conditions: test.conditions.filter((_, idx) => idx !== i) })}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
+            <input
+              value={c.action}
+              placeholder={c.fixed_message ? "Exact words to say" : "Instruction to interpret"}
+              onChange={(e) => updateCondition(i, { ...c, action: e.target.value })}
+            />
+            <label className="muted" style={{ fontSize: 12, display: "flex", gap: 4, whiteSpace: "nowrap" }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto" }}
+                checked={c.fixed_message}
+                disabled={c.id === 0}
+                onChange={(e) => updateCondition(i, { ...c, fixed_message: e.target.checked })}
+              />
+              fixed
+            </label>
+          </div>
+        </div>
+      ))}
+      <button type="button" className="btn secondary" onClick={addCondition}>+ condition</button>
+    </section>
+  );
+}
+
 type BranchStep = Extract<ScenarioStep, { kind: "branch" }>;
 
 function BranchStepEditor({ step, onChange }: { step: BranchStep; onChange: (s: BranchStep) => void }) {
@@ -451,10 +598,10 @@ function MetricsEditor({ metrics, setMetrics }: { metrics: MetricDefinition[]; s
               value={m.outputType}
               onChange={(e) => update(i, { ...m, outputType: e.target.value as MetricDefinition["outputType"] })}
             >
-              <option value="boolean">boolean</option>
-              <option value="rating">rating</option>
+              <option value="boolean">boolean (pass/fail)</option>
+              <option value="rating">rating (0–100%)</option>
+              <option value="numeric">numeric</option>
               <option value="enum">enum</option>
-              <option value="number">number</option>
             </select>
             <button type="button" className="btn secondary" onClick={() => setMetrics(metrics.filter((_, idx) => idx !== i))}>✕</button>
           </div>
@@ -466,8 +613,8 @@ function MetricsEditor({ metrics, setMetrics }: { metrics: MetricDefinition[]; s
           />
           {m.outputType === "rating" && (
             <div className="rule-row" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 6 }}>
-              <input type="number" value={m.scale?.min ?? 1} onChange={(e) => update(i, { ...m, scale: { min: Number(e.target.value), max: m.scale?.max ?? 5 } })} placeholder="min" />
-              <input type="number" value={m.scale?.max ?? 5} onChange={(e) => update(i, { ...m, scale: { min: m.scale?.min ?? 1, max: Number(e.target.value) } })} placeholder="max" />
+              <input type="number" value={m.scale?.min ?? 0} onChange={(e) => update(i, { ...m, scale: { min: Number(e.target.value), max: m.scale?.max ?? 100 } })} placeholder="min" />
+              <input type="number" value={m.scale?.max ?? 100} onChange={(e) => update(i, { ...m, scale: { min: m.scale?.min ?? 0, max: Number(e.target.value) } })} placeholder="max" />
             </div>
           )}
           {m.outputType === "enum" && (

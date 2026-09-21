@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getProviderTemplate,
   id,
+  validateStructuredTest,
   type ScenarioStep,
   type JudgeRule,
   type MetricDefinition,
   type Persona,
   type TestCase,
+  type StructuredTest,
 } from "@hal/core";
 import { upsertTestCase } from "@/lib/store";
 
@@ -18,6 +20,7 @@ interface SimulationDraft {
   targetConfig: Record<string, string>;
   persona: Persona;
   steps: ScenarioStep[];
+  structured?: StructuredTest;
   judge: {
     rules?: JudgeRule[];
     criteria?: string[];
@@ -57,10 +60,19 @@ export async function POST(req: NextRequest) {
 
   const persona: Persona = {
     name: draft.persona?.name || "Caller",
-    systemPrompt: draft.persona?.systemPrompt || "You are a caller testing a voice AI.",
+    systemPrompt:
+      draft.persona?.systemPrompt || draft.structured?.role || "You are a caller testing a voice AI.",
     temperature: draft.persona?.temperature,
     voice: draft.persona?.voice,
   };
+
+  // A structured test replaces the linear steps; validate it against the schema.
+  if (draft.structured) {
+    const errors = validateStructuredTest(draft.structured);
+    if (errors.length > 0) {
+      return NextResponse.json({ error: `Invalid structured test: ${errors.join("; ")}` }, { status: 400 });
+    }
+  }
 
   const testCase: TestCase = {
     id: id("tc"),
@@ -71,7 +83,8 @@ export async function POST(req: NextRequest) {
       id: id("scn"),
       name: draft.name,
       persona,
-      steps: draft.steps ?? [],
+      steps: draft.structured ? [] : (draft.steps ?? []),
+      structured: draft.structured,
       maxTurns: draft.maxTurns,
       maxDurationMs: draft.maxDurationMs,
     },

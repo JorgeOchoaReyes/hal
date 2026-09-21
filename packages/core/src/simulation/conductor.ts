@@ -19,6 +19,13 @@ export interface ConductorDeps {
   llm: LLMClient;
 }
 
+/** Common shape the runner drives — implemented by Conductor and StructuredConductor. */
+export interface ConductorLike {
+  readonly finished: boolean;
+  evaluateLiveAssertions(transcript: Transcript): { checks: CheckResult[]; abort: boolean };
+  next(transcript: Transcript): Promise<AgentAction>;
+}
+
 /**
  * Conductor drives a Scenario turn-by-turn. It owns a cursor over the
  * scenario steps and, given the transcript so far, decides the agent's next
@@ -28,7 +35,7 @@ export interface ConductorDeps {
  * It also evaluates inline `expect` assertions against the latest target turn,
  * emitting live CheckResults that the runner surfaces immediately.
  */
-export class Conductor {
+export class Conductor implements ConductorLike {
   private cursor = 0;
   /** Turns already emitted for the current in-progress "prompt" step. */
   private promptTurns = 0;

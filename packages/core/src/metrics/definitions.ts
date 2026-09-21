@@ -9,7 +9,17 @@
  * judgments a user defines per simulation.
  */
 
-export type MetricOutputType = "boolean" | "rating" | "enum" | "number";
+/**
+ * The four Cekura-style metric output types:
+ *  - boolean: true/false; DIRECTLY affects call success/failure by default.
+ *  - rating:  a 0–100% continuous score; informational (does not affect pass/fail).
+ *  - numeric: quantitative value (latency, pitch, …); informational.
+ *  - enum:    one of predefined categories (e.g. happy / sad / frustrated).
+ *
+ * Rating/numeric/enum only affect pass/fail if the user opts in with `blocking`
+ * plus a pass condition (a "rubric"). Boolean is blocking out of the box.
+ */
+export type MetricOutputType = "boolean" | "rating" | "numeric" | "enum";
 
 /** How a metric's typed value maps to pass/fail. Omit for informational metrics. */
 export type MetricPassCondition =
@@ -27,7 +37,7 @@ export interface MetricDefinition {
   /** Natural-language definition the judge uses to score this metric. */
   description: string;
   outputType: MetricOutputType;
-  /** For `rating`: the scale bounds (default 1..5). */
+  /** For `rating`: the percentage scale bounds (default 0..100). */
   scale?: { min: number; max: number };
   /** For `enum`: the allowed categories. */
   options?: string[];
@@ -74,6 +84,35 @@ export function checkPassCondition(
   }
 }
 
+/**
+ * The pass condition actually applied when judging. Boolean metrics get an
+ * implicit `is-true` if none is declared (Cekura: boolean directly affects
+ * success/failure); other types stay informational unless a condition is set.
+ */
+export function effectivePassCondition(def: MetricDefinition): MetricPassCondition | undefined {
+  if (def.passIf) return def.passIf;
+  if (def.outputType === "boolean") return { kind: "is-true" };
+  return undefined;
+}
+
+/** Compute pass/fail using the effective (possibly implicit) pass condition. */
+export function evaluateMetricPass(
+  def: MetricDefinition,
+  value: boolean | number | string,
+): boolean | null {
+  return checkPassCondition({ ...def, passIf: effectivePassCondition(def) }, value);
+}
+
+/**
+ * Whether a metric's result affects overall run pass/fail. Matching Cekura:
+ * boolean affects it by default; rating / numeric / enum are informational
+ * unless the user opts in with `blocking: true` (a "rubric").
+ */
+export function metricAffectsOutcome(def: MetricDefinition): boolean {
+  if (def.outputType === "boolean") return def.blocking !== false;
+  return def.blocking === true;
+}
+
 /** Coerce a raw judged value into the metric's declared output type. */
 export function coerceMetricValue(
   def: MetricDefinition,
@@ -83,14 +122,16 @@ export function coerceMetricValue(
     case "boolean":
       if (typeof raw === "boolean") return raw;
       return /^(true|yes|pass|1)$/i.test(String(raw));
-    case "rating":
-    case "number": {
+    case "rating": {
+      // Continuous score on a 0–100% scale (default), informational.
+      const s = def.scale ?? { min: 0, max: 100 };
       const n = Number(raw);
-      if (Number.isNaN(n)) return def.outputType === "rating" ? (def.scale?.min ?? 1) : 0;
-      if (def.outputType === "rating" && def.scale) {
-        return Math.max(def.scale.min, Math.min(def.scale.max, n));
-      }
-      return n;
+      if (Number.isNaN(n)) return s.min;
+      return Math.max(s.min, Math.min(s.max, n));
+    }
+    case "numeric": {
+      const n = Number(raw);
+      return Number.isNaN(n) ? 0 : n;
     }
     case "enum": {
       const s = String(raw);

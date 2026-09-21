@@ -109,7 +109,13 @@ export interface Scenario {
   name: string;
   description?: string;
   persona: Persona;
+  /** Linear scenario steps. Ignored when `structured` is set. */
   steps: ScenarioStep[];
+  /**
+   * A Structured Test (role + conditions). When present, the run is driven by
+   * the structured conductor instead of the linear `steps`.
+   */
+  structured?: import("./simulation/structured.js").StructuredTest;
   /** Hard cap on total turns before HAL force-ends the call. */
   maxTurns?: number;
   /** Hard cap on wall-clock duration before HAL force-ends the call. */

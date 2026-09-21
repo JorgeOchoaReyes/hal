@@ -2,7 +2,7 @@ import { JudgeSpec, Transcript, JudgeVerdict, CheckResult } from "../types.js";
 import { LLMClient } from "../llm/client.js";
 import { evaluateRule } from "./rules.js";
 import { evaluateMetrics } from "../metrics/evaluator.js";
-import { MetricResult } from "../metrics/definitions.js";
+import { MetricResult, metricAffectsOutcome } from "../metrics/definitions.js";
 import { id } from "../util/id.js";
 
 /**
@@ -47,9 +47,10 @@ export class Judge {
     let metricsPassed = true;
     if (mode !== "rules-only" && (spec.metrics?.length ?? 0) > 0) {
       metricResults = await evaluateMetrics(this.llm, spec.metrics!, transcript, spec.model);
-      const blockingById = new Map(spec.metrics!.map((m) => [m.id, m.blocking !== false]));
+      const defById = new Map(spec.metrics!.map((m) => [m.id, m]));
       for (const r of metricResults) {
-        if (r.passed === false && blockingById.get(r.id)) metricsPassed = false;
+        const def = defById.get(r.id);
+        if (def && r.passed === false && metricAffectsOutcome(def)) metricsPassed = false;
       }
     }
 
