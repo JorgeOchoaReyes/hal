@@ -56,6 +56,17 @@ export {
   type LabelTone,
 } from "./metrics/metrics.js";
 
+// Typed metric definitions (output types) + evaluator
+export {
+  checkPassCondition,
+  coerceMetricValue,
+  type MetricDefinition,
+  type MetricResult,
+  type MetricOutputType,
+  type MetricPassCondition,
+} from "./metrics/definitions.js";
+export { evaluateMetrics } from "./metrics/evaluator.js";
+
 // Utils
 export { id, now } from "./util/id.js";
 export { TypedEmitter, sleep, type Listener } from "./util/events.js";

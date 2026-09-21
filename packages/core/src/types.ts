@@ -52,7 +52,34 @@ export type ScenarioStep =
   | { kind: "prompt"; directive: string; /** cap on generated turns for this step */ maxTurns?: number }
   | { kind: "wait"; timeoutMs?: number; /** regex the target reply must match to advance */ until?: string }
   | { kind: "hangup" }
-  | { kind: "expect"; assertion: LiveAssertion };
+  | { kind: "expect"; assertion: LiveAssertion }
+  /**
+   * A structured "conditional action": branch on what the target just said.
+   * The first branch whose `when` regex matches the latest target utterance
+   * fires its action; if none match, `fallback` runs (or the step is skipped).
+   * `goto` enables decision-tree loops, bounded by `maxVisits`.
+   */
+  | {
+      kind: "branch";
+      branches: ConditionalBranch[];
+      fallback?: BranchAction;
+      /** Max times this branch step may run before it is skipped (default 10). */
+      maxVisits?: number;
+    };
+
+export interface ConditionalBranch {
+  /** Regex (source) matched against the latest target utterance. */
+  when: string;
+  action: BranchAction;
+  /** Optional human-readable label for the branch. */
+  label?: string;
+}
+
+export type BranchAction =
+  | { kind: "say"; text: string }
+  | { kind: "prompt"; directive: string }
+  | { kind: "goto"; step: number }
+  | { kind: "hangup" };
 
 /** An assertion evaluated live (mid-call) against the most recent target turn. */
 export interface LiveAssertion {
@@ -154,6 +181,11 @@ export interface JudgeSpec {
    * e.g. "The agent correctly booked an appointment and confirmed the date."
    */
   criteria?: string[];
+  /**
+   * Typed, user-defined metrics (boolean / rating / enum / number) evaluated by
+   * the LLM judge. Blocking metrics that fail also fail the overall run.
+   */
+  metrics?: import("./metrics/definitions.js").MetricDefinition[];
   /** Model to use for the LLM judge. */
   model?: string;
   /**
@@ -178,6 +210,8 @@ export interface JudgeVerdict {
   score: number;
   summary: string;
   checks: CheckResult[];
+  /** Typed metric results, when the judge spec defines metrics. */
+  metricResults?: import("./metrics/definitions.js").MetricResult[];
 }
 
 // ---------------------------------------------------------------------------

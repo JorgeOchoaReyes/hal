@@ -199,6 +199,23 @@ function VerdictCard({ verdict }: { verdict: JudgeVerdict }) {
             ))}
           </ul>
         )}
+        {verdict.metricResults && verdict.metricResults.length > 0 && (
+          <>
+            <div className="field-label" style={{ marginTop: 14 }}>Metrics</div>
+            <div className="metric-tiles">
+              {verdict.metricResults.map((m, i) => (
+                <div className="metric-tile" key={i}>
+                  <div className="metric-value">{String(m.value)}</div>
+                  <div className="metric-key">
+                    {m.name}
+                    {m.passed === true && <span className="label label-pass" style={{ marginLeft: 6 }}>pass</span>}
+                    {m.passed === false && <span className="label label-fail" style={{ marginLeft: 6 }}>fail</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </>
   );

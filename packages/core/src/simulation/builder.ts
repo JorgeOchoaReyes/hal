@@ -1,4 +1,11 @@
-import { Scenario, ScenarioStep, Persona, LiveAssertion } from "../types.js";
+import {
+  Scenario,
+  ScenarioStep,
+  Persona,
+  LiveAssertion,
+  ConditionalBranch,
+  BranchAction,
+} from "../types.js";
 import { id } from "../util/id.js";
 
 /**
@@ -46,6 +53,15 @@ export class ScenarioBuilder {
 
   hangup(): this {
     this.steps.push({ kind: "hangup" });
+    return this;
+  }
+
+  /** Add a conditional-action (branch) step: if target says X, do Y. */
+  branch(
+    branches: ConditionalBranch[],
+    opts: { fallback?: BranchAction; maxVisits?: number } = {},
+  ): this {
+    this.steps.push({ kind: "branch", branches, ...opts });
     return this;
   }
 

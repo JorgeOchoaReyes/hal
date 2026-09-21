@@ -150,6 +150,23 @@ function renderStep(s: ScenarioStep): React.ReactNode {
           <span className="tag">expect</span> <span className="muted">{s.assertion.description}</span>
         </>
       );
+    case "branch":
+      return (
+        <>
+          <span className="tag">branch</span>{" "}
+          <span className="muted">
+            {s.branches.length} condition{s.branches.length === 1 ? "" : "s"}
+            {s.branches.slice(0, 3).map((b, i) => (
+              <span key={i} className="mono" style={{ display: "block", marginLeft: 8 }}>
+                if /{b.when}/ → {b.action.kind}
+                {b.action.kind === "say" ? `: “${b.action.text}”` : ""}
+                {b.action.kind === "prompt" ? `: ${b.action.directive}` : ""}
+                {b.action.kind === "goto" ? ` step ${b.action.step}` : ""}
+              </span>
+            ))}
+          </span>
+        </>
+      );
     case "hangup":
       return <span className="tag">hangup</span>;
   }

@@ -4,6 +4,7 @@ import {
   id,
   type ScenarioStep,
   type JudgeRule,
+  type MetricDefinition,
   type Persona,
   type TestCase,
 } from "@hal/core";
@@ -20,6 +21,7 @@ interface SimulationDraft {
   judge: {
     rules?: JudgeRule[];
     criteria?: string[];
+    metrics?: MetricDefinition[];
     mode?: "all" | "rules-only" | "llm-only";
   };
   tags?: string[];
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
       mode: draft.judge?.mode ?? "all",
       rules: draft.judge?.rules ?? [],
       criteria: draft.judge?.criteria ?? [],
+      metrics: (draft.judge?.metrics ?? []).filter((m) => m.name?.trim()),
     },
   };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ScenarioStep, JudgeRule } from "@hal/core";
+import type { ScenarioStep, JudgeRule, MetricDefinition, BranchAction } from "@hal/core";
 
 interface ProviderView {
   id: string;
@@ -31,6 +31,7 @@ export default function SimulationForm() {
     "The target stayed polite and on-topic.",
   ]);
   const [rules, setRules] = useState<JudgeRule[]>([{ kind: "min-turns", count: 3 }]);
+  const [metrics, setMetrics] = useState<MetricDefinition[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +74,7 @@ export default function SimulationForm() {
           targetConfig,
           persona: { name: personaName, systemPrompt: personaPrompt },
           steps,
-          judge: { mode: "all", rules, criteria: criteria.filter((c) => c.trim()) },
+          judge: { mode: "all", rules, criteria: criteria.filter((c) => c.trim()), metrics },
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });
@@ -168,6 +169,7 @@ export default function SimulationForm() {
         rules={rules}
         setRules={setRules}
       />
+      <MetricsEditor metrics={metrics} setMetrics={setMetrics} />
 
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <button onClick={submit} disabled={busy || !name.trim()}>
@@ -211,6 +213,10 @@ function StepEditor({
       wait: { kind: "wait" },
       expect: { kind: "expect", assertion: { id: "chk", description: "", matches: "" } },
       hangup: { kind: "hangup" },
+      branch: {
+        kind: "branch",
+        branches: [{ when: "", action: { kind: "say", text: "" } }],
+      },
     };
     setSteps([...steps, blank[kind]]);
   }
@@ -266,6 +272,9 @@ function StepEditor({
                   />
                 </div>
               )}
+              {s.kind === "branch" && (
+                <BranchStepEditor step={s} onChange={(ns) => update(i, ns)} />
+              )}
               {s.kind === "hangup" && <span className="muted">Ends the call.</span>}
             </div>
             <button type="button" className="btn secondary" onClick={() => remove(i)}>✕</button>
@@ -273,7 +282,7 @@ function StepEditor({
         ))}
       </ol>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {(["say", "prompt", "wait", "expect", "hangup"] as const).map((k) => (
+        {(["say", "prompt", "wait", "expect", "branch", "hangup"] as const).map((k) => (
           <button key={k} type="button" className="btn secondary" onClick={() => add(k)}>
             + {k}
           </button>
@@ -338,6 +347,140 @@ function JudgeEditor({
         </div>
       ))}
       <button type="button" className="btn secondary" onClick={() => setRules([...rules, { kind: "min-turns", count: 3 }])}>+ rule</button>
+    </section>
+  );
+}
+
+type BranchStep = Extract<ScenarioStep, { kind: "branch" }>;
+
+function BranchStepEditor({ step, onChange }: { step: BranchStep; onChange: (s: BranchStep) => void }) {
+  function setBranch(i: number, when: string, action: BranchAction) {
+    const branches = [...step.branches];
+    branches[i] = { ...branches[i], when, action };
+    onChange({ ...step, branches });
+  }
+  return (
+    <div className="grid" style={{ gap: 6 }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        If the target&apos;s reply matches a pattern, the tester takes that action.
+      </span>
+      {step.branches.map((b, i) => (
+        <div key={i} className="rule-row" style={{ gridTemplateColumns: "1fr 120px 1fr auto" }}>
+          <input
+            value={b.when}
+            placeholder="/regex/ on target reply"
+            onChange={(e) => setBranch(i, e.target.value, b.action)}
+          />
+          <select
+            value={b.action.kind}
+            onChange={(e) => setBranch(i, b.when, defaultAction(e.target.value as BranchAction["kind"]))}
+          >
+            <option value="say">say</option>
+            <option value="prompt">prompt</option>
+            <option value="goto">goto</option>
+            <option value="hangup">hangup</option>
+          </select>
+          <BranchActionValue action={b.action} onChange={(a) => setBranch(i, b.when, a)} />
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => onChange({ ...step, branches: step.branches.filter((_, idx) => idx !== i) })}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn secondary"
+        onClick={() => onChange({ ...step, branches: [...step.branches, { when: "", action: { kind: "say", text: "" } }] })}
+      >
+        + condition
+      </button>
+    </div>
+  );
+}
+
+function defaultAction(kind: BranchAction["kind"]): BranchAction {
+  switch (kind) {
+    case "say":
+      return { kind: "say", text: "" };
+    case "prompt":
+      return { kind: "prompt", directive: "" };
+    case "goto":
+      return { kind: "goto", step: 0 };
+    case "hangup":
+      return { kind: "hangup" };
+  }
+}
+
+function BranchActionValue({ action, onChange }: { action: BranchAction; onChange: (a: BranchAction) => void }) {
+  if (action.kind === "say")
+    return <input value={action.text} placeholder="say…" onChange={(e) => onChange({ ...action, text: e.target.value })} />;
+  if (action.kind === "prompt")
+    return <input value={action.directive} placeholder="directive…" onChange={(e) => onChange({ ...action, directive: e.target.value })} />;
+  if (action.kind === "goto")
+    return <input type="number" value={action.step} onChange={(e) => onChange({ ...action, step: Number(e.target.value) })} />;
+  return <span className="muted">ends call</span>;
+}
+
+function MetricsEditor({ metrics, setMetrics }: { metrics: MetricDefinition[]; setMetrics: (m: MetricDefinition[]) => void }) {
+  function update(i: number, m: MetricDefinition) {
+    const next = [...metrics];
+    next[i] = m;
+    setMetrics(next);
+  }
+  function add() {
+    setMetrics([
+      ...metrics,
+      { id: `m${metrics.length + 1}`, name: "", description: "", outputType: "boolean", passIf: { kind: "is-true" } },
+    ]);
+  }
+  return (
+    <section className="card">
+      <h2 style={{ marginTop: 0 }}>Metrics (typed outputs)</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+        User-defined metrics the LLM judge scores per call: boolean, rating (scale), enum
+        (categories), or number. A pass condition turns a metric into pass/fail.
+      </p>
+      {metrics.map((m, i) => (
+        <div className="card" key={i} style={{ background: "var(--panel-2)" }}>
+          <div className="rule-row" style={{ gridTemplateColumns: "1fr 130px auto" }}>
+            <input value={m.name} placeholder="Metric name" onChange={(e) => update(i, { ...m, name: e.target.value })} />
+            <select
+              value={m.outputType}
+              onChange={(e) => update(i, { ...m, outputType: e.target.value as MetricDefinition["outputType"] })}
+            >
+              <option value="boolean">boolean</option>
+              <option value="rating">rating</option>
+              <option value="enum">enum</option>
+              <option value="number">number</option>
+            </select>
+            <button type="button" className="btn secondary" onClick={() => setMetrics(metrics.filter((_, idx) => idx !== i))}>✕</button>
+          </div>
+          <input
+            style={{ marginTop: 6 }}
+            value={m.description}
+            placeholder="How the judge should score this (definition)"
+            onChange={(e) => update(i, { ...m, description: e.target.value })}
+          />
+          {m.outputType === "rating" && (
+            <div className="rule-row" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 6 }}>
+              <input type="number" value={m.scale?.min ?? 1} onChange={(e) => update(i, { ...m, scale: { min: Number(e.target.value), max: m.scale?.max ?? 5 } })} placeholder="min" />
+              <input type="number" value={m.scale?.max ?? 5} onChange={(e) => update(i, { ...m, scale: { min: m.scale?.min ?? 1, max: Number(e.target.value) } })} placeholder="max" />
+            </div>
+          )}
+          {m.outputType === "enum" && (
+            <input
+              style={{ marginTop: 6 }}
+              value={(m.options ?? []).join(", ")}
+              placeholder="options, comma-separated (e.g. resolved, escalated, abandoned)"
+              onChange={(e) => update(i, { ...m, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+            />
+          )}
+        </div>
+      ))}
+      <button type="button" className="btn secondary" onClick={add}>+ metric</button>
     </section>
   );
 }
