@@ -140,6 +140,43 @@ test("Bland integration creates an agent, places a task call, and maps transcrip
   assert.equal(state.transcript?.[1]?.role, "target");
 });
 
+test("each platform compiles a structured test into its own native agent config", () => {
+  const structured = {
+    role: "You are a patient booking an appointment",
+    conditions: [
+      { id: 0, condition: "FIRST_MESSAGE", action: "Hi, I'd like to book.", type: "standard" as const, fixed_message: true },
+      { id: 1, condition: "The agent asks the day", action: "Say Tuesday", type: "standard" as const, fixed_message: false },
+    ],
+  };
+  const spec = {
+    name: "Booker",
+    persona: { name: "Booker", systemPrompt: "unused when structured" },
+    structured,
+  };
+
+  const vapi = new VapiIntegration().buildAgentConfig(spec) as {
+    firstMessage: string;
+    model: { messages: Array<{ content: string }> };
+  };
+  assert.equal(vapi.firstMessage, "Hi, I'd like to book.");
+  assert.ok(vapi.model.messages[0]!.content.includes("ROLE: You are a patient booking"));
+  assert.ok(vapi.model.messages[0]!.content.includes("when The agent asks the day"));
+
+  const el = new ElevenLabsIntegration().buildAgentConfig(spec) as {
+    conversation_config: { agent: { prompt: { prompt: string }; first_message: string } };
+  };
+  assert.equal(el.conversation_config.agent.first_message, "Hi, I'd like to book.");
+  assert.ok(el.conversation_config.agent.prompt.prompt.includes("Open the call"));
+
+  const bland = new BlandIntegration().buildAgentConfig(spec) as {
+    prompt: string;
+    first_sentence: string;
+    metadata: { hal_steps: unknown[] };
+  };
+  assert.equal(bland.first_sentence, "Hi, I'd like to book.");
+  assert.equal(bland.metadata.hal_steps.length, 2);
+});
+
 test("built-in integrations are registered", () => {
   assert.ok(getIntegration("vapi"));
   assert.ok(getIntegration("elevenlabs"));

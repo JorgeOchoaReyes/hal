@@ -43,8 +43,10 @@ while developing, or self-host it as a shared regression suite.
   Twilio telephony, WebRTC, SIP): each declares its config fields and required
   env, so the UI renders a form and builds a runnable target for you.
 - **Hosted testing agents.** Bring credentials for a voice platform (Vapi,
-  ElevenLabs); HAL provisions a testing agent there, stores it, and uses it to
-  place calls — then judges the transcript. No media server needed.
+  ElevenLabs, Bland); HAL provisions a testing agent there, stores it, and uses
+  it to place calls — then judges the transcript. No media server needed. A
+  Structured Test compiles into each platform's **native agent config**
+  (a step-by-step reproduction) — previewable before you provision.
 - **Create simulations in the UI.** Compose a test from a provider template, a
   caller persona, and either a linear turn-by-turn script **or a Structured Test**
   (a `role` + `conditions` decision tree, with `FIRST_MESSAGE` and

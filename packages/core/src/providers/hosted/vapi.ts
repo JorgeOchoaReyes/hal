@@ -10,6 +10,7 @@ import {
   HostedCallStatus,
   FetchLike,
   safeText,
+  resolveSpecPrompt,
 } from "./integration.js";
 
 /**
@@ -47,6 +48,21 @@ export class VapiIntegration implements VoiceProviderIntegration {
     };
   }
 
+  /** Native Vapi assistant body — the deterministic reproduction of the spec. */
+  buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown> {
+    const { systemPrompt, firstMessage } = resolveSpecPrompt(spec);
+    return {
+      name: spec.name,
+      firstMessage: firstMessage ?? "Hello.",
+      model: {
+        provider: "openai",
+        model: spec.model ?? "gpt-4o-mini",
+        messages: [{ role: "system", content: systemPrompt }],
+      },
+      ...(spec.voice ? { voice: { provider: "vapi", voiceId: spec.voice } } : {}),
+    };
+  }
+
   async createTestingAgent(
     account: ProviderAccount,
     spec: TestingAgentSpec,
@@ -54,16 +70,7 @@ export class VapiIntegration implements VoiceProviderIntegration {
     const res = await this.fetchImpl(`${this.base}/assistant`, {
       method: "POST",
       headers: this.headers(account),
-      body: JSON.stringify({
-        name: spec.name,
-        firstMessage: spec.firstMessage ?? "Hello.",
-        model: {
-          provider: "openai",
-          model: spec.model ?? "gpt-4o-mini",
-          messages: [{ role: "system", content: spec.persona.systemPrompt }],
-        },
-        ...(spec.voice ? { voice: { provider: "vapi", voiceId: spec.voice } } : {}),
-      }),
+      body: JSON.stringify(this.buildAgentConfig(spec)),
     });
     if (!res.ok) throw new Error(`Vapi createAssistant failed (${res.status}): ${await safeText(res)}`);
     const data = (await res.json()) as { id: string };

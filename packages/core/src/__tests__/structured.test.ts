@@ -117,9 +117,9 @@ test("compileStructuredToPrompt produces a deterministic script", () => {
   };
   const prompt = compileStructuredToPrompt(t);
   assert.ok(prompt.includes("ROLE: You are a patient"));
-  assert.ok(prompt.includes('Open the call with: "Hi, I need to cancel."'));
-  assert.ok(prompt.includes("WHEN The agent asks for your name"));
-  assert.ok(prompt.includes("On the turn after step #1"));
+  assert.ok(prompt.includes("Open the call — SAY: Hi, I need to cancel."));
+  assert.ok(prompt.includes("when The agent asks for your name → DO: Say John Smith"));
+  assert.ok(prompt.includes("after #1 → SAY: Thanks"));
 });
 
 test("structured conductor fires the standard condition the matcher selects", async () => {

@@ -3,9 +3,9 @@ import {
   getIntegration,
   id,
   validateStructuredTest,
-  compileStructuredToPrompt,
   type HostedTestingAgent,
   type StructuredTest,
+  type TestingAgentSpec,
 } from "@hal/core";
 import { getAccountRaw, listAgents, upsertAgent } from "@/lib/store";
 
@@ -37,22 +37,24 @@ export async function POST(req: NextRequest) {
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
-  // A structured test compiles to a deterministic prompt for the hosted agent.
-  let systemPrompt = body.systemPrompt || "You are a caller testing a voice AI.";
+  // A structured test is compiled to native config by the integration.
   if (body.structured) {
     const errors = validateStructuredTest(body.structured);
     if (errors.length > 0) {
       return NextResponse.json({ error: `Invalid structured test: ${errors.join("; ")}` }, { status: 400 });
     }
-    systemPrompt = compileStructuredToPrompt(body.structured);
   }
 
-  const spec = {
+  const spec: TestingAgentSpec = {
     name: body.name || "HAL tester",
-    persona: { name: body.name || "HAL tester", systemPrompt },
+    persona: {
+      name: body.name || "HAL tester",
+      systemPrompt: body.systemPrompt || "You are a caller testing a voice AI.",
+    },
     firstMessage: body.firstMessage,
     voice: body.voice,
     model: body.model,
+    structured: body.structured,
   };
 
   try {

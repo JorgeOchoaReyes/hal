@@ -109,35 +109,64 @@ export function renderFixedMessage(action: string): { text: string; endCall: boo
 }
 
 /**
+ * A normalized, ordered step derived from a Structured Test. Each hosted
+ * platform serializes these into its own native agent config idiom.
+ */
+export interface CompiledStep {
+  /** 1-based order. */
+  n: number;
+  /** "open" for FIRST_MESSAGE, "when <trigger>", or "after #<id>". */
+  trigger: string;
+  /** What the tester should say/do. */
+  instruction: string;
+  /** say = verbatim; do = interpret as an instruction. */
+  mode: "say" | "do";
+}
+
+/** Flatten a structured test into ordered, human/agent-readable steps. */
+export function structuredToSteps(test: StructuredTest): CompiledStep[] {
+  const steps: CompiledStep[] = [];
+  let n = 1;
+  for (const c of test.conditions) {
+    const mode: "say" | "do" = c.fixed_message ? "say" : "do";
+    if (c.id === 0) {
+      const opener = c.action.trim() ? renderFixedMessage(c.action).text : "";
+      steps.push({ n: n++, trigger: "open", instruction: opener || "(wait for the other party to speak first)", mode });
+      continue;
+    }
+    const instruction = c.fixed_message ? renderFixedMessage(c.action).text : c.action;
+    const trigger =
+      c.type === "action_followup" ? `after #${c.condition}` : `when ${String(c.condition)}`;
+    steps.push({ n: n++, trigger, instruction, mode });
+  }
+  return steps;
+}
+
+/** The opening line (FIRST_MESSAGE), if any. */
+export function firstMessageOf(test: StructuredTest): string | undefined {
+  const first = test.conditions.find((c) => c.id === 0);
+  if (!first) return undefined;
+  return renderFixedMessage(first.action).text || undefined;
+}
+
+/**
  * Compile a Structured Test into a deterministic instruction prompt suitable as
- * a hosted agent's system prompt / task (e.g. Bland, Vapi). This lets the exact
- * branching decision tree run on a provider that executes a single prompt —
- * ideal for deterministic tests where the platform (not HAL) drives the call.
+ * a hosted agent's system prompt / task. This is the provider-neutral baseline;
+ * each integration also produces its own native config via buildAgentConfig().
  */
 export function compileStructuredToPrompt(test: StructuredTest): string {
+  const steps = structuredToSteps(test);
   const lines: string[] = [
     `ROLE: ${test.role}`,
     "",
-    "You are the CALLER testing another voice AI. Follow this script deterministically.",
-    "Say fixed lines verbatim; for instruction steps, phrase a natural reply. End the call when told.",
+    "You are the CALLER testing another voice AI. Follow this script deterministically, in order.",
+    "For SAY steps, speak the line verbatim. For DO steps, phrase a natural reply. End the call when instructed.",
     "",
   ];
-  for (const c of test.conditions) {
-    const kind = c.fixed_message ? "SAY VERBATIM" : "DO";
-    if (c.id === 0) {
-      const opener = c.action.trim() ? `Open the call with: "${renderFixedMessage(c.action).text}"` : "Wait for the other party to speak first.";
-      lines.push(`1. ${opener}`);
-      continue;
-    }
-    if (c.type === "action_followup") {
-      lines.push(`- On the turn after step #${c.condition}, ${kind}: ${strip(c)}`);
-    } else {
-      lines.push(`- WHEN ${String(c.condition)} → ${kind}: ${strip(c)}`);
-    }
+  for (const s of steps) {
+    const verb = s.mode === "say" ? "SAY" : "DO";
+    if (s.trigger === "open") lines.push(`${s.n}. Open the call — ${verb}: ${s.instruction}`);
+    else lines.push(`${s.n}. ${s.trigger} → ${verb}: ${s.instruction}`);
   }
   return lines.join("\n");
-}
-
-function strip(c: StructuredCondition): string {
-  return c.fixed_message ? `"${renderFixedMessage(c.action).text}"` : c.action;
 }

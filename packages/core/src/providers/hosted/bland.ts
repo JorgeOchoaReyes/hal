@@ -10,7 +10,9 @@ import {
   HostedCallStatus,
   FetchLike,
   safeText,
+  resolveSpecPrompt,
 } from "./integration.js";
+import { structuredToSteps } from "../../simulation/structured.js";
 
 /**
  * Bland AI integration.
@@ -52,6 +54,18 @@ export class BlandIntegration implements VoiceProviderIntegration {
     };
   }
 
+  /** Native Bland agent body. Steps are also attached for traceability. */
+  buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown> {
+    const { systemPrompt, firstMessage } = resolveSpecPrompt(spec);
+    return {
+      prompt: systemPrompt,
+      first_sentence: firstMessage,
+      voice: spec.voice,
+      model: spec.model,
+      ...(spec.structured ? { metadata: { hal_steps: structuredToSteps(spec.structured) } } : {}),
+    };
+  }
+
   async createTestingAgent(
     account: ProviderAccount,
     spec: TestingAgentSpec,
@@ -61,12 +75,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const res = await this.fetchImpl(`${this.base}/v1/agents`, {
       method: "POST",
       headers: this.headers(account),
-      body: JSON.stringify({
-        prompt: spec.persona.systemPrompt,
-        first_sentence: spec.firstMessage,
-        voice: spec.voice,
-        model: spec.model,
-      }),
+      body: JSON.stringify(this.buildAgentConfig(spec)),
     });
     if (!res.ok) throw new Error(`Bland createAgent failed (${res.status}): ${await safeText(res)}`);
     const data = (await res.json()) as { agent?: { agent_id?: string }; agent_id?: string };
@@ -80,15 +89,16 @@ export class BlandIntegration implements VoiceProviderIntegration {
     agent: HostedTestingAgent,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }> {
-    const task =
-      agent.spec?.persona.systemPrompt ?? "You are a QA tester calling to evaluate a voice AI.";
+    const resolved = agent.spec
+      ? resolveSpecPrompt(agent.spec)
+      : { systemPrompt: "You are a QA tester calling to evaluate a voice AI.", firstMessage: undefined };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
       headers: this.headers(account),
       body: JSON.stringify({
         phone_number: target.phoneNumber,
-        task,
-        first_sentence: agent.spec?.firstMessage,
+        task: resolved.systemPrompt,
+        first_sentence: resolved.firstMessage,
         voice: agent.spec?.voice,
         ...(account.credentials.from ? { from: account.credentials.from } : {}),
         wait_for_greeting: true,

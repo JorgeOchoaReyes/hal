@@ -1,5 +1,6 @@
 import { Persona, Transcript } from "../../types.js";
 import { ProviderField } from "../templates.js";
+import { StructuredTest, compileStructuredToPrompt, firstMessageOf } from "../../simulation/structured.js";
 
 /**
  * Hosted-provider model.
@@ -30,6 +31,12 @@ export interface TestingAgentSpec {
   firstMessage?: string;
   voice?: string;
   model?: string;
+  /**
+   * A Structured Test to reproduce deterministically. When present, the
+   * integration compiles it into the platform's native agent config (a
+   * step-by-step reproduction) instead of using the plain persona prompt.
+   */
+  structured?: StructuredTest;
 }
 
 export interface HostedTestingAgent {
@@ -69,6 +76,13 @@ export interface VoiceProviderIntegration {
   readonly label: string;
   /** Credential fields the account needs (rendered by the UI). */
   readonly credentialFields: ProviderField[];
+  /**
+   * Compile a spec (optionally carrying a Structured Test) into the platform's
+   * NATIVE create-agent request body — the exact config HAL will send. Exposed
+   * so the UI can preview the deterministic, step-by-step reproduction before
+   * provisioning.
+   */
+  buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown>;
   /** Create (provision) a testing agent on the platform; returns its id. */
   createTestingAgent(
     account: ProviderAccount,
@@ -96,6 +110,24 @@ export function getIntegration(id: string): VoiceProviderIntegration | undefined
 
 export function listIntegrations(): VoiceProviderIntegration[] {
   return [...registry.values()];
+}
+
+/**
+ * Resolve the system prompt + first message for an agent. When the spec carries
+ * a Structured Test, the prompt is the compiled deterministic script and the
+ * first message is its FIRST_MESSAGE; otherwise the plain persona is used.
+ */
+export function resolveSpecPrompt(spec: TestingAgentSpec): {
+  systemPrompt: string;
+  firstMessage?: string;
+} {
+  if (spec.structured) {
+    return {
+      systemPrompt: compileStructuredToPrompt(spec.structured),
+      firstMessage: spec.firstMessage ?? firstMessageOf(spec.structured),
+    };
+  }
+  return { systemPrompt: spec.persona.systemPrompt, firstMessage: spec.firstMessage };
 }
 
 export async function safeText(res: Response): Promise<string> {

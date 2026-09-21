@@ -119,9 +119,58 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
     "You are a QA tester calling a business's voice AI. Try to book an appointment and confirm the details.",
   );
   const [firstMessage, setFirstMessage] = useState("Hi, I'd like to book an appointment.");
+  const [useStructured, setUseStructured] = useState(false);
+  const [structuredJson, setStructuredJson] = useState(
+    JSON.stringify(
+      {
+        role: "You are a patient booking an appointment",
+        conditions: [
+          { id: 0, condition: "FIRST_MESSAGE", action: "Hi, I'd like to book an appointment.", type: "standard", fixed_message: true },
+          { id: 1, condition: "The agent asks which day", action: "Ask for the first available Tuesday", type: "standard", fixed_message: false },
+          { id: 2, condition: 1, action: "Great, thanks! <endcall />", type: "action_followup", fixed_message: true },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const selected = accountId || accounts[0]?.id || "";
+  const selectedAccount = accounts.find((a) => a.id === selected);
+
+  function structuredPayload() {
+    if (!useStructured) return undefined;
+    try {
+      return JSON.parse(structuredJson);
+    } catch {
+      throw new Error("Structured test is not valid JSON");
+    }
+  }
+
+  async function doPreview() {
+    setErr(null);
+    setPreview(null);
+    try {
+      const res = await fetch("/api/testing-agents/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          provider: selectedAccount?.provider,
+          name,
+          systemPrompt,
+          firstMessage,
+          structured: structuredPayload(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      setPreview(JSON.stringify(data.config, null, 2));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -130,7 +179,13 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
       const res = await fetch("/api/testing-agents", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ accountId: selected, name, systemPrompt, firstMessage }),
+        body: JSON.stringify({
+          accountId: selected,
+          name,
+          systemPrompt,
+          firstMessage,
+          structured: structuredPayload(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -159,17 +214,45 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
         <span className="field-label">Agent name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label className="field">
-        <span className="field-label">System prompt (the tester's behavior)</span>
-        <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} rows={3} />
+      <label className="muted" style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+        <input type="checkbox" style={{ width: "auto" }} checked={useStructured} onChange={(e) => setUseStructured(e.target.checked)} />
+        Reproduce a structured (deterministic) test — compiled into this platform&apos;s native config
       </label>
-      <label className="field">
-        <span className="field-label">First message</span>
-        <input value={firstMessage} onChange={(e) => setFirstMessage(e.target.value)} />
-      </label>
-      <button onClick={submit} disabled={busy || accounts.length === 0}>
-        {busy ? "Creating on provider…" : "Create testing agent"}
-      </button>
+      {useStructured ? (
+        <label className="field">
+          <span className="field-label">Structured test (role + conditions JSON)</span>
+          <textarea value={structuredJson} onChange={(e) => setStructuredJson(e.target.value)} rows={10} className="mono" />
+        </label>
+      ) : (
+        <>
+          <label className="field">
+            <span className="field-label">System prompt (the tester's behavior)</span>
+            <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} rows={3} />
+          </label>
+          <label className="field">
+            <span className="field-label">First message</span>
+            <input value={firstMessage} onChange={(e) => setFirstMessage(e.target.value)} />
+          </label>
+        </>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={submit} disabled={busy || accounts.length === 0}>
+          {busy ? "Creating on provider…" : "Create testing agent"}
+        </button>
+        <button type="button" className="btn secondary" onClick={doPreview} disabled={accounts.length === 0}>
+          Preview {selectedAccount?.provider ?? "platform"} config
+        </button>
+      </div>
+      {preview && (
+        <>
+          <div className="field-label" style={{ marginTop: 12 }}>
+            Native config HAL will send to {selectedAccount?.provider}
+          </div>
+          <pre className="mono" style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, overflow: "auto", fontSize: 12, maxHeight: 320 }}>
+            {preview}
+          </pre>
+        </>
+      )}
     </section>
   );
 }

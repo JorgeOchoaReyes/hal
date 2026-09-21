@@ -10,6 +10,7 @@ import {
   HostedCallStatus,
   FetchLike,
   safeText,
+  resolveSpecPrompt,
 } from "./integration.js";
 
 /**
@@ -46,6 +47,20 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
     };
   }
 
+  /** Native ElevenLabs ConvAI agent body — deterministic reproduction of the spec. */
+  buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown> {
+    const { systemPrompt, firstMessage } = resolveSpecPrompt(spec);
+    return {
+      name: spec.name,
+      conversation_config: {
+        agent: {
+          prompt: { prompt: systemPrompt },
+          first_message: firstMessage ?? "Hello.",
+        },
+      },
+    };
+  }
+
   async createTestingAgent(
     account: ProviderAccount,
     spec: TestingAgentSpec,
@@ -53,15 +68,7 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
     const res = await this.fetchImpl(`${this.base}/v1/convai/agents/create`, {
       method: "POST",
       headers: this.headers(account),
-      body: JSON.stringify({
-        name: spec.name,
-        conversation_config: {
-          agent: {
-            prompt: { prompt: spec.persona.systemPrompt },
-            first_message: spec.firstMessage ?? "Hello.",
-          },
-        },
-      }),
+      body: JSON.stringify(this.buildAgentConfig(spec)),
     });
     if (!res.ok) throw new Error(`ElevenLabs createAgent failed (${res.status}): ${await safeText(res)}`);
     const data = (await res.json()) as { agent_id: string };
