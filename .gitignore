@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+out/
+.next/
+build/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# electron
+apps/desktop/release/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# runtime data (test recordings, transcripts)
+data/
+recordings/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+coverage/
