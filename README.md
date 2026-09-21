@@ -52,7 +52,8 @@ hal/
 │   ├── web/        @hal/web      Next.js self-hostable app (dashboard + API + SSE runner)
 │   └── desktop/    @hal/desktop  Electron shell around the web app
 └── packages/
-    └── core/       @hal/core     The engine: agents, simulation, transports, judge, runner
+    ├── core/       @hal/core     The engine: agents, simulation, transports, judge, runner
+    └── media/      @hal/media    Twilio Media Streams ⇄ Deepgram bridge for real audio calls
 ```
 
 `@hal/core` has **zero runtime dependencies** — every provider (LLM, telephony,
@@ -123,11 +124,32 @@ No keys? Everything still runs in **mock mode**.
 
 `@hal/core` owns call *control* (placing / ending calls, driving turns, judging).
 The real-time *audio* plane — bridging provider media streams to STT/TTS — is
-supplied by the host through the `MediaBridge` interface, so the library stays
-free of a bundled media server and you can plug in Deepgram, ElevenLabs, a local
-whisper.cpp, LiveKit, etc. See `packages/core/src/transport/transport.ts` and
-`packages/core/src/speech/speech.ts` for the contracts. Mock and text modes need
-no media bridge and work out of the box.
+supplied through the `MediaBridge` interface, so the engine stays free of a bundled
+media server and you can plug in Deepgram, ElevenLabs, a local whisper.cpp, LiveKit,
+etc. Mock and text modes need no media bridge and work out of the box.
+
+For **real PSTN calls**, `@hal/media` ships a concrete
+[Twilio Media Streams ⇄ Deepgram bridge](packages/media/README.md):
+
+```bash
+HAL_PUBLIC_URL=https://media.example.com DEEPGRAM_API_KEY=... pnpm --filter @hal/media start
+```
+
+```ts
+import { HalEngine } from "@hal/core";
+import { MediaServer } from "@hal/media";
+
+const media = new MediaServer({ publicUrl: process.env.HAL_PUBLIC_URL });
+await media.listen(8787);
+
+const engine = new HalEngine({
+  telephony: { config: {}, bridgeFactory: media.bridgeFactory }, // TWILIO_* from env
+});
+// A `telephony` test case now places a real call and is judged like any other.
+```
+
+See `packages/core/src/transport/transport.ts` and
+`packages/core/src/speech/speech.ts` for the underlying contracts.
 
 ## Self-hosting
 
