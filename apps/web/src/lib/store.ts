@@ -8,6 +8,8 @@ import {
   type TestCase,
   type TestResult,
   type ProviderAvailability,
+  type ProviderAccount,
+  type HostedTestingAgent,
 } from "@hal/core";
 import { MediaServer } from "@hal/media";
 
@@ -21,6 +23,8 @@ import { MediaServer } from "@hal/media";
 interface HalState {
   testCases: Map<string, TestCase>;
   results: Map<string, TestResult>;
+  accounts: Map<string, ProviderAccount>;
+  agents: Map<string, HostedTestingAgent>;
   engine: HalEngine;
   mediaServer?: MediaServer;
 }
@@ -33,6 +37,8 @@ declare global {
 const DATA_DIR = process.env.HAL_DATA_DIR ?? join(process.cwd(), "data");
 const TESTCASES_FILE = join(DATA_DIR, "testcases.json");
 const RESULTS_FILE = join(DATA_DIR, "results.json");
+const ACCOUNTS_FILE = join(DATA_DIR, "accounts.json");
+const AGENTS_FILE = join(DATA_DIR, "agents.json");
 
 function loadJson<T>(file: string): T[] {
   try {
@@ -67,6 +73,11 @@ function seed(): HalState {
   const results = new Map<string, TestResult>();
   for (const r of loadJson<TestResult>(RESULTS_FILE)) results.set(r.id, r);
 
+  const accounts = new Map<string, ProviderAccount>();
+  for (const a of loadJson<ProviderAccount>(ACCOUNTS_FILE)) accounts.set(a.id, a);
+  const agents = new Map<string, HostedTestingAgent>();
+  for (const a of loadJson<HostedTestingAgent>(AGENTS_FILE)) agents.set(a.id, a);
+
   // Start a media server for real telephony audio when Twilio is configured.
   let mediaServer: MediaServer | undefined;
   const telephonyReady =
@@ -88,7 +99,7 @@ function seed(): HalState {
     },
   });
 
-  return { testCases, results, engine, mediaServer };
+  return { testCases, results, accounts, agents, engine, mediaServer };
 }
 
 export function halState(): HalState {
@@ -139,4 +150,41 @@ export function getResult(id: string): TestResult | undefined {
 
 export function providers(): ProviderAvailability[] {
   return providerAvailability();
+}
+
+// --- Hosted provider accounts & testing agents ------------------------------
+
+/** Accounts, with credentials redacted for client responses. */
+export function listAccounts(): ProviderAccount[] {
+  return [...halState().accounts.values()].map(redactAccount);
+}
+
+export function getAccountRaw(id: string): ProviderAccount | undefined {
+  return halState().accounts.get(id);
+}
+
+export function upsertAccount(a: ProviderAccount): void {
+  const s = halState();
+  s.accounts.set(a.id, a);
+  saveJson(ACCOUNTS_FILE, [...s.accounts.values()]);
+}
+
+export function listAgents(): HostedTestingAgent[] {
+  return [...halState().agents.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getAgent(id: string): HostedTestingAgent | undefined {
+  return halState().agents.get(id);
+}
+
+export function upsertAgent(a: HostedTestingAgent): void {
+  const s = halState();
+  s.agents.set(a.id, a);
+  saveJson(AGENTS_FILE, [...s.agents.values()]);
+}
+
+function redactAccount(a: ProviderAccount): ProviderAccount {
+  const credentials: Record<string, string> = {};
+  for (const k of Object.keys(a.credentials)) credentials[k] = "••••••";
+  return { ...a, credentials };
 }

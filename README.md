@@ -162,6 +162,46 @@ const engine = new HalEngine({
 See `packages/core/src/transport/transport.ts` and
 `packages/core/src/speech/speech.ts` for the underlying contracts.
 
+## Testing against a real voice agent
+
+Two paths, easiest first.
+
+### A. Hosted testing agent (Vapi / ElevenLabs) — no media server needed
+
+HAL creates a testing agent **on your voice platform** using your credentials and
+tells that platform to call your target number. The platform handles all audio, so
+you need no Deepgram key, no public URL, and no media server.
+
+```bash
+pnpm install && pnpm build
+OPENAI_API_KEY=sk-...   # (or ANTHROPIC_API_KEY) for the judge & metrics
+pnpm web                # http://localhost:3000
+```
+
+1. Open **Hosted agents** (top nav).
+2. **Connect a provider account** — pick Vapi (or ElevenLabs), paste your API key
+   and phone-number id.
+3. **Provision a testing agent** — name it and write the tester's system prompt
+   (what it should try to do on the call).
+4. In the agent's row, enter your **target number** and hit **Place test call**.
+   HAL places the call via the platform, waits for it to finish, pulls the
+   transcript, and judges it — you'll see the status + metric labels inline.
+
+### B. HAL-driven telephony (Twilio + Deepgram)
+
+HAL itself drives the audio. Needs `TWILIO_*`, `DEEPGRAM_API_KEY`, and a public URL.
+
+```bash
+export TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_FROM_NUMBER=+1...
+export DEEPGRAM_API_KEY=... HAL_PUBLIC_URL=https://<your-tunnel>
+pnpm web
+```
+
+Create a simulation with the **Twilio** provider template, enter your target
+number, and run it. (The media server starts automatically when Twilio env is set.)
+
+> Only place automated calls to a number you own or are authorized to test.
+
 ## Self-hosting
 
 The web app builds to a standalone Next.js server:

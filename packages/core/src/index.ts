@@ -67,6 +67,26 @@ export {
 } from "./metrics/definitions.js";
 export { evaluateMetrics } from "./metrics/evaluator.js";
 
+// Hosted provider integrations (Vapi, ElevenLabs) — testing agents on the
+// user's own platform, created with their credentials.
+export {
+  registerIntegration,
+  getIntegration,
+  listIntegrations,
+  VapiIntegration,
+  ElevenLabsIntegration,
+  runHostedCall,
+  type VoiceProviderIntegration,
+  type ProviderAccount,
+  type TestingAgentSpec,
+  type HostedTestingAgent,
+  type HostedTarget,
+  type HostedCallState,
+  type HostedCallStatus,
+  type HostedRunOptions,
+  type FetchLike,
+} from "./providers/hosted/index.js";
+
 // Utils
 export { id, now } from "./util/id.js";
 export { TypedEmitter, sleep, type Listener } from "./util/events.js";
