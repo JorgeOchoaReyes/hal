@@ -32,6 +32,8 @@ export interface StructuredTest {
   scenario_language?: string;
 }
 
+import { validateActionTags, renderAction } from "./tags.js";
+
 export const FIRST_MESSAGE = "FIRST_MESSAGE";
 
 /**
@@ -80,6 +82,15 @@ export function validateStructuredTest(test: StructuredTest): string[] {
       if (typeof c.condition !== "string" || !c.condition.trim())
         errors.push(`condition ${c.id}: standard condition must be a non-empty trigger string`);
     }
+
+    // Control tags are only valid in fixed-message actions.
+    if (c.fixed_message) {
+      for (const e of validateActionTags(c.action, { isFollowup: c.type === "action_followup" })) {
+        errors.push(`condition ${c.id}: ${e}`);
+      }
+    } else if (/<[a-z_]+[\s/>]/i.test(c.action)) {
+      errors.push(`condition ${c.id}: tags require fixed_message: true`);
+    }
   }
 
   return errors;
@@ -93,13 +104,6 @@ export function validateStructuredTest(test: StructuredTest): string[] {
  * spoken literally.
  */
 export function renderFixedMessage(action: string): { text: string; endCall: boolean } {
-  const endCall = /<endcall\s*\/?>/i.test(action);
-  const text = action
-    // keep inner text of paired tags: <spell>ABC</spell> -> ABC
-    .replace(/<([a-z_]+)(\s[^>]*)?>([\s\S]*?)<\/\1>/gi, "$3")
-    // drop self-closing / standalone tags: <silence .../>, <endcall/>, <dtmf .../>
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return { text, endCall };
+  const r = renderAction(action);
+  return { text: r.text, endCall: r.endCall };
 }

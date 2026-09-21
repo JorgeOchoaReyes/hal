@@ -21,6 +21,16 @@ export {
   type StructuredCondition,
   type StructuredConditionType,
 } from "./simulation/structured.js";
+export {
+  parseAction,
+  validateActionTags,
+  renderAction,
+  SUPPORTED_TAGS,
+  type ActionSegment,
+  type TagSegment,
+  type TextSegment,
+  type RenderedAction,
+} from "./simulation/tags.js";
 
 // Transports
 export * from "./transport/transport.js";

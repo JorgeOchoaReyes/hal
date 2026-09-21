@@ -66,7 +66,7 @@ test("validation enforces Cekura's structured-test rules", () => {
 test("renderFixedMessage strips tags and detects endcall", () => {
   assert.deepEqual(renderFixedMessage("Thanks <endcall />"), { text: "Thanks", endCall: true });
   assert.deepEqual(renderFixedMessage("My code is <spell>ABC</spell>"), {
-    text: "My code is ABC",
+    text: "My code is A B C",
     endCall: false,
   });
   assert.deepEqual(renderFixedMessage("Wait <silence time=\"2s\" /> ok"), {

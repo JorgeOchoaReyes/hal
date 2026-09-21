@@ -1,7 +1,8 @@
 import { Transcript, CheckResult } from "../types.js";
 import { LLMClient, ChatMessage } from "../llm/client.js";
 import { AgentAction, ConductorLike, ConductorDeps } from "./conductor.js";
-import { StructuredTest, StructuredCondition, FIRST_MESSAGE, renderFixedMessage } from "./structured.js";
+import { StructuredTest, StructuredCondition } from "./structured.js";
+import { renderAction } from "./tags.js";
 
 /**
  * Drives a Structured Test turn by turn, producing the same AgentAction stream
@@ -81,11 +82,11 @@ export class StructuredConductor implements ConductorLike {
 
   private async fire(c: StructuredCondition, transcript: Transcript): Promise<AgentAction> {
     if (c.fixed_message) {
-      const { text, endCall } = renderFixedMessage(c.action);
-      if (endCall) this.done = true;
+      const r = renderAction(c.action);
+      if (r.endCall) this.done = true;
       // A pure-tag action (e.g. <endcall/>) may render to empty text.
-      if (!text) return this.done ? { kind: "hangup", reason: "endcall" } : { kind: "wait" };
-      return { kind: "speak", text };
+      if (!r.text) return this.done ? { kind: "hangup", reason: "endcall" } : { kind: "wait" };
+      return { kind: "speak", text: r.text, delayMs: r.delayMs || undefined };
     }
     const text = await this.generateReply(c.action, transcript);
     return { kind: "speak", text };

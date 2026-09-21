@@ -427,6 +427,15 @@ function StructuredEditor({ test, setTest }: { test: StructuredTest; setTest: (t
         fire when their trigger matches the agent; action-followups fire on the next turn after the
         referenced id. fixed = say verbatim; otherwise the action is an instruction.
       </p>
+      <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+        Fixed actions support control tags:{" "}
+        <span className="mono">
+          &lt;endcall/&gt; &lt;silence time=&quot;2s&quot;/&gt; &lt;hold/&gt; &lt;dtmf digits=&quot;123&quot;/&gt;
+          &lt;spell&gt;ABC&lt;/spell&gt; &lt;ivr text=&quot;…&quot;/&gt; &lt;voicemail/&gt; &lt;speed/&gt; &lt;volume/&gt;
+          &lt;voice/&gt; &lt;background_noise/&gt; &lt;noise/&gt; &lt;send_sms/&gt; &lt;interruption/&gt;
+        </span>
+        . (Functions, attached audio, RTVI and network-sim tags are not supported.)
+      </p>
       {test.conditions.map((c, i) => (
         <div className="card" key={c.id} style={{ background: "var(--panel-2)" }}>
           <div className="rule-row" style={{ gridTemplateColumns: "48px 1fr 120px auto" }}>
