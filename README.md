@@ -1,0 +1,153 @@
+<div align="center">
+
+# 🔴 HAL
+
+**A local / self-hostable service for testing voice AI agents.**
+
+HAL spins up a simulated AI caller, places a test call to *your* voice agent over
+any channel (phone, WebRTC, SIP, or a fully in-process mock), drives the
+conversation **turn by turn**, and uses an LLM judge to classify each call
+**pass** or **fail**.
+
+</div>
+
+---
+
+## Why
+
+If you ship a voice AI — a receptionist, a support line, an outbound bot — you
+need to know it still works after every change. HAL is the automated tester:
+it calls your agent the way a real person would, follows a scripted or dynamic
+scenario, and grades the transcript against criteria you define. Run it locally
+while developing, or self-host it as a shared regression suite.
+
+## What it does
+
+- **Framework-agnostic caller.** The testing agent is driven by any LLM
+  (OpenAI, Anthropic, an OpenAI-compatible local model, or a deterministic mock).
+- **Turn-by-turn simulation.** Scenarios are a list of steps you fully control:
+  `say` (scripted line), `prompt` (let a persona improvise toward a goal),
+  `wait`, `expect` (live mid-call assertion), and `hangup`. Mix scripted and
+  dynamic behaviour freely.
+- **Every way to reach the target:**
+  | Transport | How it reaches your agent |
+  |-----------|---------------------------|
+  | `mock` | In-process simulated agent — no calls, no keys. Great for authoring & CI. |
+  | `telephony` | Real PSTN call via **Twilio** to any phone number you provide. |
+  | `webrtc` | Joins a **WebRTC** room / signaling endpoint your agent is on. |
+  | `sip` | Dials a **SIP** URI directly against your own PBX / trunk. |
+- **LLM judge (pass/fail).** Combines fast deterministic rules (contains, regex,
+  latency, turn counts) with an LLM evaluating natural-language criteria. Modes:
+  `all`, `rules-only`, `llm-only`.
+- **Live streaming UI.** Watch the transcript, live assertions, and verdict
+  appear in real time as the call runs.
+- **Two ways to run it:** a self-hostable **web app** (Next.js) and a
+  **desktop app** (Electron) that bundles it for offline local use.
+
+## Monorepo layout
+
+```
+hal/
+├── apps/
+│   ├── web/        @hal/web      Next.js self-hostable app (dashboard + API + SSE runner)
+│   └── desktop/    @hal/desktop  Electron shell around the web app
+└── packages/
+    └── core/       @hal/core     The engine: agents, simulation, transports, judge, runner
+```
+
+`@hal/core` has **zero runtime dependencies** — every provider (LLM, telephony,
+speech) is reached over `fetch` or a pluggable interface, so the engine builds
+and runs anywhere.
+
+## Quick start
+
+```bash
+pnpm install
+pnpm build
+
+# Web app (http://localhost:3000) — works immediately in mock mode
+pnpm web
+
+# Desktop app (needs the Electron binary; see below)
+pnpm desktop
+```
+
+Open the dashboard, pick a sample suite (e.g. *Booking — happy path*), and hit
+**Run test call**. With no API keys, HAL uses a deterministic mock LLM and mock
+target so the whole pipeline works offline. Add keys in `.env` (copy
+`.env.example`) to use real models and place real calls.
+
+### Run the engine directly
+
+```ts
+import { HalEngine, bookingHappyPath } from "@hal/core";
+
+const engine = new HalEngine();               // auto-detects OPENAI/ANTHROPIC keys
+const result = await engine.runToCompletion(bookingHappyPath());
+console.log(result.status, result.verdict?.summary);
+```
+
+### Author a scenario
+
+```ts
+import { scenario, type Persona } from "@hal/core";
+
+const persona: Persona = {
+  name: "New patient",
+  systemPrompt: "You are booking your first dental appointment. Be brief.",
+};
+
+const scn = scenario("Booking", persona)
+  .say("Hi, I'd like to book an appointment.")
+  .expect({ id: "asks-day", description: "asks which day", matches: "day|when" })
+  .prompt("Pick the first day offered and confirm.")
+  .say("No, that's all. Thanks!")
+  .hangup()
+  .build();
+```
+
+## Configuration
+
+Copy `.env.example` to `.env`:
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | LLM for the persona **and** the judge. |
+| `DEEPGRAM_API_KEY` | Speech-to-text for real audio calls. |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Real PSTN calls. |
+| `HAL_PUBLIC_URL` | Publicly reachable base URL for Twilio / WebRTC callbacks. |
+
+No keys? Everything still runs in **mock mode**.
+
+## Real audio calls & the media plane
+
+`@hal/core` owns call *control* (placing / ending calls, driving turns, judging).
+The real-time *audio* plane — bridging provider media streams to STT/TTS — is
+supplied by the host through the `MediaBridge` interface, so the library stays
+free of a bundled media server and you can plug in Deepgram, ElevenLabs, a local
+whisper.cpp, LiveKit, etc. See `packages/core/src/transport/transport.ts` and
+`packages/core/src/speech/speech.ts` for the contracts. Mock and text modes need
+no media bridge and work out of the box.
+
+## Self-hosting
+
+The web app builds to a standalone Next.js server:
+
+```bash
+pnpm --filter @hal/web build
+node apps/web/.next/standalone/apps/web/server.js   # or: docker build -t hal .
+```
+
+A `Dockerfile` is included for containerized deployment.
+
+## Development
+
+```bash
+pnpm dev         # everything in watch mode
+pnpm typecheck   # type-check all packages
+pnpm test        # run tests
+```
+
+## License
+
+MIT
