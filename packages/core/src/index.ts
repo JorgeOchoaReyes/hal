@@ -35,6 +35,27 @@ export { evaluateRule } from "./judge/rules.js";
 export { TestRunner, type RunnerDeps, type RunHandle } from "./runner/runner.js";
 export { HalEngine, type HalEngineOptions } from "./engine.js";
 
+// Provider templates
+export {
+  PROVIDER_TEMPLATES,
+  getProviderTemplate,
+  providerAvailability,
+  type ProviderTemplate,
+  type ProviderField,
+  type FieldKind,
+  type ProviderAvailability,
+} from "./providers/templates.js";
+
+// Metrics + labels
+export {
+  computeMetrics,
+  deriveLabels,
+  type CallMetrics,
+  type LatencyStats,
+  type Label,
+  type LabelTone,
+} from "./metrics/metrics.js";
+
 // Utils
 export { id, now } from "./util/id.js";
 export { TypedEmitter, sleep, type Listener } from "./util/events.js";

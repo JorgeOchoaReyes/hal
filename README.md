@@ -39,8 +39,17 @@ while developing, or self-host it as a shared regression suite.
 - **LLM judge (pass/fail).** Combines fast deterministic rules (contains, regex,
   latency, turn counts) with an LLM evaluating natural-language criteria. Modes:
   `all`, `rules-only`, `llm-only`.
-- **Live streaming UI.** Watch the transcript, live assertions, and verdict
-  appear in real time as the call runs.
+- **Provider templates.** One reusable recipe per way of placing a call (mock,
+  Twilio telephony, WebRTC, SIP): each declares its config fields and required
+  env, so the UI renders a form and builds a runnable target for you.
+- **Create simulations in the UI.** Compose a test from a provider template, a
+  caller persona, a turn-by-turn scenario, and pass criteria — no code. Saved to
+  disk so simulations and past runs survive restarts.
+- **Metrics & labels per call.** Every run is scored and labeled — pass/fail,
+  judge score, turn counts, target latency (p50/p95/max), verbosity, live-check
+  pass rate — surfaced live and on each simulation's run history.
+- **Live streaming UI.** Watch the transcript, live assertions, verdict, and
+  metrics appear in real time as the call runs.
 - **Two ways to run it:** a self-hostable **web app** (Next.js) and a
   **desktop app** (Electron) that bundles it for offline local use.
 
@@ -117,6 +126,8 @@ Copy `.env.example` to `.env`:
 | `DEEPGRAM_API_KEY` | Speech-to-text for real audio calls. |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Real PSTN calls. |
 | `HAL_PUBLIC_URL` | Publicly reachable base URL for Twilio / WebRTC callbacks. |
+| `HAL_MEDIA_PORT` | Port the web app starts its media server on when Twilio is configured (default 8787). |
+| `HAL_DATA_DIR` | Where simulations and run results are persisted (default `./data`). |
 
 No keys? Everything still runs in **mock mode**.
 

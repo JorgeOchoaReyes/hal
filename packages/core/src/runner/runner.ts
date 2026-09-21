@@ -13,6 +13,7 @@ import { Judge } from "../judge/judge.js";
 import { LLMClient } from "../llm/client.js";
 import { TypedEmitter, sleep } from "../util/events.js";
 import { id, now } from "../util/id.js";
+import { computeMetrics, deriveLabels } from "../metrics/metrics.js";
 
 export interface RunnerDeps {
   /** Resolve the transport for a given target transport kind. */
@@ -186,6 +187,8 @@ export class TestRunner {
       liveChecks,
       externalCallId,
     };
+    result.metrics = computeMetrics(result);
+    result.labels = deriveLabels(result.metrics);
 
     setStatus(status);
     events.emit({ type: "done", result });

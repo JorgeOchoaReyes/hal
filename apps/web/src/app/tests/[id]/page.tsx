@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTestCase } from "@/lib/store";
+import { getTestCase, listResults } from "@/lib/store";
 import RunPanel from "@/components/RunPanel";
 import type { ScenarioStep, JudgeRule, Target } from "@hal/core";
 
@@ -14,6 +14,7 @@ export default async function TestDetailPage({
   const { id } = await params;
   const tc = getTestCase(id);
   if (!tc) notFound();
+  const results = listResults(id).slice(0, 10);
 
   return (
     <>
@@ -27,6 +28,27 @@ export default async function TestDetailPage({
       <p className="sub">{tc.scenario.description}</p>
 
       <RunPanel testCaseId={tc.id} />
+
+      {results.length > 0 && (
+        <>
+          <h2>Recent runs</h2>
+          <div className="card">
+            {results.map((r) => (
+              <div className="card-row" key={r.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  {new Date(r.startedAt).toLocaleString()}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  {(r.labels ?? []).map((l, i) => (
+                    <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+                  ))}
+                  {!r.labels && <span className={`pill ${r.status}`}>{r.status}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h2>Target under test</h2>
       <div className="card">

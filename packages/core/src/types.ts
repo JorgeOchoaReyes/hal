@@ -209,6 +209,10 @@ export interface TestResult {
   error?: string;
   /** Provider call id (Twilio SID, room id, etc.). */
   externalCallId?: string;
+  /** Computed per-call metrics (attached when the run finishes). */
+  metrics?: import("./metrics/metrics.js").CallMetrics;
+  /** Human-readable labels derived from the metrics. */
+  labels?: import("./metrics/metrics.js").Label[];
 }
 
 // ---------------------------------------------------------------------------

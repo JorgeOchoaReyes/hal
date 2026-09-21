@@ -42,6 +42,9 @@ importers:
       '@hal/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@hal/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       next:
         specifier: ^15.1.3
         version: 15.5.25(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
