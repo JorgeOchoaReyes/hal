@@ -15,6 +15,21 @@ import { StructuredTest, compileStructuredToPrompt, firstMessageOf } from "../..
 
 export type FetchLike = typeof fetch;
 
+/** Wrap a fetch with an abort-on-timeout, so a hung provider can't stall a run. */
+export function withTimeout(f: FetchLike, ms = 20000): FetchLike {
+  return ((url: Parameters<FetchLike>[0], init?: Parameters<FetchLike>[1]) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    return f(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+  }) as FetchLike;
+}
+
+/** Result of a credential pre-flight check. */
+export interface CredentialCheck {
+  ok: boolean;
+  detail?: string;
+}
+
 export interface ProviderAccount {
   id: string;
   provider: string; // integration id, e.g. "vapi"
@@ -83,6 +98,11 @@ export interface VoiceProviderIntegration {
    * provisioning.
    */
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown>;
+  /**
+   * Pre-flight: make a cheap authenticated request to confirm the credentials
+   * work, so the user validates a connection before spending a call.
+   */
+  verifyCredentials(account: ProviderAccount): Promise<CredentialCheck>;
   /**
    * The platform's NATIVE NODE/GRAPH config (Bland pathway, Vapi workflow,
    * Retell conversation flow, ElevenLabs workflow) compiled from the spec's
