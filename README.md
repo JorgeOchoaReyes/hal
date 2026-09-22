@@ -336,8 +336,23 @@ Next.js standalone server offline.
 ```bash
 pnpm web                                   # start the web app on :3000
 pnpm desktop                               # launch the Electron shell (loads HAL_WEB_URL)
-pnpm --filter @hal/desktop package         # build a distributable (electron-builder)
+pnpm --filter @hal/desktop package         # build an offline distributable (dmg/nsis/AppImage)
 ```
+
+`package` builds the web app's standalone server, stages it into the app
+(`scripts/stage-web.mjs`), and runs electron-builder. The packaged app boots that
+server **in-process** and runs entirely offline — no external host needed. This is
+the recommended way to run HAL: as a long-lived local process, SQLite persistence,
+the media servers, and real calls (with your own keys) all work, which they don't
+on serverless hosts.
+
+- **Where data lives:** the packaged app stores everything (simulations, results,
+  provider accounts, targets) under the OS user-data dir — e.g.
+  `~/Library/Application Support/HAL/data` on macOS — so it persists across
+  launches and app updates.
+- **SQLite vs JSON:** the SQLite backend needs Node ≥ 22.5. Electron 33 ships
+  Node 20, so a packaged build transparently uses the JSON backend (also durable);
+  bump Electron to a Node 22.5+ release to get SQLite in the desktop app.
 
 The Electron binary is fetched by `pnpm install`; if your install skipped build
 scripts, run `pnpm --filter @hal/desktop exec electron --version` once to trigger

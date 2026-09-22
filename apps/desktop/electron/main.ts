@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell } from "electron";
 import { spawn, ChildProcess } from "node:child_process";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import http from "node:http";
@@ -20,10 +20,12 @@ let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 
 function resolveStandaloneServer(): string | null {
-  // electron-builder unpacks the web app's standalone output next to us.
+  // Staged by scripts/stage-web.mjs into resources/web (electron-builder
+  // extraResources), or found in the monorepo during local packaging.
   const candidates = [
+    join(process.resourcesPath ?? "", "web", "apps", "web", "server.js"),
+    join(__dirname, "..", "resources", "web", "apps", "web", "server.js"),
     join(__dirname, "..", "..", "web", ".next", "standalone", "apps", "web", "server.js"),
-    join(process.resourcesPath ?? "", "web", "server.js"),
   ];
   return candidates.find((p) => existsSync(p)) ?? null;
 }
@@ -52,8 +54,21 @@ async function resolveAppUrl(): Promise<string> {
   const server = resolveStandaloneServer();
   if (!server) return DEV_URL;
 
+  // Persist HAL's data (SQLite/JSON) in the OS user-data dir, which is writable
+  // and durable — never inside the read-only app bundle.
+  const dataDir = join(app.getPath("userData"), "data");
+
   serverProcess = spawn(process.execPath, [server], {
-    env: { ...process.env, PORT: String(PORT), NODE_ENV: "production" },
+    // Run the bundled Electron binary as plain Node, not a second app window.
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      PORT: String(PORT),
+      NODE_ENV: "production",
+      HAL_DATA_DIR: dataDir,
+    },
+    // cwd = the server dir so Next resolves ./.next/static and ./public.
+    cwd: dirname(server),
     stdio: "inherit",
   });
   const url = `http://localhost:${PORT}`;
