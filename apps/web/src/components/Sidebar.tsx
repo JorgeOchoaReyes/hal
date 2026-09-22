@@ -36,12 +36,18 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Providers",
+    title: "Agents",
     items: [
       {
-        href: "/agents",
-        label: "Hosted agents",
+        href: "/targets",
+        label: "My agents",
         icon: icon("M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4ZM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"),
+        match: (p) => p.startsWith("/targets"),
+      },
+      {
+        href: "/agents",
+        label: "Providers",
+        icon: icon("M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z"),
         match: (p) => p.startsWith("/agents"),
       },
     ],

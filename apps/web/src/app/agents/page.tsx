@@ -1,4 +1,3 @@
-import Link from "next/link";
 import HostedAgents from "@/components/HostedAgents";
 
 export const dynamic = "force-dynamic";
@@ -6,14 +5,11 @@ export const dynamic = "force-dynamic";
 export default function AgentsPage() {
   return (
     <>
-      <p style={{ marginTop: 20 }}>
-        <Link href="/">← All suites</Link>
-      </p>
-      <h1>Hosted testing agents</h1>
-      <p className="sub">
-        Connect a voice platform (Vapi, ElevenLabs) with your own credentials. HAL creates a testing
-        agent on that platform on your behalf, stores it, and uses it to place real test calls to a
-        target number — then judges the transcript.
+      <h1 style={{ margin: 0 }}>Providers &amp; credentials</h1>
+      <p className="sub" style={{ marginTop: 4 }}>
+        Connect a voice platform (Vapi, ElevenLabs, Bland, Retell) with your own credentials. HAL
+        keeps <strong>one reusable testing agent per provider</strong> — the caller it uses to run
+        your simulations — and reconfigures it for each run. Re-provisioning edits that same agent.
       </p>
       <HostedAgents />
     </>

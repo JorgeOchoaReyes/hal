@@ -10,7 +10,7 @@ import {
   type TestCase,
   type StructuredTest,
 } from "@hal/core";
-import { upsertTestCase } from "@/lib/store";
+import { upsertTestCase, getTarget } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +18,8 @@ interface SimulationDraft {
   name: string;
   providerId: string;
   targetConfig: Record<string, string>;
+  /** When set, the simulation targets a saved "My agents" entry by id. */
+  targetAgentId?: string;
   persona: Persona;
   steps: ScenarioStep[];
   structured?: StructuredTest;
@@ -40,22 +42,34 @@ interface SimulationDraft {
 export async function POST(req: NextRequest) {
   const draft = (await req.json()) as SimulationDraft;
 
-  if (!draft?.name || !draft?.providerId) {
-    return NextResponse.json({ error: "name and providerId are required" }, { status: 400 });
-  }
-  const template = getProviderTemplate(draft.providerId);
-  if (!template) {
-    return NextResponse.json({ error: `Unknown provider "${draft.providerId}"` }, { status: 400 });
+  if (!draft?.name) {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const missing = template.fields
-    .filter((f) => f.required && !draft.targetConfig?.[f.key]?.trim())
-    .map((f) => f.label);
-  if (missing.length > 0) {
-    return NextResponse.json(
-      { error: `Missing required fields: ${missing.join(", ")}` },
-      { status: 400 },
-    );
+  // Two ways to set the target: pick a saved "My agents" entry, or configure one
+  // inline via a provider template.
+  const savedTarget = draft.targetAgentId ? getTarget(draft.targetAgentId) : undefined;
+  if (draft.targetAgentId && !savedTarget) {
+    return NextResponse.json({ error: "Unknown target agent" }, { status: 400 });
+  }
+
+  const template = savedTarget ? undefined : getProviderTemplate(draft.providerId);
+  if (!savedTarget) {
+    if (!draft.providerId) {
+      return NextResponse.json({ error: "providerId or targetAgentId is required" }, { status: 400 });
+    }
+    if (!template) {
+      return NextResponse.json({ error: `Unknown provider "${draft.providerId}"` }, { status: 400 });
+    }
+    const missing = template.fields
+      .filter((f) => f.required && !draft.targetConfig?.[f.key]?.trim())
+      .map((f) => f.label);
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing required fields: ${missing.join(", ")}` },
+        { status: 400 },
+      );
+    }
   }
 
   const persona: Persona = {
@@ -88,7 +102,10 @@ export async function POST(req: NextRequest) {
       maxTurns: draft.maxTurns,
       maxDurationMs: draft.maxDurationMs,
     },
-    target: template.buildTarget(`${draft.name} target`, draft.targetConfig ?? {}),
+    target: savedTarget
+      ? savedTarget.target
+      : template!.buildTarget(`${draft.name} target`, draft.targetConfig ?? {}),
+    targetAgentId: savedTarget?.id,
     judge: {
       mode: draft.judge?.mode ?? "all",
       rules: draft.judge?.rules ?? [],

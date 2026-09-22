@@ -21,12 +21,22 @@ interface ProviderView {
   missingEnv: string[];
 }
 
+interface SavedTarget {
+  id: string;
+  name: string;
+  target: { transport: string };
+  description?: string;
+}
+
 export default function SimulationForm() {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [providerId, setProviderId] = useState("mock");
   const [name, setName] = useState("");
   const [tags, setTags] = useState("");
   const [targetConfig, setTargetConfig] = useState<Record<string, string>>({});
+  const [savedTargets, setSavedTargets] = useState<SavedTarget[]>([]);
+  // "" = configure inline; otherwise a saved "My agents" id.
+  const [targetAgentId, setTargetAgentId] = useState("");
   const [personaName, setPersonaName] = useState("Everyday customer");
   const [personaPrompt, setPersonaPrompt] = useState(
     "You are a polite but busy customer calling a business. Answer questions directly.",
@@ -59,6 +69,10 @@ export default function SimulationForm() {
         if (mock) applyDefaults(mock);
       })
       .catch(() => setError("Failed to load providers"));
+    fetch("/api/targets")
+      .then((r) => r.json())
+      .then((d) => setSavedTargets(d.targets ?? []))
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -87,6 +101,7 @@ export default function SimulationForm() {
           name,
           providerId,
           targetConfig,
+          targetAgentId: targetAgentId || undefined,
           persona: { name: personaName, systemPrompt: personaPrompt },
           steps: mode === "steps" ? steps : undefined,
           structured: mode === "structured" ? structured : undefined,
@@ -121,6 +136,26 @@ export default function SimulationForm() {
         </Field>
       </section>
 
+      <section className="card">
+        <h2 style={{ marginTop: 0 }}>Target — agent under test</h2>
+        <Field label="Use a saved agent (from My agents)" help="Pick a registered target, or configure one inline below.">
+          <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)}>
+            <option value="">Configure inline…</option>
+            {savedTargets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.target.transport})
+              </option>
+            ))}
+          </select>
+        </Field>
+        {!targetAgentId && savedTargets.length === 0 && (
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            Tip: add reusable targets on the <a href="/targets">My agents</a> page.
+          </p>
+        )}
+      </section>
+
+      {!targetAgentId && (
       <section className="card">
         <h2 style={{ marginTop: 0 }}>Provider template</h2>
         <div className="provider-grid">
@@ -167,6 +202,7 @@ export default function SimulationForm() {
           </>
         )}
       </section>
+      )}
 
       <section className="card">
         <h2 style={{ marginTop: 0 }}>Persona (the caller)</h2>

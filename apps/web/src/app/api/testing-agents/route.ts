@@ -7,7 +7,7 @@ import {
   type StructuredTest,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, listAgents, upsertAgent } from "@/lib/store";
+import { getAccountRaw, listAgents, upsertAgent, getAgentForAccount } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,17 +60,21 @@ export async function POST(req: NextRequest) {
   try {
     const { externalAgentId } = await integration.createTestingAgent(account, spec);
 
+    // One reusable testing agent per provider account: reuse the existing
+    // record's HAL id (and creation time) if present, so re-provisioning edits
+    // the same agent instead of piling up new ones.
+    const existing = getAgentForAccount(account.id);
     const agent: HostedTestingAgent = {
-      id: id("agent"),
+      id: existing?.id ?? id("agent"),
       accountId: account.id,
       provider: account.provider,
       externalAgentId,
-      name: body.name || "HAL tester",
-      createdAt: Date.now(),
+      name: body.name || existing?.name || "HAL tester",
+      createdAt: existing?.createdAt ?? Date.now(),
       spec,
     };
     upsertAgent(agent);
-    return NextResponse.json({ agent }, { status: 201 });
+    return NextResponse.json({ agent, updated: Boolean(existing) }, { status: existing ? 200 : 201 });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   }
