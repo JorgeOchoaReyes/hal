@@ -1,5 +1,6 @@
 import { Transcript } from "../../types.js";
 import { ProviderField } from "../templates.js";
+import { structuredToFlow, toVapiWorkflow } from "../../simulation/flow.js";
 import {
   VoiceProviderIntegration,
   ProviderAccount,
@@ -46,6 +47,12 @@ export class VapiIntegration implements VoiceProviderIntegration {
       authorization: `Bearer ${account.credentials.apiKey ?? ""}`,
       "content-type": "application/json",
     };
+  }
+
+  buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
+    return spec.structured
+      ? toVapiWorkflow(structuredToFlow(spec.structured), spec.name)
+      : null;
   }
 
   /** Native Vapi assistant body — the deterministic reproduction of the spec. */

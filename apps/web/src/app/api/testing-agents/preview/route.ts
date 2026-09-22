@@ -42,5 +42,10 @@ export async function POST(req: NextRequest) {
     structured: body.structured,
   };
 
-  return NextResponse.json({ provider: integration.id, config: integration.buildAgentConfig(spec) });
+  return NextResponse.json({
+    provider: integration.id,
+    // Node-based native config is preferred when the platform supports it.
+    flow: integration.buildFlowConfig(spec),
+    config: integration.buildAgentConfig(spec),
+  });
 }

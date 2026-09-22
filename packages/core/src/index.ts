@@ -32,6 +32,17 @@ export {
   type TextSegment,
   type RenderedAction,
 } from "./simulation/tags.js";
+export {
+  structuredToFlow,
+  toBlandPathway,
+  toVapiWorkflow,
+  toRetellConversationFlow,
+  toElevenLabsWorkflow,
+  type ConversationFlow,
+  type FlowNode,
+  type FlowEdge,
+  type FlowNodeType,
+} from "./simulation/flow.js";
 
 // Transports
 export * from "./transport/transport.js";
@@ -100,6 +111,7 @@ export {
   VapiIntegration,
   ElevenLabsIntegration,
   BlandIntegration,
+  RetellIntegration,
   runHostedCall,
   type VoiceProviderIntegration,
   type ProviderAccount,

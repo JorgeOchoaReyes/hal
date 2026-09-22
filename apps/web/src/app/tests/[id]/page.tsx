@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTestCase, listResults } from "@/lib/store";
 import RunPanel from "@/components/RunPanel";
+import DispatchHosted from "@/components/DispatchHosted";
 import type { ScenarioStep, JudgeRule, Target } from "@hal/core";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,13 @@ export default async function TestDetailPage({
       <p className="sub">{tc.scenario.description}</p>
 
       <RunPanel testCaseId={tc.id} />
+
+      {tc.scenario.structured && (
+        <>
+          <h2>Dispatch to a hosted provider</h2>
+          <DispatchHosted testCaseId={tc.id} />
+        </>
+      )}
 
       {results.length > 0 && (
         <>

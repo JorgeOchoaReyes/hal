@@ -166,7 +166,8 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      setPreview(JSON.stringify(data.config, null, 2));
+      // Prefer the node-based flow config when the platform produced one.
+      setPreview(JSON.stringify(data.flow ?? data.config, null, 2));
     } catch (e) {
       setErr((e as Error).message);
     }

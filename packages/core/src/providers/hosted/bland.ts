@@ -13,6 +13,7 @@ import {
   resolveSpecPrompt,
 } from "./integration.js";
 import { structuredToSteps } from "../../simulation/structured.js";
+import { structuredToFlow, toBlandPathway } from "../../simulation/flow.js";
 
 /**
  * Bland AI integration.
@@ -52,6 +53,12 @@ export class BlandIntegration implements VoiceProviderIntegration {
       authorization: account.credentials.apiKey ?? "",
       "content-type": "application/json",
     };
+  }
+
+  buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
+    return spec.structured
+      ? toBlandPathway(structuredToFlow(spec.structured), spec.name)
+      : null;
   }
 
   /** Native Bland agent body. Steps are also attached for traceability. */

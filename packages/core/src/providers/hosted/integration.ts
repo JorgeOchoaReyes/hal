@@ -83,6 +83,13 @@ export interface VoiceProviderIntegration {
    * provisioning.
    */
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown>;
+  /**
+   * The platform's NATIVE NODE/GRAPH config (Bland pathway, Vapi workflow,
+   * Retell conversation flow, ElevenLabs workflow) compiled from the spec's
+   * Structured Test — the preferred step-by-step reproduction. Returns null when
+   * the spec has no structured test to lower into a graph.
+   */
+  buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null;
   /** Create (provision) a testing agent on the platform; returns its id. */
   createTestingAgent(
     account: ProviderAccount,

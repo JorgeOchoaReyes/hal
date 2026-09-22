@@ -1,5 +1,6 @@
 import { Transcript } from "../../types.js";
 import { ProviderField } from "../templates.js";
+import { structuredToFlow, toElevenLabsWorkflow } from "../../simulation/flow.js";
 import {
   VoiceProviderIntegration,
   ProviderAccount,
@@ -45,6 +46,12 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
       "xi-api-key": account.credentials.apiKey ?? "",
       "content-type": "application/json",
     };
+  }
+
+  buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
+    return spec.structured
+      ? toElevenLabsWorkflow(structuredToFlow(spec.structured), spec.name)
+      : null;
   }
 
   /** Native ElevenLabs ConvAI agent body — deterministic reproduction of the spec. */
