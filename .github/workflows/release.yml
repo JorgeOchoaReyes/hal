@@ -11,6 +11,10 @@ on:
   push:
     tags:
       - "v*"
+  # Also allow starting a release manually (Actions → Release desktop app → Run
+  # workflow), so a release can be cut without pushing a tag. electron-builder
+  # names the GitHub Release from apps/desktop/package.json "version".
+  workflow_dispatch: {}
 
 permissions:
   contents: write # create/upload the GitHub Release
