@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Sidebar from "@/components/Sidebar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,26 +12,30 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <header className="topbar">
-          <div className="container">
-            <Link href="/" className="brand">
-              <span className="eye" aria-hidden />
-              <span>
-                HAL <small>voice ai test lab</small>
-              </span>
-            </Link>
-            <nav style={{ display: "flex", gap: 8 }}>
-              <Link href="/agents" className="btn secondary">
-                Hosted agents
-              </Link>
-              <Link href="/" className="btn secondary">
-                Dashboard
-              </Link>
-            </nav>
+      {/* suppressHydrationWarning: browser extensions commonly inject attributes
+          onto <body> before React hydrates, which is harmless. */}
+      <body suppressHydrationWarning>
+        <div className="app">
+          <Sidebar />
+          <div className="main">
+            <header className="appbar">
+              <div className="crumbs">
+                <span className="crumb-chip">HAL</span>
+                <span className="crumb-sep">/</span>
+                <span className="crumb-current">Voice AI Test Lab</span>
+              </div>
+              <div className="appbar-actions">
+                <Link href="/agents" className="btn secondary sm">
+                  Hosted agents
+                </Link>
+                <Link href="/tests/new" className="btn sm">
+                  + New simulation
+                </Link>
+              </div>
+            </header>
+            <main className="content">{children}</main>
           </div>
-        </header>
-        <main className="container">{children}</main>
+        </div>
       </body>
     </html>
   );
