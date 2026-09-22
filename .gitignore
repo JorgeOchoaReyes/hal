@@ -34,3 +34,6 @@ recordings/
 .vscode/*
 !.vscode/extensions.json
 coverage/
+
+# Desktop packaging: staged web server (build artifact)
+apps/desktop/resources/

@@ -10,8 +10,9 @@
     "start": "electron .",
     "smoke": "tsc -p tsconfig.json && HAL_WEB_URL=${HAL_WEB_URL:-http://localhost:3000} HAL_SCREENSHOT=${HAL_SCREENSHOT:-hal-desktop.png} xvfb-run -a electron --no-sandbox --disable-gpu .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "package": "electron-builder",
-    "clean": "rm -rf dist .turbo release"
+    "stage:web": "pnpm --filter @hal/web build && node scripts/stage-web.mjs",
+    "package": "pnpm build && pnpm stage:web && electron-builder",
+    "clean": "rm -rf dist .turbo release resources"
   },
   "dependencies": {
     "@hal/web": "workspace:*"
@@ -26,6 +27,10 @@
     "appId": "ai.hal.desktop",
     "productName": "HAL",
     "files": ["dist/**", "node_modules/**"],
-    "directories": { "output": "release" }
+    "extraResources": [{ "from": "resources/web", "to": "web" }],
+    "directories": { "output": "release" },
+    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg", "zip"] },
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage"], "category": "Development" }
   }
 }
