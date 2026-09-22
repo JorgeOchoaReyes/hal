@@ -10,7 +10,7 @@
     "start": "electron .",
     "smoke": "tsc -p tsconfig.json && HAL_WEB_URL=${HAL_WEB_URL:-http://localhost:3000} HAL_SCREENSHOT=${HAL_SCREENSHOT:-hal-desktop.png} xvfb-run -a electron --no-sandbox --disable-gpu .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "stage:web": "pnpm --filter @hal/web build && node scripts/stage-web.mjs",
+    "stage:web": "pnpm --filter @hal/web... build && node scripts/stage-web.mjs",
     "package": "pnpm build && pnpm stage:web && electron-builder",
     "release": "pnpm build && pnpm stage:web && electron-builder --publish always",
     "clean": "rm -rf dist .turbo release resources"
