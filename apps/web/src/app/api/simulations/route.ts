@@ -20,6 +20,8 @@ interface SimulationDraft {
   targetConfig: Record<string, string>;
   /** When set, the simulation targets a saved "My agents" entry by id. */
   targetAgentId?: string;
+  /** When set, the simulation runs with this provisioned testing agent. */
+  testingAgentId?: string;
   persona: Persona;
   steps: ScenarioStep[];
   structured?: StructuredTest;
@@ -106,6 +108,7 @@ export async function POST(req: NextRequest) {
       ? savedTarget.target
       : template!.buildTarget(`${draft.name} target`, draft.targetConfig ?? {}),
     targetAgentId: savedTarget?.id,
+    testingAgentId: draft.testingAgentId,
     judge: {
       mode: draft.judge?.mode ?? "all",
       rules: draft.judge?.rules ?? [],

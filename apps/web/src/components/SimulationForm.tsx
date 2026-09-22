@@ -37,6 +37,9 @@ export default function SimulationForm() {
   const [savedTargets, setSavedTargets] = useState<SavedTarget[]>([]);
   // "" = configure inline; otherwise a saved "My agents" id.
   const [targetAgentId, setTargetAgentId] = useState("");
+  const [testingAgents, setTestingAgents] = useState<Array<{ id: string; name: string; provider: string }>>([]);
+  // "" = provision ad-hoc at dispatch; otherwise a provisioned testing agent id.
+  const [testingAgentId, setTestingAgentId] = useState("");
   const [personaName, setPersonaName] = useState("Everyday customer");
   const [personaPrompt, setPersonaPrompt] = useState(
     "You are a polite but busy customer calling a business. Answer questions directly.",
@@ -73,6 +76,10 @@ export default function SimulationForm() {
       .then((r) => r.json())
       .then((d) => setSavedTargets(d.targets ?? []))
       .catch(() => undefined);
+    fetch("/api/testing-agents")
+      .then((r) => r.json())
+      .then((d) => setTestingAgents(d.agents ?? []))
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -102,6 +109,7 @@ export default function SimulationForm() {
           providerId,
           targetConfig,
           targetAgentId: targetAgentId || undefined,
+          testingAgentId: testingAgentId || undefined,
           persona: { name: personaName, systemPrompt: personaPrompt },
           steps: mode === "steps" ? steps : undefined,
           structured: mode === "structured" ? structured : undefined,
@@ -153,6 +161,19 @@ export default function SimulationForm() {
             Tip: add reusable targets on the <a href="/targets">My agents</a> page.
           </p>
         )}
+        <Field
+          label="Testing agent (the caller, optional)"
+          help="Run this simulation with a specific provisioned testing agent. Leave as Auto to provision one on dispatch. Its prompt is reconfigured for this simulation each run."
+        >
+          <select value={testingAgentId} onChange={(e) => setTestingAgentId(e.target.value)}>
+            <option value="">Auto — provision at dispatch</option>
+            {testingAgents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.provider})
+              </option>
+            ))}
+          </select>
+        </Field>
       </section>
 
       {!targetAgentId && (

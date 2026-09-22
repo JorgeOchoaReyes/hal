@@ -7,7 +7,7 @@ import {
   type StructuredTest,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, listAgents, upsertAgent, getAgentForAccount } from "@/lib/store";
+import { getAccountRaw, listAgents, upsertAgent, getAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     model?: string;
     /** Optional: compile a structured test into the agent's deterministic prompt. */
     structured?: StructuredTest;
+    /** When set, edit this existing agent in place instead of creating a new one. */
+    agentId?: string;
   };
 
   const account = getAccountRaw(body.accountId);
@@ -60,10 +62,10 @@ export async function POST(req: NextRequest) {
   try {
     const { externalAgentId } = await integration.createTestingAgent(account, spec);
 
-    // One reusable testing agent per provider account: reuse the existing
-    // record's HAL id (and creation time) if present, so re-provisioning edits
-    // the same agent instead of piling up new ones.
-    const existing = getAgentForAccount(account.id);
+    // Multiple named testing agents per account are allowed. Editing an existing
+    // one (agentId given) keeps its HAL id and creation time; otherwise a new
+    // agent is created so simulations can choose between several.
+    const existing = body.agentId ? getAgent(body.agentId) : undefined;
     const agent: HostedTestingAgent = {
       id: existing?.id ?? id("agent"),
       accountId: account.id,
