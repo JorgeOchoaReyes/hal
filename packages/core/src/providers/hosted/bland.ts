@@ -77,8 +77,23 @@ export class BlandIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
-    // Best-effort: register a persistent Bland agent. If the endpoint shape
-    // differs, the caller still keeps the spec and can place task-based calls.
+    // Node-native: a structured test becomes a Bland Pathway. The returned
+    // pathway id is used to place the call (deterministic node graph).
+    if (spec.structured) {
+      const pathway = this.buildFlowConfig(spec)!;
+      const res = await this.fetchImpl(`${this.base}/v1/pathway`, {
+        method: "POST",
+        headers: this.headers(account),
+        body: JSON.stringify(pathway),
+      });
+      if (!res.ok) throw new Error(`Bland createPathway failed (${res.status}): ${await safeText(res)}`);
+      const data = (await res.json()) as { pathway_id?: string; id?: string };
+      const pathwayId = data.pathway_id ?? data.id;
+      if (!pathwayId) throw new Error("Bland createPathway returned no pathway id");
+      return { externalAgentId: pathwayId };
+    }
+
+    // Prompt mode: register a persistent Bland agent.
     const res = await this.fetchImpl(`${this.base}/v1/agents`, {
       method: "POST",
       headers: this.headers(account),
@@ -99,17 +114,25 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const resolved = agent.spec
       ? resolveSpecPrompt(agent.spec)
       : { systemPrompt: "You are a QA tester calling to evaluate a voice AI.", firstMessage: undefined };
+    // Node-native pathway call when the agent was built from a structured test.
+    const body = agent.spec?.structured
+      ? {
+          phone_number: target.phoneNumber,
+          pathway_id: agent.externalAgentId,
+          ...(account.credentials.from ? { from: account.credentials.from } : {}),
+        }
+      : {
+          phone_number: target.phoneNumber,
+          task: resolved.systemPrompt,
+          first_sentence: resolved.firstMessage,
+          voice: agent.spec?.voice,
+          ...(account.credentials.from ? { from: account.credentials.from } : {}),
+          wait_for_greeting: true,
+        };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
       headers: this.headers(account),
-      body: JSON.stringify({
-        phone_number: target.phoneNumber,
-        task: resolved.systemPrompt,
-        first_sentence: resolved.firstMessage,
-        voice: agent.spec?.voice,
-        ...(account.credentials.from ? { from: account.credentials.from } : {}),
-        wait_for_greeting: true,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`Bland send-call failed (${res.status}): ${await safeText(res)}`);
     const data = (await res.json()) as { call_id?: string; callId?: string };

@@ -74,6 +74,20 @@ export class VapiIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
+    // Node-native: a structured test becomes a Vapi Workflow; its id is used as
+    // workflowId when placing the call.
+    if (spec.structured) {
+      const wf = this.buildFlowConfig(spec)!;
+      const res = await this.fetchImpl(`${this.base}/workflow`, {
+        method: "POST",
+        headers: this.headers(account),
+        body: JSON.stringify(wf),
+      });
+      if (!res.ok) throw new Error(`Vapi createWorkflow failed (${res.status}): ${await safeText(res)}`);
+      const data = (await res.json()) as { id: string };
+      return { externalAgentId: data.id };
+    }
+
     const res = await this.fetchImpl(`${this.base}/assistant`, {
       method: "POST",
       headers: this.headers(account),
@@ -89,11 +103,15 @@ export class VapiIntegration implements VoiceProviderIntegration {
     agent: HostedTestingAgent,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }> {
+    // Node-native workflow call vs assistant call.
+    const ref = agent.spec?.structured
+      ? { workflowId: agent.externalAgentId }
+      : { assistantId: agent.externalAgentId };
     const res = await this.fetchImpl(`${this.base}/call`, {
       method: "POST",
       headers: this.headers(account),
       body: JSON.stringify({
-        assistantId: agent.externalAgentId,
+        ...ref,
         phoneNumberId: account.credentials.phoneNumberId,
         customer: { number: target.phoneNumber },
       }),

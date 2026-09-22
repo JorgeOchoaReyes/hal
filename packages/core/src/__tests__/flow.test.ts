@@ -63,14 +63,14 @@ test("Vapi / Retell / ElevenLabs serializers produce nodes + edges", () => {
   assert.ok(el.workflow.nodes.length >= 3);
 });
 
-test("Retell integration: buildFlowConfig emits a conversation flow; agent create is two-step", async () => {
+test("Retell buildFlowConfig emits a conversation flow; structured create binds a flow", async () => {
   const calls: string[] = [];
-  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = (async (url: string | URL | Request) => {
     const u = url.toString();
     calls.push(u);
     const body =
-      u.endsWith("/create-retell-llm")
-        ? { llm_id: "llm_1" }
+      u.endsWith("/create-conversation-flow")
+        ? { conversation_flow_id: "cf_1" }
         : u.endsWith("/create-agent")
           ? { agent_id: "agent_1" }
           : {};
@@ -84,6 +84,6 @@ test("Retell integration: buildFlowConfig emits a conversation flow; agent creat
   const account = { id: "a", provider: "retell", label: "R", credentials: { apiKey: "k", from: "+1" }, createdAt: 0 };
   const { externalAgentId } = await retell.createTestingAgent(account, spec);
   assert.equal(externalAgentId, "agent_1");
-  assert.ok(calls.some((c) => c.endsWith("/create-retell-llm")));
+  assert.ok(calls.some((c) => c.endsWith("/create-conversation-flow")));
   assert.ok(calls.some((c) => c.endsWith("/create-agent")));
 });

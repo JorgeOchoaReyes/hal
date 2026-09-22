@@ -65,20 +65,35 @@ export class RetellIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
-    const llmRes = await this.fetchImpl(`${this.base}/create-retell-llm`, {
-      method: "POST",
-      headers: this.headers(account),
-      body: JSON.stringify(this.buildAgentConfig(spec)),
-    });
-    if (!llmRes.ok) throw new Error(`Retell create-retell-llm failed (${llmRes.status}): ${await safeText(llmRes)}`);
-    const llm = (await llmRes.json()) as { llm_id: string };
+    // Node-native: a structured test becomes a Retell Conversation Flow; the
+    // agent is bound to it. Otherwise a Retell LLM carries the compiled prompt.
+    let responseEngine: Record<string, unknown>;
+    if (spec.structured) {
+      const cfRes = await this.fetchImpl(`${this.base}/create-conversation-flow`, {
+        method: "POST",
+        headers: this.headers(account),
+        body: JSON.stringify(this.buildFlowConfig(spec)!),
+      });
+      if (!cfRes.ok) throw new Error(`Retell create-conversation-flow failed (${cfRes.status}): ${await safeText(cfRes)}`);
+      const cf = (await cfRes.json()) as { conversation_flow_id: string };
+      responseEngine = { type: "conversation-flow", conversation_flow_id: cf.conversation_flow_id };
+    } else {
+      const llmRes = await this.fetchImpl(`${this.base}/create-retell-llm`, {
+        method: "POST",
+        headers: this.headers(account),
+        body: JSON.stringify(this.buildAgentConfig(spec)),
+      });
+      if (!llmRes.ok) throw new Error(`Retell create-retell-llm failed (${llmRes.status}): ${await safeText(llmRes)}`);
+      const llm = (await llmRes.json()) as { llm_id: string };
+      responseEngine = { type: "retell-llm", llm_id: llm.llm_id };
+    }
 
     const agentRes = await this.fetchImpl(`${this.base}/create-agent`, {
       method: "POST",
       headers: this.headers(account),
       body: JSON.stringify({
         agent_name: spec.name,
-        response_engine: { type: "retell-llm", llm_id: llm.llm_id },
+        response_engine: responseEngine,
         voice_id: spec.voice ?? "11labs-Adrian",
       }),
     });

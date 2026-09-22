@@ -57,15 +57,16 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
   /** Native ElevenLabs ConvAI agent body — deterministic reproduction of the spec. */
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown> {
     const { systemPrompt, firstMessage } = resolveSpecPrompt(spec);
-    return {
-      name: spec.name,
-      conversation_config: {
-        agent: {
-          prompt: { prompt: systemPrompt },
-          first_message: firstMessage ?? "Hello.",
-        },
-      },
+    const agent: Record<string, unknown> = {
+      prompt: { prompt: systemPrompt },
+      first_message: firstMessage ?? "Hello.",
     };
+    // Node-native: embed the compiled workflow graph when a structured test.
+    if (spec.structured) {
+      const flow = this.buildFlowConfig(spec) as { workflow?: unknown } | null;
+      if (flow?.workflow) agent.workflow = flow.workflow;
+    }
+    return { name: spec.name, conversation_config: { agent } };
   }
 
   async createTestingAgent(
