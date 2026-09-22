@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import http from "node:http";
+import { initUpdater } from "./updater.js";
 
 /**
  * HAL desktop shell.
@@ -123,7 +124,12 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  // Register the update IPC + check on launch. In dev/unpackaged it makes no
+  // network calls (reports "up to date"); real checks run only in packaged builds.
+  initUpdater();
+});
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

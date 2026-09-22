@@ -1,0 +1,49 @@
+name: Release desktop app
+
+# Cut a release by pushing a tag, e.g.:
+#   npm version --workspace @hal/desktop <x.y.z>   # or bump apps/desktop/package.json
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# electron-builder builds installers for macOS, Windows, and Linux and publishes
+# them (plus the latest*.yml update manifests electron-updater reads) to the
+# GitHub Release for the tag. The desktop app then auto-updates from there.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create/upload the GitHub Release
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, stage web, and publish installers
+        run: pnpm --filter @hal/desktop release
+        env:
+          # electron-builder publishes to GitHub Releases with this token.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing + notarization (optional but required for auto-update
+          # on macOS). Set these repo secrets to enable; unset = unsigned build.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

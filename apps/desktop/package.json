@@ -12,10 +12,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "stage:web": "pnpm --filter @hal/web build && node scripts/stage-web.mjs",
     "package": "pnpm build && pnpm stage:web && electron-builder",
+    "release": "pnpm build && pnpm stage:web && electron-builder --publish always",
     "clean": "rm -rf dist .turbo release resources"
   },
   "dependencies": {
-    "@hal/web": "workspace:*"
+    "@hal/web": "workspace:*",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -29,6 +31,7 @@
     "files": ["dist/**", "node_modules/**"],
     "extraResources": [{ "from": "resources/web", "to": "web" }],
     "directories": { "output": "release" },
+    "publish": [{ "provider": "github", "owner": "JorgeOchoaReyes", "repo": "hal" }],
     "mac": { "category": "public.app-category.developer-tools", "target": ["dmg", "zip"] },
     "win": { "target": ["nsis"] },
     "linux": { "target": ["AppImage"], "category": "Development" }
