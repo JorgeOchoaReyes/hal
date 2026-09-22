@@ -232,6 +232,26 @@ export interface TestCase {
   judge: JudgeSpec;
   createdAt?: number;
   tags?: string[];
+  /**
+   * Optional reference to a saved {@link TargetAgent} in the "My agents"
+   * registry. When set, the run resolves the live target from that agent so a
+   * simulation always calls the current address, and many simulations can share
+   * one target under test. `target` remains the inline fallback.
+   */
+  targetAgentId?: string;
+}
+
+/**
+ * A real agent under test — the thing HAL calls. Stored in the "My agents"
+ * registry so multiple simulations can point at the same target and its address
+ * (phone number / SIP URI / room) lives in one place.
+ */
+export interface TargetAgent {
+  id: string;
+  name: string;
+  target: Target;
+  description?: string;
+  createdAt: number;
 }
 
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "errored" | "aborted";

@@ -9,6 +9,7 @@ import {
   type ProviderAvailability,
   type ProviderAccount,
   type HostedTestingAgent,
+  type TargetAgent,
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
@@ -26,6 +27,7 @@ interface HalState {
   results: Map<string, TestResult>;
   accounts: Map<string, ProviderAccount>;
   agents: Map<string, HostedTestingAgent>;
+  targets: Map<string, TargetAgent>;
   engine: HalEngine;
   mediaServer?: MediaServer;
   mediaGateway?: MediaGateway;
@@ -58,6 +60,32 @@ function seed(): HalState {
   for (const a of db.loadAll<ProviderAccount>("accounts")) accounts.set(a.id, a);
   const agents = new Map<string, HostedTestingAgent>();
   for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
+
+  // "My agents" — the real targets under test. Seed from the sample sims so the
+  // registry isn't empty, and back-link each sample sim to its seeded target.
+  const targets = new Map<string, TargetAgent>();
+  const persistedTargets = db.loadAll<TargetAgent>("targets");
+  if (persistedTargets.length > 0) {
+    for (const t of persistedTargets) targets.set(t.id, t);
+  } else {
+    let n = 0;
+    for (const tc of testCases.values()) {
+      const key = `target-${tc.target.transport}-${++n}`;
+      const t: TargetAgent = {
+        id: key,
+        name: tc.target.name ?? `${tc.target.transport} target`,
+        target: tc.target,
+        description: tc.scenario.description,
+        createdAt: tc.createdAt ?? Date.now(),
+      };
+      targets.set(t.id, t);
+      db.put("targets", t.id, t, t.createdAt);
+      // Link the sample simulation to its target.
+      const linked = { ...tc, targetAgentId: t.id };
+      testCases.set(tc.id, linked);
+      db.put("testcases", tc.id, linked, tc.createdAt);
+    }
+  }
 
   // Start a media server for real telephony audio when Twilio is configured.
   let mediaServer: MediaServer | undefined;
@@ -94,7 +122,7 @@ function seed(): HalState {
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, engine, mediaServer, mediaGateway };
+  return { db, testCases, results, accounts, agents, targets, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -109,7 +137,16 @@ export function listTestCases(): TestCase[] {
 }
 
 export function getTestCase(id: string): TestCase | undefined {
-  return halState().testCases.get(id);
+  const s = halState();
+  const tc = s.testCases.get(id);
+  if (!tc) return undefined;
+  // Resolve the live target from the linked "My agents" entry, when set, so the
+  // simulation always runs against that target's current address.
+  if (tc.targetAgentId) {
+    const agent = s.targets.get(tc.targetAgentId);
+    if (agent) return { ...tc, target: agent.target };
+  }
+  return tc;
 }
 
 export function upsertTestCase(tc: TestCase): void {
@@ -174,6 +211,34 @@ export function upsertAgent(a: HostedTestingAgent): void {
   const s = halState();
   s.agents.set(a.id, a);
   s.db.put("agents", a.id, a, a.createdAt);
+}
+
+// --- Target agents ("My agents" — the real agents under test) ---------------
+
+export function listTargets(): TargetAgent[] {
+  return [...halState().targets.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getTarget(id: string): TargetAgent | undefined {
+  return halState().targets.get(id);
+}
+
+export function upsertTarget(t: TargetAgent): void {
+  const s = halState();
+  s.targets.set(t.id, t);
+  s.db.put("targets", t.id, t, t.createdAt);
+}
+
+export function deleteTarget(id: string): boolean {
+  const s = halState();
+  const ok = s.targets.delete(id);
+  if (ok) s.db.remove("targets", id);
+  return ok;
+}
+
+/** The single reusable testing agent for a provider account, if provisioned. */
+export function getAgentForAccount(accountId: string): HostedTestingAgent | undefined {
+  return [...halState().agents.values()].find((a) => a.accountId === accountId);
 }
 
 function redactAccount(a: ProviderAccount): ProviderAccount {
