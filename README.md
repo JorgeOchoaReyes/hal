@@ -172,45 +172,95 @@ const engine = new HalEngine({
 See `packages/core/src/transport/transport.ts` and
 `packages/core/src/speech/speech.ts` for the underlying contracts.
 
-## Testing against a real voice agent
+## Testing HAL
 
-Two paths, easiest first.
+There are four levels, from "no setup" to "real phone call". Do them in order.
 
-### A. Hosted testing agent (Vapi / ElevenLabs) — no media server needed
+> ⚠️ Only place automated calls to a number you own or are authorized to test.
+> The hosted-provider adapters are modeled from public API docs; your first live
+> call is the real check — if a payload is off, the fix is localized to that
+> provider's adapter in `packages/core/src/providers/hosted/`.
 
-HAL creates a testing agent **on your voice platform** using your credentials and
-tells that platform to call your target number. The platform handles all audio, so
-you need no Deepgram key, no public URL, and no media server.
+### 1. Run the automated tests (no setup)
 
 ```bash
-pnpm install && pnpm build
-OPENAI_API_KEY=sk-...   # (or ANTHROPIC_API_KEY) for the judge & metrics
-pnpm web                # http://localhost:3000
+pnpm install
+pnpm build
+pnpm test        # unit tests across @hal/core and @hal/media
+pnpm typecheck   # type-check everything
 ```
 
-1. Open **Hosted agents** (top nav).
-2. **Connect a provider account** — pick Vapi (or ElevenLabs), paste your API key
-   and phone-number id.
-3. **Provision a testing agent** — name it and write the tester's system prompt
-   (what it should try to do on the call).
-4. In the agent's row, enter your **target number** and hit **Place test call**.
-   HAL places the call via the platform, waits for it to finish, pulls the
-   transcript, and judges it — you'll see the status + metric labels inline.
-
-### B. HAL-driven telephony (Twilio + Deepgram)
-
-HAL itself drives the audio. Needs `TWILIO_*`, `DEEPGRAM_API_KEY`, and a public URL.
+### 2. Try the app in mock mode (no keys)
 
 ```bash
-export TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_FROM_NUMBER=+1...
-export DEEPGRAM_API_KEY=... HAL_PUBLIC_URL=https://<your-tunnel>
+pnpm web         # http://localhost:3000
+```
+
+Open the dashboard, pick a sample suite (*Booking — happy path*), and hit
+**Run test call**. HAL uses a deterministic mock caller + mock target and streams
+the transcript, live assertions, judge verdict, and metrics — the whole pipeline,
+offline. The mock LLM is intentionally simple; add an LLM key (next step) to make
+the caller and judge behave realistically.
+
+### 3. Build & judge your own simulation (LLM key)
+
+```bash
+export OPENAI_API_KEY=sk-...     # or ANTHROPIC_API_KEY — powers the caller & judge
 pnpm web
 ```
 
-Create a simulation with the **Twilio** provider template, enter your target
-number, and run it. (The media server starts automatically when Twilio env is set.)
+**+ New simulation** →
+1. Pick a **provider template** (use `mock` to iterate with no calls).
+2. Write the caller **persona**.
+3. Choose the conversation model:
+   - **Linear steps** — `say` / `prompt` / `wait` / `expect` / `branch` / `hangup`, or
+   - **Structured test** — a `role` + `conditions` decision tree (`FIRST_MESSAGE`,
+     standard triggers, `action_followup`) with control tags (`<endcall/>`,
+     `<dtmf/>`, `<silence/>`, …).
+4. Add **metrics** — boolean / rating (0–100%) / numeric / enum — and rules/criteria.
 
-> Only place automated calls to a number you own or are authorized to test.
+Run it and you'll see the transcript, verdict, typed metric results, and labels
+live; each simulation keeps a run history. Simulations and results persist to
+`HAL_DATA_DIR` (default `./data`).
+
+### 4. Call a real voice agent
+
+Two ways, easiest first.
+
+**A. Hosted testing agent (Vapi / ElevenLabs / Bland / Retell) — no media server.**
+HAL provisions a testing agent **on your platform** with your credentials and has
+that platform call your target number; the platform handles all audio (no Deepgram,
+no public URL, no media server).
+
+```bash
+export OPENAI_API_KEY=sk-...     # for the judge & metrics
+pnpm web
+```
+
+1. **Hosted agents** (top nav) → **Connect a provider account** (Vapi / ElevenLabs /
+   Bland / Retell) → paste your API key + phone-number id.
+2. **Provision a testing agent** — either a plain system prompt, or tick
+   **"Reproduce a structured test"** and paste a structured test. Hit
+   **Preview `<platform>` config** to see the exact **native node graph** HAL will
+   create (Bland pathway / Vapi workflow / Retell conversation flow / ElevenLabs
+   workflow).
+3. Enter your **target number** and **Place test call** — HAL places the call, waits,
+   pulls the transcript, and judges it (status + metric labels inline).
+
+Or **dispatch a saved structured simulation**: open the simulation → **Dispatch to a
+hosted provider** → pick an account + number. HAL compiles it into that platform's
+native node format, ad-hoc creates the agent, calls, and judges — all in one click.
+
+**B. HAL-driven telephony (Twilio + Deepgram).** HAL itself drives the audio.
+
+```bash
+export TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_FROM_NUMBER=+1...
+export DEEPGRAM_API_KEY=... HAL_PUBLIC_URL=https://<your-public-url-or-tunnel>
+pnpm web
+```
+
+Create a simulation with the **Twilio** provider template, enter your target number,
+and run it. The media server starts automatically when the Twilio env vars are set.
 
 ## Self-hosting
 
