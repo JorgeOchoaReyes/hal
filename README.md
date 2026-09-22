@@ -79,6 +79,13 @@ hal/
 speech) is reached over `fetch` or a pluggable interface, so the engine builds
 and runs anywhere.
 
+## Prerequisites
+
+- **Node.js ≥ 20** (≥ **22.5** recommended — the SQLite backend uses the built-in
+  `node:sqlite`; on older Node it transparently falls back to JSON files).
+- **pnpm 10** (`corepack enable` picks up the pinned `packageManager` version).
+- No API keys needed to start — everything runs in mock mode offline.
+
 ## Quick start
 
 ```bash
@@ -88,9 +95,17 @@ pnpm build
 # Web app (http://localhost:3000) — works immediately in mock mode
 pnpm web
 
-# Desktop app (needs the Electron binary; see below)
+# Run the full test/typecheck/build suite
+pnpm test
+
+# Desktop app (Electron shell around the web app; see Self-hosting → Desktop app)
 pnpm desktop
 ```
+
+That's the whole "what's needed to run": **install → build → `pnpm web`**, then
+open <http://localhost:3000>. Real models, calls, and persistence activate as
+soon as you add the matching keys in `.env` (see [Configuration](#configuration)) —
+nothing else is required.
 
 Open the dashboard, pick a sample suite (e.g. *Booking — happy path*), and hit
 **Run test call**. With no API keys, HAL uses a deterministic mock LLM and mock
@@ -133,11 +148,19 @@ Copy `.env.example` to `.env`:
 | Variable | Purpose |
 |----------|---------|
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | LLM for the persona **and** the judge. |
-| `DEEPGRAM_API_KEY` | Speech-to-text for real audio calls. |
+| `DEEPGRAM_API_KEY` | Speech-to-text/TTS for real audio calls. Also auto-starts the WebRTC/SIP media gateway. |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Real PSTN calls. |
 | `HAL_PUBLIC_URL` | Publicly reachable base URL for Twilio / WebRTC callbacks. |
-| `HAL_MEDIA_PORT` | Port the web app starts its media server on when Twilio is configured (default 8787). |
+| `HAL_MEDIA_PORT` | Port for the Twilio media server (default 8787; auto-starts with the `TWILIO_*` vars). |
+| `HAL_MEDIA_GATEWAY` | Set to `off` to disable the WebRTC/SIP gateway (default on when `DEEPGRAM_API_KEY` is set). |
+| `HAL_GATEWAY_PORT` | Port for the WebRTC/SIP media gateway (default 8788). |
 | `HAL_DATA_DIR` | Where simulations and run results are persisted (default `./data`). |
+| `HAL_DB` | Persistence backend: `sqlite` (default, needs Node ≥ 22.5) or `json`. |
+| `HAL_WEB_URL` | URL the desktop shell loads in dev (default `http://localhost:3000`). |
+
+Hosted providers (Vapi / ElevenLabs / Bland / Retell) don't use env vars — you add
+each account's API key in the app's **Hosted agents** panel, and it's stored in the
+local DB. Use the **Test connection** button there to verify a key before running.
 
 No keys? Everything still runs in **mock mode**.
 
@@ -303,6 +326,23 @@ node apps/web/.next/standalone/apps/web/server.js   # or: docker build -t hal .
 ```
 
 A `Dockerfile` is included for containerized deployment.
+
+### Desktop app
+
+The Electron shell wraps the same web app for a local, self-contained lab. In
+dev it points at a running web server; in a packaged build it boots the bundled
+Next.js standalone server offline.
+
+```bash
+pnpm web                                   # start the web app on :3000
+pnpm desktop                               # launch the Electron shell (loads HAL_WEB_URL)
+pnpm --filter @hal/desktop package         # build a distributable (electron-builder)
+```
+
+The Electron binary is fetched by `pnpm install`; if your install skipped build
+scripts, run `pnpm --filter @hal/desktop exec electron --version` once to trigger
+it. To prove it launches headlessly (CI / servers), `pnpm --filter @hal/desktop
+smoke` renders the app under `xvfb` and writes a screenshot.
 
 ## Development
 
