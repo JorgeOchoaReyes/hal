@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import NumberPicker from "./NumberPicker";
 
 interface Account {
   id: string;
@@ -69,11 +70,11 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               </option>
             ))}
           </select>
-          <input
+          <NumberPicker
+            accountId={selected}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={setPhone}
             placeholder="+14155550123 (target)"
-            style={{ width: "auto", flex: 1, minWidth: 200 }}
           />
           <button onClick={dispatch} disabled={busy || !phone.trim()}>
             {busy ? "Dispatching…" : "Dispatch to provider"}

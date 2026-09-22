@@ -8,6 +8,7 @@ import {
   HostedTarget,
   HostedCallState,
   HostedCallStatus,
+  HostedNumber,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -151,6 +152,38 @@ export class BlandIntegration implements VoiceProviderIntegration {
     return { externalCallId: callId };
   }
 
+  /**
+   * List the account's purchased Bland numbers so the UI can offer a picker.
+   * Bland numbers are usable both as the inbound target of a Bland agent and as
+   * the outbound caller id, so both capabilities are reported.
+   *
+   * Endpoint shape is modeled from Bland's public API and parsed defensively;
+   * on any non-OK response we return an empty list so the UI falls back to
+   * manual entry rather than erroring.
+   */
+  async listNumbers(account: ProviderAccount): Promise<HostedNumber[]> {
+    const res = await this.fetchImpl(`${this.base}/v1/inbound`, {
+      headers: this.headers(account),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => null)) as unknown;
+    const rows = extractNumberRows(data);
+    const out: HostedNumber[] = [];
+    for (const row of rows) {
+      const phoneNumber = String(
+        row.phone_number ?? row.number ?? row.phoneNumber ?? "",
+      ).trim();
+      if (!phoneNumber) continue;
+      const label = row.name ?? row.label ?? row.location ?? undefined;
+      out.push({
+        phoneNumber,
+        label: label ? String(label) : undefined,
+        capabilities: ["inbound", "outbound"],
+      });
+    }
+    return out;
+  }
+
   async getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState> {
     const res = await this.fetchImpl(`${this.base}/v1/calls/${externalCallId}`, {
       headers: this.headers(account),
@@ -175,6 +208,27 @@ interface BlandCall {
   completed?: boolean;
   error_message?: string;
   transcripts?: BlandTurn[];
+}
+
+type NumberRow = Record<string, unknown> & {
+  phone_number?: unknown;
+  number?: unknown;
+  phoneNumber?: unknown;
+  name?: unknown;
+  label?: unknown;
+  location?: unknown;
+};
+
+/** Pull the array of number records out of Bland's response, whatever its shape. */
+function extractNumberRows(data: unknown): NumberRow[] {
+  if (Array.isArray(data)) return data as NumberRow[];
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    for (const key of ["inbound_numbers", "numbers", "data", "inbound"]) {
+      if (Array.isArray(obj[key])) return obj[key] as NumberRow[];
+    }
+  }
+  return [];
 }
 
 function mapStatus(call: BlandCall): HostedCallStatus {
