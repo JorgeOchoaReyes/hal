@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import NumberPicker from "./NumberPicker";
 
 interface Integration {
   id: string;
@@ -369,7 +370,7 @@ function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+14155550123 (target number)" />
+        <NumberPicker accountId={agent.accountId} value={phone} onChange={setPhone} />
         <button onClick={call} disabled={busy || !phone.trim()}>{busy ? "Calling…" : "Place test call"}</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 6 }}>{err}</div>}

@@ -74,6 +74,15 @@ export interface HostedTarget {
   phoneNumber: string;
 }
 
+/** A phone number owned on a provider account, for the UI's number picker. */
+export interface HostedNumber {
+  phoneNumber: string;
+  /** Friendly label (name, region) when the provider supplies one. */
+  label?: string;
+  /** What the number can do, when known. */
+  capabilities?: Array<"inbound" | "outbound">;
+}
+
 export type HostedCallStatus = "queued" | "in-progress" | "ended" | "failed";
 
 export interface HostedCallState {
@@ -123,6 +132,13 @@ export interface VoiceProviderIntegration {
   ): Promise<{ externalCallId: string }>;
   /** Fetch the current state (and transcript, once ended) of a call. */
   getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState>;
+  /**
+   * List phone numbers owned on this account so the UI can offer a picker
+   * (target number, or a caller-id) instead of manual entry. Optional —
+   * providers that can't enumerate numbers omit it and the UI falls back to a
+   * plain text field, so the user can always type a number by hand.
+   */
+  listNumbers?(account: ProviderAccount): Promise<HostedNumber[]>;
 }
 
 const registry = new Map<string, VoiceProviderIntegration>();
