@@ -32,7 +32,13 @@
     "extraResources": [{ "from": "resources/web", "to": "web" }],
     "directories": { "output": "release" },
     "publish": [{ "provider": "github", "owner": "JorgeOchoaReyes", "repo": "hal" }],
-    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg", "zip"] },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"],
+      "identity": null,
+      "gatekeeperAssess": false
+    },
+    "dmg": { "writeUpdateInfo": false },
     "win": { "target": ["nsis"] },
     "linux": { "target": ["AppImage"], "category": "Development" }
   }
