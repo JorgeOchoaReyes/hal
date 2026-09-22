@@ -39,6 +39,21 @@ function set(patch: Partial<UpdateState>): void {
   broadcast();
 }
 
+/**
+ * Route an updater error. An unsigned macOS build cannot self-update (Squirrel.Mac
+ * requires a code signature), so we downgrade that specific failure to
+ * "unsupported / up to date" rather than showing a scary error — those users
+ * update by re-downloading. Real errors still surface.
+ */
+function failUpdater(err: unknown): void {
+  const message = String((err as Error)?.message ?? err);
+  if (process.platform === "darwin" && /sign|signature|identity|notariz/i.test(message)) {
+    set({ supported: false, status: "up-to-date", checkedAt: Date.now() });
+  } else {
+    set({ status: "error", error: message });
+  }
+}
+
 export function initUpdater(): void {
   state = { supported: app.isPackaged, currentVersion: app.getVersion(), status: "idle" };
 
@@ -52,7 +67,7 @@ export function initUpdater(): void {
   );
   autoUpdater.on("download-progress", (p) => set({ status: "downloading", percent: Math.round(p.percent) }));
   autoUpdater.on("update-downloaded", (info) => set({ status: "downloaded", latestVersion: info.version }));
-  autoUpdater.on("error", (err) => set({ status: "error", error: String(err?.message ?? err) }));
+  autoUpdater.on("error", (err) => failUpdater(err));
 
   ipcMain.handle("updates:get", () => state);
   ipcMain.handle("updates:check", async () => {
@@ -63,7 +78,7 @@ export function initUpdater(): void {
     try {
       await autoUpdater.checkForUpdates();
     } catch (e) {
-      set({ status: "error", error: (e as Error).message });
+      failUpdater(e);
     }
     return state;
   });
@@ -74,7 +89,7 @@ export function initUpdater(): void {
 
   // Check on launch (packaged builds only).
   if (state.supported) {
-    autoUpdater.checkForUpdates().catch((e) => set({ status: "error", error: (e as Error).message }));
+    autoUpdater.checkForUpdates().catch(failUpdater);
   } else {
     set({ status: "up-to-date", checkedAt: Date.now() });
   }

@@ -381,8 +381,20 @@ sync & restart** controls.
 
 - **macOS auto-update requires signing + notarization.** Set the `CSC_LINK`,
   `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-  `APPLE_TEAM_ID` repo secrets to enable it; unsigned builds still install but
-  can't self-update on macOS. Windows (NSIS) auto-update works unsigned.
+  `APPLE_TEAM_ID` repo secrets to enable it. Windows (NSIS) auto-update works
+  unsigned.
+
+**No Apple Developer account? Ship unsigned.** With none of those secrets set,
+the release builds an **unsigned** macOS app (`identity: null`) — it installs and
+runs, but:
+
+- **Gatekeeper blocks the first launch.** Users open it once with **right-click →
+  Open** (then *Open* in the dialog), or clear the quarantine flag in Terminal:
+  `xattr -cr /Applications/HAL.app`.
+- **Auto-update is disabled on unsigned macOS** (Squirrel.Mac needs a signature).
+  The app detects this and the Settings page shows it as manually-updated rather
+  than erroring — mac users re-download new versions from Releases. Windows keeps
+  auto-updating.
 
 ## Development
 
