@@ -1,67 +1,63 @@
-import Link from "next/link";
 import { listTestCases } from "@/lib/store";
+import SimulationsTable, { type SimRow } from "@/components/SimulationsTable";
+import type { TestCase } from "@hal/core";
 
 export const dynamic = "force-dynamic";
 
+function targetLabel(tc: TestCase): string {
+  const t = tc.target;
+  switch (t.transport) {
+    case "telephony":
+      return t.phoneNumber;
+    case "sip":
+      return t.uri;
+    case "webrtc":
+      return t.room ?? t.signalingUrl;
+    default:
+      return "in-process";
+  }
+}
+
+function metricCount(tc: TestCase): number {
+  const j = tc.judge;
+  return (j.metrics?.length ?? 0) + (j.criteria?.length ?? 0) + (j.rules?.length ?? 0);
+}
+
+function stepCount(tc: TestCase): number {
+  return tc.scenario.structured
+    ? tc.scenario.structured.conditions.length
+    : tc.scenario.steps.length;
+}
+
 export default function DashboardPage() {
-  const testCases = listTestCases();
+  const rows: SimRow[] = listTestCases().map((tc) => ({
+    id: tc.id,
+    name: tc.name,
+    persona: tc.scenario.persona.name,
+    transport: tc.target.transport,
+    target: targetLabel(tc),
+    steps: stepCount(tc),
+    metrics: metricCount(tc),
+    tags: tc.tags ?? [],
+  }));
 
   return (
     <>
-      <div className="card-row">
-        <h1 style={{ margin: 0 }}>Simulations</h1>
-        <Link href="/tests/new" className="btn">+ New simulation</Link>
-      </div>
-      <p className="sub">
-        Point a simulated caller at a voice AI, script it turn by turn, and let the judge
-        decide pass or fail. Everything below runs in <strong>mock mode</strong> with no
-        credentials — add Twilio / WebRTC config to place real calls.
-      </p>
-
-      {testCases.length === 0 && (
-        <div className="card muted">No test cases yet.</div>
-      )}
-
-      <div className="grid">
-        {testCases.map((tc) => {
-          const kind = tc.target.transport;
-          return (
-            <div className="card" key={tc.id}>
-              <div className="card-row">
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>
-                    <Link href={`/tests/${tc.id}`}>{tc.name}</Link>
-                  </div>
-                  <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-                    {tc.scenario.description ?? tc.scenario.name} · persona:{" "}
-                    {tc.scenario.persona.name} · {tc.scenario.steps.length} steps
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    {(tc.tags ?? []).map((t) => (
-                      <span className="tag" key={t}>
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span className={`pill ${kind}`}>{kind}</span>
-                  <Link href={`/tests/${tc.id}`} className="btn">
-                    Open
-                  </Link>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="card-row" style={{ marginTop: 28 }}>
+        <div>
+          <h1 style={{ margin: 0 }}>Simulations</h1>
+          <p className="sub" style={{ margin: "4px 0 0" }}>
+            Test scenarios that drive a simulated caller against a voice AI, each with a
+            persona and the metrics it should pass.
+          </p>
+        </div>
       </div>
 
-      <h2>How targeting works</h2>
-      <div className="card">
-        <p className="muted" style={{ marginTop: 0 }}>
-          HAL reaches the voice AI under test through a pluggable transport:
-        </p>
-        <ul className="muted">
+      <SimulationsTable rows={rows} />
+
+      <details className="card" style={{ marginTop: 18 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>How targeting works</summary>
+        <ul className="muted" style={{ marginBottom: 0 }}>
           <li>
             <span className="pill mock">mock</span> — an in-process simulated agent (no
             calls); ideal for authoring and CI.
@@ -79,7 +75,7 @@ export default function DashboardPage() {
             PBX / trunk.
           </li>
         </ul>
-      </div>
+      </details>
     </>
   );
 }
