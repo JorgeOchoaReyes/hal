@@ -239,6 +239,13 @@ export interface TestCase {
    * one target under test. `target` remains the inline fallback.
    */
   targetAgentId?: string;
+  /**
+   * Optional reference to a provisioned hosted testing agent (the caller) to run
+   * this simulation with. When set, dispatch reconfigures that agent for this
+   * simulation instead of creating a throwaway one; otherwise dispatch picks the
+   * account and provisions ad-hoc.
+   */
+  testingAgentId?: string;
 }
 
 /**
