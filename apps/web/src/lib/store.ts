@@ -1,17 +1,32 @@
 import "server-only";
-import { HalEngine, sampleTestCases, type TestCase, type TestResult } from "@hal/core";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  HalEngine,
+  sampleTestCases,
+  providerAvailability,
+  type TestCase,
+  type TestResult,
+  type ProviderAvailability,
+  type ProviderAccount,
+  type HostedTestingAgent,
+} from "@hal/core";
+import { MediaServer } from "@hal/media";
 
 /**
- * Process-wide singletons. In-memory is fine for a self-hosted single-node
- * deployment and keeps the scaffold dependency-free; swap this module for a DB
- * (Prisma/SQLite, Postgres) without touching the routes or UI.
+ * Process-wide state. Test cases and results are persisted to JSON files under
+ * a data dir so simulations you create and runs you execute survive a restart.
+ * Swap this module for a real DB without touching the routes or UI.
  *
  * Stored on globalThis so Next.js dev hot-reload doesn't wipe state.
  */
 interface HalState {
   testCases: Map<string, TestCase>;
   results: Map<string, TestResult>;
+  accounts: Map<string, ProviderAccount>;
+  agents: Map<string, HostedTestingAgent>;
   engine: HalEngine;
+  mediaServer?: MediaServer;
 }
 
 declare global {
@@ -19,17 +34,72 @@ declare global {
   var __hal__: HalState | undefined;
 }
 
+const DATA_DIR = process.env.HAL_DATA_DIR ?? join(process.cwd(), "data");
+const TESTCASES_FILE = join(DATA_DIR, "testcases.json");
+const RESULTS_FILE = join(DATA_DIR, "results.json");
+const ACCOUNTS_FILE = join(DATA_DIR, "accounts.json");
+const AGENTS_FILE = join(DATA_DIR, "agents.json");
+
+function loadJson<T>(file: string): T[] {
+  try {
+    if (!existsSync(file)) return [];
+    return JSON.parse(readFileSync(file, "utf8")) as T[];
+  } catch {
+    return [];
+  }
+}
+
+function saveJson(file: string, data: unknown): void {
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch (err) {
+    // Persistence is best-effort; never crash a request over it.
+    // eslint-disable-next-line no-console
+    console.warn("[hal] failed to persist", file, err);
+  }
+}
+
 function seed(): HalState {
   const testCases = new Map<string, TestCase>();
-  for (const tc of sampleTestCases()) testCases.set(tc.id, tc);
-  return {
-    testCases,
-    results: new Map(),
-    // The engine auto-detects OpenAI/Anthropic keys and falls back to mock.
-    engine: new HalEngine({
-      telephony: { config: {} },
-    }),
-  };
+  const persisted = loadJson<TestCase>(TESTCASES_FILE);
+  if (persisted.length > 0) {
+    for (const tc of persisted) testCases.set(tc.id, tc);
+  } else {
+    for (const tc of sampleTestCases()) testCases.set(tc.id, tc);
+    saveJson(TESTCASES_FILE, [...testCases.values()]);
+  }
+
+  const results = new Map<string, TestResult>();
+  for (const r of loadJson<TestResult>(RESULTS_FILE)) results.set(r.id, r);
+
+  const accounts = new Map<string, ProviderAccount>();
+  for (const a of loadJson<ProviderAccount>(ACCOUNTS_FILE)) accounts.set(a.id, a);
+  const agents = new Map<string, HostedTestingAgent>();
+  for (const a of loadJson<HostedTestingAgent>(AGENTS_FILE)) agents.set(a.id, a);
+
+  // Start a media server for real telephony audio when Twilio is configured.
+  let mediaServer: MediaServer | undefined;
+  const telephonyReady =
+    process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER;
+  if (telephonyReady) {
+    mediaServer = new MediaServer({ publicUrl: process.env.HAL_PUBLIC_URL });
+    mediaServer
+      .listen(Number(process.env.HAL_MEDIA_PORT ?? 8787))
+      // eslint-disable-next-line no-console
+      .then(() => console.log("[hal] media server started for telephony"))
+      // eslint-disable-next-line no-console
+      .catch((err) => console.warn("[hal] media server failed to start", err));
+  }
+
+  const engine = new HalEngine({
+    telephony: {
+      config: {},
+      bridgeFactory: mediaServer?.bridgeFactory,
+    },
+  });
+
+  return { testCases, results, accounts, agents, engine, mediaServer };
 }
 
 export function halState(): HalState {
@@ -48,15 +118,24 @@ export function getTestCase(id: string): TestCase | undefined {
 }
 
 export function upsertTestCase(tc: TestCase): void {
-  halState().testCases.set(tc.id, tc);
+  const s = halState();
+  s.testCases.set(tc.id, tc);
+  saveJson(TESTCASES_FILE, [...s.testCases.values()]);
 }
 
 export function deleteTestCase(id: string): boolean {
-  return halState().testCases.delete(id);
+  const s = halState();
+  const ok = s.testCases.delete(id);
+  if (ok) saveJson(TESTCASES_FILE, [...s.testCases.values()]);
+  return ok;
 }
 
 export function saveResult(result: TestResult): void {
-  halState().results.set(result.id, result);
+  const s = halState();
+  s.results.set(result.id, result);
+  // Keep the most recent 200 results on disk.
+  const all = [...s.results.values()].sort((a, b) => b.startedAt - a.startedAt).slice(0, 200);
+  saveJson(RESULTS_FILE, all);
 }
 
 export function listResults(testCaseId?: string): TestResult[] {
@@ -67,4 +146,45 @@ export function listResults(testCaseId?: string): TestResult[] {
 
 export function getResult(id: string): TestResult | undefined {
   return halState().results.get(id);
+}
+
+export function providers(): ProviderAvailability[] {
+  return providerAvailability();
+}
+
+// --- Hosted provider accounts & testing agents ------------------------------
+
+/** Accounts, with credentials redacted for client responses. */
+export function listAccounts(): ProviderAccount[] {
+  return [...halState().accounts.values()].map(redactAccount);
+}
+
+export function getAccountRaw(id: string): ProviderAccount | undefined {
+  return halState().accounts.get(id);
+}
+
+export function upsertAccount(a: ProviderAccount): void {
+  const s = halState();
+  s.accounts.set(a.id, a);
+  saveJson(ACCOUNTS_FILE, [...s.accounts.values()]);
+}
+
+export function listAgents(): HostedTestingAgent[] {
+  return [...halState().agents.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getAgent(id: string): HostedTestingAgent | undefined {
+  return halState().agents.get(id);
+}
+
+export function upsertAgent(a: HostedTestingAgent): void {
+  const s = halState();
+  s.agents.set(a.id, a);
+  saveJson(AGENTS_FILE, [...s.agents.values()]);
+}
+
+function redactAccount(a: ProviderAccount): ProviderAccount {
+  const credentials: Record<string, string> = {};
+  for (const k of Object.keys(a.credentials)) credentials[k] = "••••••";
+  return { ...a, credentials };
 }

@@ -1,6 +1,8 @@
 import { JudgeSpec, Transcript, JudgeVerdict, CheckResult } from "../types.js";
 import { LLMClient } from "../llm/client.js";
 import { evaluateRule } from "./rules.js";
+import { evaluateMetrics } from "../metrics/evaluator.js";
+import { MetricResult, metricAffectsOutcome } from "../metrics/definitions.js";
 import { id } from "../util/id.js";
 
 /**
@@ -40,17 +42,29 @@ export class Judge {
       checks.push(...verdict.checks);
     }
 
+    // 3. Typed metrics (boolean / rating / enum / number)
+    let metricResults: MetricResult[] | undefined;
+    let metricsPassed = true;
+    if (mode !== "rules-only" && (spec.metrics?.length ?? 0) > 0) {
+      metricResults = await evaluateMetrics(this.llm, spec.metrics!, transcript, spec.model);
+      const defById = new Map(spec.metrics!.map((m) => [m.id, m]));
+      for (const r of metricResults) {
+        const def = defById.get(r.id);
+        if (def && r.passed === false && metricAffectsOutcome(def)) metricsPassed = false;
+      }
+    }
+
     let passed: boolean;
     switch (mode) {
       case "rules-only":
         passed = rulesPassed;
         break;
       case "llm-only":
-        passed = llmPassed;
+        passed = llmPassed && metricsPassed;
         break;
       case "all":
       default:
-        passed = rulesPassed && llmPassed;
+        passed = rulesPassed && llmPassed && metricsPassed;
     }
 
     // Overall score blends the LLM score with the rule pass rate.
@@ -70,6 +84,7 @@ export class Judge {
       score: Number(score.toFixed(3)),
       summary,
       checks,
+      metricResults,
     };
   }
 

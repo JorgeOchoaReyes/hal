@@ -52,7 +52,34 @@ export type ScenarioStep =
   | { kind: "prompt"; directive: string; /** cap on generated turns for this step */ maxTurns?: number }
   | { kind: "wait"; timeoutMs?: number; /** regex the target reply must match to advance */ until?: string }
   | { kind: "hangup" }
-  | { kind: "expect"; assertion: LiveAssertion };
+  | { kind: "expect"; assertion: LiveAssertion }
+  /**
+   * A structured "conditional action": branch on what the target just said.
+   * The first branch whose `when` regex matches the latest target utterance
+   * fires its action; if none match, `fallback` runs (or the step is skipped).
+   * `goto` enables decision-tree loops, bounded by `maxVisits`.
+   */
+  | {
+      kind: "branch";
+      branches: ConditionalBranch[];
+      fallback?: BranchAction;
+      /** Max times this branch step may run before it is skipped (default 10). */
+      maxVisits?: number;
+    };
+
+export interface ConditionalBranch {
+  /** Regex (source) matched against the latest target utterance. */
+  when: string;
+  action: BranchAction;
+  /** Optional human-readable label for the branch. */
+  label?: string;
+}
+
+export type BranchAction =
+  | { kind: "say"; text: string }
+  | { kind: "prompt"; directive: string }
+  | { kind: "goto"; step: number }
+  | { kind: "hangup" };
 
 /** An assertion evaluated live (mid-call) against the most recent target turn. */
 export interface LiveAssertion {
@@ -82,7 +109,13 @@ export interface Scenario {
   name: string;
   description?: string;
   persona: Persona;
+  /** Linear scenario steps. Ignored when `structured` is set. */
   steps: ScenarioStep[];
+  /**
+   * A Structured Test (role + conditions). When present, the run is driven by
+   * the structured conductor instead of the linear `steps`.
+   */
+  structured?: import("./simulation/structured.js").StructuredTest;
   /** Hard cap on total turns before HAL force-ends the call. */
   maxTurns?: number;
   /** Hard cap on wall-clock duration before HAL force-ends the call. */
@@ -154,6 +187,11 @@ export interface JudgeSpec {
    * e.g. "The agent correctly booked an appointment and confirmed the date."
    */
   criteria?: string[];
+  /**
+   * Typed, user-defined metrics (boolean / rating / enum / number) evaluated by
+   * the LLM judge. Blocking metrics that fail also fail the overall run.
+   */
+  metrics?: import("./metrics/definitions.js").MetricDefinition[];
   /** Model to use for the LLM judge. */
   model?: string;
   /**
@@ -178,6 +216,8 @@ export interface JudgeVerdict {
   score: number;
   summary: string;
   checks: CheckResult[];
+  /** Typed metric results, when the judge spec defines metrics. */
+  metricResults?: import("./metrics/definitions.js").MetricResult[];
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +249,10 @@ export interface TestResult {
   error?: string;
   /** Provider call id (Twilio SID, room id, etc.). */
   externalCallId?: string;
+  /** Computed per-call metrics (attached when the run finishes). */
+  metrics?: import("./metrics/metrics.js").CallMetrics;
+  /** Human-readable labels derived from the metrics. */
+  labels?: import("./metrics/metrics.js").Label[];
 }
 
 // ---------------------------------------------------------------------------

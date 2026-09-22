@@ -8,7 +8,10 @@ export default function DashboardPage() {
 
   return (
     <>
-      <h1>Test Suites</h1>
+      <div className="card-row">
+        <h1 style={{ margin: 0 }}>Simulations</h1>
+        <Link href="/tests/new" className="btn">+ New simulation</Link>
+      </div>
       <p className="sub">
         Point a simulated caller at a voice AI, script it turn by turn, and let the judge
         decide pass or fail. Everything below runs in <strong>mock mode</strong> with no

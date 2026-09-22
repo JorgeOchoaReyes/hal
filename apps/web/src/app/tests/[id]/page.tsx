@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTestCase } from "@/lib/store";
+import { getTestCase, listResults } from "@/lib/store";
 import RunPanel from "@/components/RunPanel";
+import DispatchHosted from "@/components/DispatchHosted";
 import type { ScenarioStep, JudgeRule, Target } from "@hal/core";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export default async function TestDetailPage({
   const { id } = await params;
   const tc = getTestCase(id);
   if (!tc) notFound();
+  const results = listResults(id).slice(0, 10);
 
   return (
     <>
@@ -27,6 +29,34 @@ export default async function TestDetailPage({
       <p className="sub">{tc.scenario.description}</p>
 
       <RunPanel testCaseId={tc.id} />
+
+      {tc.scenario.structured && (
+        <>
+          <h2>Dispatch to a hosted provider</h2>
+          <DispatchHosted testCaseId={tc.id} />
+        </>
+      )}
+
+      {results.length > 0 && (
+        <>
+          <h2>Recent runs</h2>
+          <div className="card">
+            {results.map((r) => (
+              <div className="card-row" key={r.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  {new Date(r.startedAt).toLocaleString()}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  {(r.labels ?? []).map((l, i) => (
+                    <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+                  ))}
+                  {!r.labels && <span className={`pill ${r.status}`}>{r.status}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h2>Target under test</h2>
       <div className="card">
@@ -47,16 +77,40 @@ export default async function TestDetailPage({
         </p>
       </div>
 
-      <h2>Scenario script ({tc.scenario.steps.length} steps)</h2>
-      <div className="card">
-        <ol style={{ margin: 0, paddingLeft: 20 }}>
-          {tc.scenario.steps.map((s, i) => (
-            <li key={i} style={{ padding: "4px 0" }}>
-              {renderStep(s)}
-            </li>
-          ))}
-        </ol>
-      </div>
+      {tc.scenario.structured ? (
+        <>
+          <h2>Structured test</h2>
+          <div className="card">
+            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+              <strong>Role:</strong> {tc.scenario.structured.role}
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 20 }}>
+              {tc.scenario.structured.conditions.map((c) => (
+                <li key={c.id} style={{ padding: "4px 0" }}>
+                  <span className="tag">{c.type}</span>{" "}
+                  <span className="mono">
+                    {c.id === 0 ? "FIRST_MESSAGE" : c.type === "action_followup" ? `after #${c.condition}` : `“${c.condition}”`}
+                  </span>{" "}
+                  → {c.fixed_message ? <span className="mono">“{c.action}”</span> : <span className="muted">{c.action}</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      ) : (
+        <>
+          <h2>Scenario script ({tc.scenario.steps.length} steps)</h2>
+          <div className="card">
+            <ol style={{ margin: 0, paddingLeft: 20 }}>
+              {tc.scenario.steps.map((s, i) => (
+                <li key={i} style={{ padding: "4px 0" }}>
+                  {renderStep(s)}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      )}
 
       <h2>Pass criteria</h2>
       <div className="card">
@@ -126,6 +180,23 @@ function renderStep(s: ScenarioStep): React.ReactNode {
       return (
         <>
           <span className="tag">expect</span> <span className="muted">{s.assertion.description}</span>
+        </>
+      );
+    case "branch":
+      return (
+        <>
+          <span className="tag">branch</span>{" "}
+          <span className="muted">
+            {s.branches.length} condition{s.branches.length === 1 ? "" : "s"}
+            {s.branches.slice(0, 3).map((b, i) => (
+              <span key={i} className="mono" style={{ display: "block", marginLeft: 8 }}>
+                if /{b.when}/ → {b.action.kind}
+                {b.action.kind === "say" ? `: “${b.action.text}”` : ""}
+                {b.action.kind === "prompt" ? `: ${b.action.directive}` : ""}
+                {b.action.kind === "goto" ? ` step ${b.action.step}` : ""}
+              </span>
+            ))}
+          </span>
         </>
       );
     case "hangup":

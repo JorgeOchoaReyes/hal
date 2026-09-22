@@ -8,11 +8,13 @@ import {
   RunStatus,
 } from "../types.js";
 import { CallTransport } from "../transport/transport.js";
-import { Conductor } from "../simulation/conductor.js";
+import { Conductor, ConductorLike } from "../simulation/conductor.js";
+import { StructuredConductor } from "../simulation/structured-conductor.js";
 import { Judge } from "../judge/judge.js";
 import { LLMClient } from "../llm/client.js";
 import { TypedEmitter, sleep } from "../util/events.js";
 import { id, now } from "../util/id.js";
+import { computeMetrics, deriveLabels } from "../metrics/metrics.js";
 
 export interface RunnerDeps {
   /** Resolve the transport for a given target transport kind. */
@@ -82,7 +84,9 @@ export class TestRunner {
     setStatus("running");
 
     const transport = this.deps.resolveTransport(testCase.target.transport);
-    const conductor = new Conductor(testCase.scenario, { llm: this.deps.llm });
+    const conductor: ConductorLike = testCase.scenario.structured
+      ? new StructuredConductor(testCase.scenario.structured, { llm: this.deps.llm })
+      : new Conductor(testCase.scenario, { llm: this.deps.llm });
     const maxTurns = testCase.scenario.maxTurns ?? 40;
     const deadline = testCase.scenario.maxDurationMs
       ? startedAt + testCase.scenario.maxDurationMs
@@ -186,6 +190,8 @@ export class TestRunner {
       liveChecks,
       externalCallId,
     };
+    result.metrics = computeMetrics(result);
+    result.labels = deriveLabels(result.metrics);
 
     setStatus(status);
     events.emit({ type: "done", result });

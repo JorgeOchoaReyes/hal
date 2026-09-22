@@ -20,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 HAL <small>voice ai test lab</small>
               </span>
             </Link>
-            <nav>
+            <nav style={{ display: "flex", gap: 8 }}>
+              <Link href="/agents" className="btn secondary">
+                Hosted agents
+              </Link>
               <Link href="/" className="btn secondary">
                 Dashboard
               </Link>

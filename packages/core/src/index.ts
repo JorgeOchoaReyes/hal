@@ -11,6 +11,38 @@ export { createLLM, type LLMProvider } from "./llm/factory.js";
 // Simulation
 export { Conductor, type AgentAction } from "./simulation/conductor.js";
 export { ScenarioBuilder, scenario } from "./simulation/builder.js";
+export type { ConductorLike } from "./simulation/conductor.js";
+export { StructuredConductor } from "./simulation/structured-conductor.js";
+export {
+  validateStructuredTest,
+  renderFixedMessage,
+  compileStructuredToPrompt,
+  FIRST_MESSAGE,
+  type StructuredTest,
+  type StructuredCondition,
+  type StructuredConditionType,
+} from "./simulation/structured.js";
+export {
+  parseAction,
+  validateActionTags,
+  renderAction,
+  SUPPORTED_TAGS,
+  type ActionSegment,
+  type TagSegment,
+  type TextSegment,
+  type RenderedAction,
+} from "./simulation/tags.js";
+export {
+  structuredToFlow,
+  toBlandPathway,
+  toVapiWorkflow,
+  toRetellConversationFlow,
+  toElevenLabsWorkflow,
+  type ConversationFlow,
+  type FlowNode,
+  type FlowEdge,
+  type FlowNodeType,
+} from "./simulation/flow.js";
 
 // Transports
 export * from "./transport/transport.js";
@@ -34,6 +66,63 @@ export { evaluateRule } from "./judge/rules.js";
 // Runner + engine
 export { TestRunner, type RunnerDeps, type RunHandle } from "./runner/runner.js";
 export { HalEngine, type HalEngineOptions } from "./engine.js";
+
+// Provider templates
+export {
+  PROVIDER_TEMPLATES,
+  getProviderTemplate,
+  providerAvailability,
+  type ProviderTemplate,
+  type ProviderField,
+  type FieldKind,
+  type ProviderAvailability,
+} from "./providers/templates.js";
+
+// Metrics + labels
+export {
+  computeMetrics,
+  deriveLabels,
+  type CallMetrics,
+  type LatencyStats,
+  type Label,
+  type LabelTone,
+} from "./metrics/metrics.js";
+
+// Typed metric definitions (output types) + evaluator
+export {
+  checkPassCondition,
+  evaluateMetricPass,
+  effectivePassCondition,
+  metricAffectsOutcome,
+  coerceMetricValue,
+  type MetricDefinition,
+  type MetricResult,
+  type MetricOutputType,
+  type MetricPassCondition,
+} from "./metrics/definitions.js";
+export { evaluateMetrics } from "./metrics/evaluator.js";
+
+// Hosted provider integrations (Vapi, ElevenLabs) — testing agents on the
+// user's own platform, created with their credentials.
+export {
+  registerIntegration,
+  getIntegration,
+  listIntegrations,
+  VapiIntegration,
+  ElevenLabsIntegration,
+  BlandIntegration,
+  RetellIntegration,
+  runHostedCall,
+  type VoiceProviderIntegration,
+  type ProviderAccount,
+  type TestingAgentSpec,
+  type HostedTestingAgent,
+  type HostedTarget,
+  type HostedCallState,
+  type HostedCallStatus,
+  type HostedRunOptions,
+  type FetchLike,
+} from "./providers/hosted/index.js";
 
 // Utils
 export { id, now } from "./util/id.js";

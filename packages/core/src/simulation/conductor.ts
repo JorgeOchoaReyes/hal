@@ -19,6 +19,13 @@ export interface ConductorDeps {
   llm: LLMClient;
 }
 
+/** Common shape the runner drives — implemented by Conductor and StructuredConductor. */
+export interface ConductorLike {
+  readonly finished: boolean;
+  evaluateLiveAssertions(transcript: Transcript): { checks: CheckResult[]; abort: boolean };
+  next(transcript: Transcript): Promise<AgentAction>;
+}
+
 /**
  * Conductor drives a Scenario turn-by-turn. It owns a cursor over the
  * scenario steps and, given the transcript so far, decides the agent's next
@@ -28,10 +35,12 @@ export interface ConductorDeps {
  * It also evaluates inline `expect` assertions against the latest target turn,
  * emitting live CheckResults that the runner surfaces immediately.
  */
-export class Conductor {
+export class Conductor implements ConductorLike {
   private cursor = 0;
   /** Turns already emitted for the current in-progress "prompt" step. */
   private promptTurns = 0;
+  /** Visit count per branch step index, to bound decision-tree loops. */
+  private branchVisits = new Map<number, number>();
 
   constructor(
     private readonly scenario: Scenario,
@@ -100,10 +109,68 @@ export class Conductor {
         return { kind: "speak", text };
       }
 
+      case "branch":
+        return this.handleBranch(step, transcript);
+
       case "expect":
         // Should have been consumed by evaluateLiveAssertions; skip defensively.
         this.cursor++;
         return this.next(transcript);
+    }
+  }
+
+  /** Evaluate a conditional-action (branch) step against the latest target turn. */
+  private async handleBranch(
+    step: Extract<ScenarioStep, { kind: "branch" }>,
+    transcript: Transcript,
+  ): Promise<AgentAction> {
+    const idx = this.cursor;
+    const visits = (this.branchVisits.get(idx) ?? 0) + 1;
+    this.branchVisits.set(idx, visits);
+    if (visits > (step.maxVisits ?? 25)) {
+      this.cursor++; // loop budget exhausted; move on
+      return this.next(transcript);
+    }
+
+    const lastTarget = [...transcript].reverse().find((u) => u.role === "target");
+    const text = lastTarget?.text ?? "";
+    const match = step.branches.find((b) => {
+      try {
+        return new RegExp(b.when, "i").test(text);
+      } catch {
+        return false;
+      }
+    });
+    const action = match?.action ?? step.fallback;
+    if (!action) {
+      this.cursor++;
+      return this.next(transcript);
+    }
+    return this.applyBranchAction(action, transcript);
+  }
+
+  private async applyBranchAction(
+    action: Extract<ScenarioStep, { kind: "branch" }>["branches"][number]["action"],
+    transcript: Transcript,
+  ): Promise<AgentAction> {
+    switch (action.kind) {
+      case "say":
+        this.cursor++;
+        return { kind: "speak", text: action.text };
+      case "prompt": {
+        this.cursor++;
+        const text = await this.generatePersonaReply(
+          { kind: "prompt", directive: action.directive },
+          transcript,
+        );
+        return { kind: "speak", text };
+      }
+      case "goto":
+        this.cursor = Math.max(0, Math.min(this.scenario.steps.length, action.step));
+        return this.next(transcript);
+      case "hangup":
+        this.cursor++;
+        return { kind: "hangup", reason: "branch hangup" };
     }
   }
 

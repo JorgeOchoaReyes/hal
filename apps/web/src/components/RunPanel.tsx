@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { RunEvent, Utterance, CheckResult, JudgeVerdict, RunStatus } from "@hal/core";
+import type {
+  RunEvent,
+  Utterance,
+  CheckResult,
+  JudgeVerdict,
+  RunStatus,
+  CallMetrics,
+  Label,
+} from "@hal/core";
 
 interface LogLine {
   level: string;
@@ -13,6 +21,8 @@ export default function RunPanel({ testCaseId }: { testCaseId: string }) {
   const [transcript, setTranscript] = useState<Utterance[]>([]);
   const [liveChecks, setLiveChecks] = useState<CheckResult[]>([]);
   const [verdict, setVerdict] = useState<JudgeVerdict | null>(null);
+  const [metrics, setMetrics] = useState<CallMetrics | null>(null);
+  const [labels, setLabels] = useState<Label[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const esRef = useRef<EventSource | null>(null);
 
@@ -22,6 +32,8 @@ export default function RunPanel({ testCaseId }: { testCaseId: string }) {
     setTranscript([]);
     setLiveChecks([]);
     setVerdict(null);
+    setMetrics(null);
+    setLabels([]);
     setLogs([]);
 
     const es = new EventSource(`/api/run?testCaseId=${encodeURIComponent(testCaseId)}`);
@@ -47,6 +59,8 @@ export default function RunPanel({ testCaseId }: { testCaseId: string }) {
           break;
         case "done":
           setStatus(event.result.status);
+          if (event.result.metrics) setMetrics(event.result.metrics);
+          if (event.result.labels) setLabels(event.result.labels);
           break;
       }
     };
@@ -105,6 +119,7 @@ export default function RunPanel({ testCaseId }: { testCaseId: string }) {
         </>
       )}
 
+      {metrics && <MetricsCard metrics={metrics} labels={labels} />}
       {verdict && <VerdictCard verdict={verdict} />}
 
       {logs.length > 0 && (
@@ -120,6 +135,37 @@ export default function RunPanel({ testCaseId }: { testCaseId: string }) {
         </>
       )}
     </div>
+  );
+}
+
+function MetricsCard({ metrics, labels }: { metrics: CallMetrics; labels: Label[] }) {
+  const tiles: Array<[string, string]> = [
+    ["Score", `${Math.round(metrics.score * 100)}%`],
+    ["Turns", String(metrics.totalTurns)],
+    ["Duration", `${(metrics.durationMs / 1000).toFixed(1)}s`],
+    ["Target p95 latency", metrics.targetLatency ? `${metrics.targetLatency.p95}ms` : "—"],
+    ["Avg target words", String(metrics.avgTargetWords)],
+    ["Live checks", `${Math.round(metrics.liveCheckPassRate * 100)}%`],
+  ];
+  return (
+    <>
+      <h2>Metrics</h2>
+      <div className="card">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {labels.map((l, i) => (
+            <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+          ))}
+        </div>
+        <div className="metric-tiles">
+          {tiles.map(([k, v]) => (
+            <div className="metric-tile" key={k}>
+              <div className="metric-value">{v}</div>
+              <div className="metric-key">{k}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -152,6 +198,23 @@ function VerdictCard({ verdict }: { verdict: JudgeVerdict }) {
               </li>
             ))}
           </ul>
+        )}
+        {verdict.metricResults && verdict.metricResults.length > 0 && (
+          <>
+            <div className="field-label" style={{ marginTop: 14 }}>Metrics</div>
+            <div className="metric-tiles">
+              {verdict.metricResults.map((m, i) => (
+                <div className="metric-tile" key={i}>
+                  <div className="metric-value">{String(m.value)}</div>
+                  <div className="metric-key">
+                    {m.name}
+                    {m.passed === true && <span className="label label-pass" style={{ marginLeft: 6 }}>pass</span>}
+                    {m.passed === false && <span className="label label-fail" style={{ marginLeft: 6 }}>fail</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </>
