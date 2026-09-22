@@ -10,7 +10,7 @@ import {
   type ProviderAccount,
   type HostedTestingAgent,
 } from "@hal/core";
-import { MediaServer } from "@hal/media";
+import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
 
 /**
@@ -28,6 +28,7 @@ interface HalState {
   agents: Map<string, HostedTestingAgent>;
   engine: HalEngine;
   mediaServer?: MediaServer;
+  mediaGateway?: MediaGateway;
 }
 
 declare global {
@@ -72,13 +73,28 @@ function seed(): HalState {
       .catch((err) => console.warn("[hal] media server failed to start", err));
   }
 
+  // Start a WebRTC/SIP media gateway when a speech provider is configured.
+  // Both transports share one vendor-neutral WebSocket audio plane.
+  let mediaGateway: MediaGateway | undefined;
+  if (process.env.DEEPGRAM_API_KEY && process.env.HAL_MEDIA_GATEWAY !== "off") {
+    mediaGateway = new MediaGateway();
+    mediaGateway
+      .listen(Number(process.env.HAL_GATEWAY_PORT ?? 8788))
+      // eslint-disable-next-line no-console
+      .then(() => console.log("[hal] media gateway started for webrtc/sip"))
+      // eslint-disable-next-line no-console
+      .catch((err) => console.warn("[hal] media gateway failed to start", err));
+  }
+
   const engine = new HalEngine({
     telephony: { config: {}, bridgeFactory: mediaServer?.bridgeFactory },
+    webrtc: { bridgeFactory: mediaGateway?.webrtcBridgeFactory },
+    sip: { bridgeFactory: mediaGateway?.sipBridgeFactory },
   });
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, engine, mediaServer };
+  return { db, testCases, results, accounts, agents, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {

@@ -169,6 +169,37 @@ const engine = new HalEngine({
 // A `telephony` test case now places a real call and is judged like any other.
 ```
 
+For **WebRTC and SIP calls**, `@hal/media` ships a vendor-neutral
+[`MediaGateway`](packages/media/src/server/media-gateway.ts): one WebSocket audio
+plane both transports share. HAL doesn't terminate ICE/DTLS/SRTP or SIP signaling
+itself — the same way telephony leans on Twilio for call control — it accepts PCM
+over a WebSocket from a thin media source:
+
+- **WebRTC**: a browser (or a WHIP / LiveKit egress) captures mic audio and relays
+  PCM16 frames to `/api/media/webrtc?id=<room>`. See
+  [`packages/media/webrtc-client.example.html`](packages/media/webrtc-client.example.html)
+  for a ~40-line reference client.
+- **SIP**: a SIP↔WS shim (FreeSWITCH `mod_audio_fork`, drachtio + rtpengine, or
+  Jambonz) forks an established leg's RTP onto `/api/media/sip?id=<externalId>`.
+
+```ts
+import { HalEngine } from "@hal/core";
+import { MediaGateway } from "@hal/media";
+
+const gateway = new MediaGateway(); // DEEPGRAM_API_KEY from env
+await gateway.listen(8788);
+
+const engine = new HalEngine({
+  webrtc: { bridgeFactory: gateway.webrtcBridgeFactory },
+  sip: { bridgeFactory: gateway.sipBridgeFactory },
+});
+// `webrtc` / `sip` test cases now run through the same conductor + judge.
+```
+
+The web app starts this gateway automatically when `DEEPGRAM_API_KEY` is set
+(disable with `HAL_MEDIA_GATEWAY=off`). The protocol is documented in
+[`ws-audio-bridge.ts`](packages/media/src/bridge/ws-audio-bridge.ts).
+
 See `packages/core/src/transport/transport.ts` and
 `packages/core/src/speech/speech.ts` for the underlying contracts.
 

@@ -1,0 +1,96 @@
+<!doctype html>
+<!--
+  HAL WebRTC audio client — reference implementation.
+
+  Captures microphone audio in the browser, downsamples it to 16 kHz PCM16, and
+  streams it to HAL's MediaGateway over the vendor-neutral WebSocket protocol
+  (see packages/media/src/bridge/ws-audio-bridge.ts). Agent speech comes back as
+  base64 PCM16 "audio" frames, which we play through the Web Audio API.
+
+  This is the "media source" for the `webrtc` transport: HAL never terminates
+  ICE/DTLS itself — the browser does — exactly as telephony leans on Twilio.
+
+  Usage: open with ?id=<room> matching the externalId HAL minted for the call,
+  and ?url=ws://localhost:8788/api/media/webrtc (defaults shown below).
+-->
+<meta charset="utf-8" />
+<title>HAL WebRTC client</title>
+<button id="start">Start call</button>
+<button id="stop" disabled>Hang up</button>
+<pre id="log"></pre>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id") ?? "demo-room";
+  const url = params.get("url") ?? "ws://localhost:8788/api/media/webrtc";
+  const RATE = 16000;
+  const log = (m) => (document.getElementById("log").textContent += m + "\n");
+
+  let ws, audioCtx, playhead = 0, stopFns = [];
+
+  function floatToPcm16(float32) {
+    const out = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return out;
+  }
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+  async function start() {
+    ws = new WebSocket(`${url}?id=${encodeURIComponent(id)}`);
+    ws.binaryType = "arraybuffer";
+    audioCtx = new AudioContext({ sampleRate: RATE });
+
+    ws.onopen = async () => {
+      ws.send(JSON.stringify({ type: "start", id, sampleRate: RATE, encoding: "pcm16" }));
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const src = audioCtx.createMediaStreamSource(stream);
+      const proc = audioCtx.createScriptProcessor(2048, 1, 1);
+      proc.onaudioprocess = (e) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const pcm = floatToPcm16(e.inputBuffer.getChannelData(0));
+        ws.send(JSON.stringify({ type: "audio", payload: b64(pcm.buffer) }));
+      };
+      src.connect(proc);
+      proc.connect(audioCtx.destination);
+      stopFns.push(() => stream.getTracks().forEach((t) => t.stop()), () => proc.disconnect());
+      log("call connected");
+    };
+
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "audio") playPcm16(Uint8Array.from(atob(msg.payload), (c) => c.charCodeAt(0)));
+      else if (msg.type === "mark") log("agent finished a turn");
+    };
+    ws.onclose = () => log("call ended");
+    document.getElementById("stop").disabled = false;
+    document.getElementById("start").disabled = true;
+  }
+
+  function playPcm16(bytes) {
+    const pcm = new Int16Array(bytes.buffer);
+    const buf = audioCtx.createBuffer(1, pcm.length, RATE);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 0x8000;
+    const node = audioCtx.createBufferSource();
+    node.buffer = buf;
+    node.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    playhead = Math.max(playhead, now);
+    node.start(playhead);
+    playhead += buf.duration;
+  }
+
+  function stop() {
+    stopFns.forEach((f) => f());
+    stopFns = [];
+    ws?.send(JSON.stringify({ type: "stop" }));
+    ws?.close();
+    document.getElementById("stop").disabled = true;
+    document.getElementById("start").disabled = false;
+  }
+
+  document.getElementById("start").onclick = start;
+  document.getElementById("stop").onclick = stop;
+</script>
