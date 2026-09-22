@@ -359,6 +359,31 @@ scripts, run `pnpm --filter @hal/desktop exec electron --version` once to trigge
 it. To prove it launches headlessly (CI / servers), `pnpm --filter @hal/desktop
 smoke` renders the app under `xvfb` and writes a screenshot.
 
+#### Releases & auto-update (OTA)
+
+Cutting a **release** builds installers for macOS / Windows / Linux and publishes
+them to GitHub Releases; the app then keeps itself in sync via `electron-updater`.
+
+```bash
+# bump apps/desktop/package.json "version", then:
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The tag triggers `.github/workflows/release.yml`, which runs
+`pnpm --filter @hal/desktop release` on each OS (electron-builder `--publish
+always`) and uploads the installers plus the `latest*.yml` manifests the updater
+reads. Users download the app from the repo's **Releases** page.
+
+Once installed, the app **checks for updates on launch**, downloads them in the
+background, and applies them on restart. The **Settings** page shows the installed
+vs. latest version and a sync indicator, with **Check for updates** and **Force
+sync & restart** controls.
+
+- **macOS auto-update requires signing + notarization.** Set the `CSC_LINK`,
+  `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
+  `APPLE_TEAM_ID` repo secrets to enable it; unsigned builds still install but
+  can't self-update on macOS. Windows (NSIS) auto-update works unsigned.
+
 ## Development
 
 ```bash
