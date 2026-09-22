@@ -47,6 +47,7 @@ export default function HostedAgents() {
     <div className="grid" style={{ gap: 18 }}>
       {error && <div className="card" style={{ borderColor: "var(--fail)", color: "var(--fail)" }}>{error}</div>}
       <ConnectAccount integrations={integrations} onDone={refresh} />
+      {accounts.length > 0 && <AccountsList accounts={accounts} />}
       <ProvisionAgent accounts={accounts} onDone={refresh} />
       <AgentsList agents={agents} accounts={accounts} />
     </div>
@@ -109,6 +110,64 @@ function ConnectAccount({ integrations, onDone }: { integrations: Integration[];
       ))}
       <button onClick={submit} disabled={busy || !integration}>{busy ? "Connecting…" : "Connect account"}</button>
     </section>
+  );
+}
+
+function AccountsList({ accounts }: { accounts: Account[] }) {
+  return (
+    <section className="card">
+      <h2 style={{ marginTop: 0 }}>Connected accounts</h2>
+      <div className="grid" style={{ gap: 8 }}>
+        {accounts.map((a) => (
+          <AccountRow key={a.id} account={a} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AccountRow({ account }: { account: Account }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail?: string } | null>(null);
+
+  async function test() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/provider-accounts/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ accountId: account.id }),
+      });
+      setResult(await res.json());
+    } catch (e) {
+      setResult({ ok: false, detail: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card-row" style={{ background: "var(--panel-2)", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+      <div>
+        <strong>{account.label}</strong> <span className="pill telephony">{account.provider}</span>
+        {result && (
+          <div style={{ marginTop: 4 }}>
+            {result.ok ? (
+              <span className="label label-pass">connected ✓</span>
+            ) : (
+              <span className="label label-fail" title={result.detail}>failed</span>
+            )}
+            {!result.ok && result.detail && (
+              <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{result.detail}</div>
+            )}
+          </div>
+        )}
+      </div>
+      <button type="button" className="btn secondary" onClick={test} disabled={busy}>
+        {busy ? "Testing…" : "Test connection"}
+      </button>
+    </div>
   );
 }
 

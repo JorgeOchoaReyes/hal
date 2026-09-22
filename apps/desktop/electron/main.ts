@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell } from "electron";
 import { spawn, ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import http from "node:http";
 
 /**
@@ -83,6 +84,24 @@ async function createWindow() {
 
   const url = await resolveAppUrl();
   await mainWindow.loadURL(url);
+
+  // Smoke mode: capture a screenshot after load and exit. Lets CI / a headless
+  // run (xvfb) prove the app boots and renders the web UI.
+  if (process.env.HAL_SCREENSHOT) {
+    try {
+      const image = await mainWindow.webContents.capturePage();
+      await writeFile(process.env.HAL_SCREENSHOT, image.toPNG());
+      // eslint-disable-next-line no-console
+      console.log(`[hal-desktop] screenshot written to ${process.env.HAL_SCREENSHOT}`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[hal-desktop] screenshot failed", err);
+      app.exit(1);
+      return;
+    }
+    app.quit();
+    return;
+  }
 
   mainWindow.on("closed", () => {
     mainWindow = null;

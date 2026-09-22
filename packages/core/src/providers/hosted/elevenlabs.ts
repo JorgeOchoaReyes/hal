@@ -10,8 +10,10 @@ import {
   HostedCallState,
   HostedCallStatus,
   FetchLike,
+  CredentialCheck,
   safeText,
   resolveSpecPrompt,
+  withTimeout,
 } from "./integration.js";
 
 /**
@@ -32,12 +34,11 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
     },
   ];
 
+  private readonly fetchImpl: FetchLike;
   private readonly base: string;
 
-  constructor(
-    private readonly fetchImpl: FetchLike = fetch,
-    baseUrl = "https://api.elevenlabs.io",
-  ) {
+  constructor(fetchImpl: FetchLike = fetch, baseUrl = "https://api.elevenlabs.io") {
+    this.fetchImpl = withTimeout(fetchImpl);
     this.base = baseUrl.replace(/\/$/, "");
   }
 
@@ -46,6 +47,15 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
       "xi-api-key": account.credentials.apiKey ?? "",
       "content-type": "application/json",
     };
+  }
+
+  async verifyCredentials(account: ProviderAccount): Promise<CredentialCheck> {
+    try {
+      const res = await this.fetchImpl(`${this.base}/v1/user`, { headers: this.headers(account) });
+      return res.ok ? { ok: true } : { ok: false, detail: `${res.status}: ${(await safeText(res)).slice(0, 200)}` };
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message };
+    }
   }
 
   buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {

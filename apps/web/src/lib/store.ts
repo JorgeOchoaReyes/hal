@@ -1,5 +1,4 @@
 import "server-only";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   HalEngine,
@@ -11,22 +10,25 @@ import {
   type ProviderAccount,
   type HostedTestingAgent,
 } from "@hal/core";
-import { MediaServer } from "@hal/media";
+import { MediaServer, MediaGateway } from "@hal/media";
+import { createPersistence, type Persistence } from "./persistence";
 
 /**
- * Process-wide state. Test cases and results are persisted to JSON files under
- * a data dir so simulations you create and runs you execute survive a restart.
- * Swap this module for a real DB without touching the routes or UI.
+ * Process-wide state, persisted via the {@link Persistence} layer (SQLite by
+ * default, JSON fallback) under `HAL_DATA_DIR`. In-memory Maps are the working
+ * copy; every mutation writes through to the store.
  *
  * Stored on globalThis so Next.js dev hot-reload doesn't wipe state.
  */
 interface HalState {
+  db: Persistence;
   testCases: Map<string, TestCase>;
   results: Map<string, TestResult>;
   accounts: Map<string, ProviderAccount>;
   agents: Map<string, HostedTestingAgent>;
   engine: HalEngine;
   mediaServer?: MediaServer;
+  mediaGateway?: MediaGateway;
 }
 
 declare global {
@@ -35,48 +37,27 @@ declare global {
 }
 
 const DATA_DIR = process.env.HAL_DATA_DIR ?? join(process.cwd(), "data");
-const TESTCASES_FILE = join(DATA_DIR, "testcases.json");
-const RESULTS_FILE = join(DATA_DIR, "results.json");
-const ACCOUNTS_FILE = join(DATA_DIR, "accounts.json");
-const AGENTS_FILE = join(DATA_DIR, "agents.json");
-
-function loadJson<T>(file: string): T[] {
-  try {
-    if (!existsSync(file)) return [];
-    return JSON.parse(readFileSync(file, "utf8")) as T[];
-  } catch {
-    return [];
-  }
-}
-
-function saveJson(file: string, data: unknown): void {
-  try {
-    mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(file, JSON.stringify(data, null, 2));
-  } catch (err) {
-    // Persistence is best-effort; never crash a request over it.
-    // eslint-disable-next-line no-console
-    console.warn("[hal] failed to persist", file, err);
-  }
-}
 
 function seed(): HalState {
+  const db = createPersistence(DATA_DIR);
+
   const testCases = new Map<string, TestCase>();
-  const persisted = loadJson<TestCase>(TESTCASES_FILE);
+  const persisted = db.loadAll<TestCase>("testcases");
   if (persisted.length > 0) {
     for (const tc of persisted) testCases.set(tc.id, tc);
   } else {
-    for (const tc of sampleTestCases()) testCases.set(tc.id, tc);
-    saveJson(TESTCASES_FILE, [...testCases.values()]);
+    for (const tc of sampleTestCases()) {
+      testCases.set(tc.id, tc);
+      db.put("testcases", tc.id, tc, tc.createdAt);
+    }
   }
 
   const results = new Map<string, TestResult>();
-  for (const r of loadJson<TestResult>(RESULTS_FILE)) results.set(r.id, r);
-
+  for (const r of db.loadAll<TestResult>("results")) results.set(r.id, r);
   const accounts = new Map<string, ProviderAccount>();
-  for (const a of loadJson<ProviderAccount>(ACCOUNTS_FILE)) accounts.set(a.id, a);
+  for (const a of db.loadAll<ProviderAccount>("accounts")) accounts.set(a.id, a);
   const agents = new Map<string, HostedTestingAgent>();
-  for (const a of loadJson<HostedTestingAgent>(AGENTS_FILE)) agents.set(a.id, a);
+  for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
 
   // Start a media server for real telephony audio when Twilio is configured.
   let mediaServer: MediaServer | undefined;
@@ -92,14 +73,28 @@ function seed(): HalState {
       .catch((err) => console.warn("[hal] media server failed to start", err));
   }
 
+  // Start a WebRTC/SIP media gateway when a speech provider is configured.
+  // Both transports share one vendor-neutral WebSocket audio plane.
+  let mediaGateway: MediaGateway | undefined;
+  if (process.env.DEEPGRAM_API_KEY && process.env.HAL_MEDIA_GATEWAY !== "off") {
+    mediaGateway = new MediaGateway();
+    mediaGateway
+      .listen(Number(process.env.HAL_GATEWAY_PORT ?? 8788))
+      // eslint-disable-next-line no-console
+      .then(() => console.log("[hal] media gateway started for webrtc/sip"))
+      // eslint-disable-next-line no-console
+      .catch((err) => console.warn("[hal] media gateway failed to start", err));
+  }
+
   const engine = new HalEngine({
-    telephony: {
-      config: {},
-      bridgeFactory: mediaServer?.bridgeFactory,
-    },
+    telephony: { config: {}, bridgeFactory: mediaServer?.bridgeFactory },
+    webrtc: { bridgeFactory: mediaGateway?.webrtcBridgeFactory },
+    sip: { bridgeFactory: mediaGateway?.sipBridgeFactory },
   });
 
-  return { testCases, results, accounts, agents, engine, mediaServer };
+  // eslint-disable-next-line no-console
+  console.log(`[hal] persistence backend: ${db.backend}`);
+  return { db, testCases, results, accounts, agents, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -120,22 +115,20 @@ export function getTestCase(id: string): TestCase | undefined {
 export function upsertTestCase(tc: TestCase): void {
   const s = halState();
   s.testCases.set(tc.id, tc);
-  saveJson(TESTCASES_FILE, [...s.testCases.values()]);
+  s.db.put("testcases", tc.id, tc, tc.createdAt);
 }
 
 export function deleteTestCase(id: string): boolean {
   const s = halState();
   const ok = s.testCases.delete(id);
-  if (ok) saveJson(TESTCASES_FILE, [...s.testCases.values()]);
+  if (ok) s.db.remove("testcases", id);
   return ok;
 }
 
 export function saveResult(result: TestResult): void {
   const s = halState();
   s.results.set(result.id, result);
-  // Keep the most recent 200 results on disk.
-  const all = [...s.results.values()].sort((a, b) => b.startedAt - a.startedAt).slice(0, 200);
-  saveJson(RESULTS_FILE, all);
+  s.db.put("results", result.id, result, result.startedAt);
 }
 
 export function listResults(testCaseId?: string): TestResult[] {
@@ -166,7 +159,7 @@ export function getAccountRaw(id: string): ProviderAccount | undefined {
 export function upsertAccount(a: ProviderAccount): void {
   const s = halState();
   s.accounts.set(a.id, a);
-  saveJson(ACCOUNTS_FILE, [...s.accounts.values()]);
+  s.db.put("accounts", a.id, a, a.createdAt);
 }
 
 export function listAgents(): HostedTestingAgent[] {
@@ -180,7 +173,7 @@ export function getAgent(id: string): HostedTestingAgent | undefined {
 export function upsertAgent(a: HostedTestingAgent): void {
   const s = halState();
   s.agents.set(a.id, a);
-  saveJson(AGENTS_FILE, [...s.agents.values()]);
+  s.db.put("agents", a.id, a, a.createdAt);
 }
 
 function redactAccount(a: ProviderAccount): ProviderAccount {

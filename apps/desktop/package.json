@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json && HAL_WEB_URL=${HAL_WEB_URL:-http://localhost:3000} electron .",
     "start": "electron .",
+    "smoke": "tsc -p tsconfig.json && HAL_WEB_URL=${HAL_WEB_URL:-http://localhost:3000} HAL_SCREENSHOT=${HAL_SCREENSHOT:-hal-desktop.png} xvfb-run -a electron --no-sandbox --disable-gpu .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "package": "electron-builder",
     "clean": "rm -rf dist .turbo release"

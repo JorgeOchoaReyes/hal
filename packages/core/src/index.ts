@@ -122,6 +122,8 @@ export {
   type HostedCallStatus,
   type HostedRunOptions,
   type FetchLike,
+  type CredentialCheck,
+  withTimeout,
 } from "./providers/hosted/index.js";
 
 // Utils
