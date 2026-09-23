@@ -246,3 +246,59 @@ function redactAccount(a: ProviderAccount): ProviderAccount {
   for (const k of Object.keys(a.credentials)) credentials[k] = "••••••";
   return { ...a, credentials };
 }
+
+// --- App settings: transcription (speech-to-text) provider ------------------
+
+export interface TranscriptionSettings {
+  id: "transcription";
+  /** Provider id, e.g. "deepgram". A dropdown so more can be added later. */
+  provider: string;
+  /** Secret API key — stored server-side, never returned to the browser. */
+  apiKey?: string;
+  /** Optional model override (e.g. Deepgram "nova-2"). */
+  model?: string;
+  updatedAt: number;
+}
+
+/** Public (redacted) view of the transcription settings for the browser. */
+export interface TranscriptionSettingsPublic {
+  provider: string;
+  model?: string;
+  hasKey: boolean;
+  updatedAt: number;
+}
+
+const TRANSCRIPTION_DEFAULT: TranscriptionSettings = {
+  id: "transcription",
+  provider: "deepgram",
+  model: "nova-2",
+  updatedAt: 0,
+};
+
+export function getTranscriptionSettingsRaw(): TranscriptionSettings {
+  const rows = halState().db.loadAll<TranscriptionSettings>("settings");
+  return rows.find((r) => r.id === "transcription") ?? { ...TRANSCRIPTION_DEFAULT };
+}
+
+export function getTranscriptionSettings(): TranscriptionSettingsPublic {
+  const s = getTranscriptionSettingsRaw();
+  return { provider: s.provider, model: s.model, hasKey: Boolean(s.apiKey), updatedAt: s.updatedAt };
+}
+
+export function setTranscriptionSettings(patch: {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+}): TranscriptionSettingsPublic {
+  const cur = getTranscriptionSettingsRaw();
+  const next: TranscriptionSettings = {
+    id: "transcription",
+    provider: patch.provider ?? cur.provider,
+    // undefined = keep existing key; empty string = explicitly clear it.
+    apiKey: patch.apiKey === undefined ? cur.apiKey : patch.apiKey || undefined,
+    model: patch.model ?? cur.model,
+    updatedAt: Date.now(),
+  };
+  halState().db.put("settings", "transcription", next, next.updatedAt);
+  return getTranscriptionSettings();
+}
