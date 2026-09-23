@@ -1,6 +1,6 @@
 {
   "name": "@hal/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "HAL desktop app — an Electron shell around the HAL web app for a local, self-contained voice AI test lab.",
   "main": "dist/main.js",
@@ -31,7 +31,7 @@
     "files": ["dist/**", "node_modules/**"],
     "extraResources": [{ "from": "resources/web", "to": "web" }],
     "directories": { "output": "release" },
-    "publish": [{ "provider": "github", "owner": "JorgeOchoaReyes", "repo": "hal" }],
+    "publish": [{ "provider": "github", "owner": "JorgeOchoaReyes", "repo": "hal", "releaseType": "release" }],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": ["dmg", "zip"],
