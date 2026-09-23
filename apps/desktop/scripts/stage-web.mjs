@@ -27,19 +27,24 @@ rmSync(dest, { recursive: true, force: true });
 mkdirSync(dest, { recursive: true });
 
 // The whole standalone tree (server.js under apps/web, plus node_modules/packages).
-cpSync(standalone, dest, { recursive: true });
+// dereference: true turns pnpm's symlinked node_modules (e.g. node_modules/next ->
+// ../../node_modules/.pnpm/...) into real file copies. Those symlinks resolve on
+// macOS/Linux but break once packaged on Windows, so the bundled server crashes
+// with "Cannot find module 'next'" (black screen). Copying real files fixes it
+// on every platform.
+cpSync(standalone, dest, { recursive: true, dereference: true });
 
 // Static assets must sit at apps/web/.next/static beside the server.
 const staticOut = join(dest, "apps", "web", ".next", "static");
 if (existsSync(staticDir)) {
   mkdirSync(dirname(staticOut), { recursive: true });
-  cpSync(staticDir, staticOut, { recursive: true });
+  cpSync(staticDir, staticOut, { recursive: true, dereference: true });
 }
 
 // public/ if the app has one.
 const pub = join(web, "public");
 if (existsSync(pub)) {
-  cpSync(pub, join(dest, "apps", "web", "public"), { recursive: true });
+  cpSync(pub, join(dest, "apps", "web", "public"), { recursive: true, dereference: true });
 }
 
 console.log(`[stage-web] staged offline web server -> ${dest}`);
