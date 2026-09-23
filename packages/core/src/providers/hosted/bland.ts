@@ -60,7 +60,14 @@ export class BlandIntegration implements VoiceProviderIntegration {
   async verifyCredentials(account: ProviderAccount): Promise<CredentialCheck> {
     try {
       const res = await this.fetchImpl(`${this.base}/v1/me`, { headers: this.headers(account) });
-      return res.ok ? { ok: true } : { ok: false, detail: `${res.status}: ${(await safeText(res)).slice(0, 200)}` };
+      if (res.ok) return { ok: true };
+      // Only an explicit auth rejection means the key is bad. Bland doesn't
+      // expose /v1/me on every plan, so a 404/405/5xx just means the probe
+      // endpoint isn't available — don't report a valid key as invalid.
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, detail: `${res.status}: ${(await safeText(res)).slice(0, 200)}` };
+      }
+      return { ok: true, detail: `Key accepted (verify endpoint returned ${res.status}).` };
     } catch (err) {
       return { ok: false, detail: (err as Error).message };
     }
@@ -201,6 +208,8 @@ export class BlandIntegration implements VoiceProviderIntegration {
 
 interface BlandTurn {
   user?: string; // "assistant" | "user" | "agent"
+  speaker?: string; // some responses use "speaker": "ai" | "human"
+  role?: string;
   text?: string;
 }
 interface BlandCall {
@@ -252,7 +261,13 @@ function mapStatus(call: BlandCall): HostedCallStatus {
   }
 }
 
-/** Bland labels the AI "assistant" (our tester → agent) and the human "user" (the target). */
+/**
+ * Bland labels the AI (our tester → `agent`) and the human/other party (the
+ * target under test). Different Bland responses use different keys/values for
+ * the speaker — `user: "assistant"|"user"`, `speaker: "ai"|"human"`, or `role` —
+ * so we read whichever is present and map the human side to `target`. Mislabeling
+ * would make the judge see only one side of the call.
+ */
 function parseTranscript(call: BlandCall): Transcript | undefined {
   if (!call.transcripts?.length) return undefined;
   const base = Date.now();
@@ -260,8 +275,9 @@ function parseTranscript(call: BlandCall): Transcript | undefined {
   for (const t of call.transcripts) {
     const text = (t.text ?? "").trim();
     if (!text) continue;
-    const who = t.user?.toLowerCase();
-    out.push({ role: who === "user" || who === "human" ? "target" : "agent", text, startedAt: base });
+    const who = (t.user ?? t.speaker ?? t.role ?? "").toLowerCase();
+    const isHuman = who === "user" || who === "human" || who === "customer" || who === "target";
+    out.push({ role: isHuman ? "target" : "agent", text, startedAt: base });
   }
   return out.length ? out : undefined;
 }

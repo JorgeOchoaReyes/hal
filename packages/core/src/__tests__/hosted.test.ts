@@ -140,6 +140,38 @@ test("Bland integration creates an agent, places a task call, and maps transcrip
   assert.equal(state.transcript?.[1]?.role, "target");
 });
 
+test("Bland maps the alternate speaker:ai/human transcript shape to agent/target", async () => {
+  const bland = new BlandIntegration(
+    fakeFetch({
+      "GET https://api.bland.ai/v1/calls/c1": {
+        completed: true,
+        transcripts: [
+          { speaker: "ai", text: "Hi, I'm testing your line." },
+          { speaker: "human", text: "Okay, go ahead." },
+        ],
+      },
+    }),
+  );
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  const state = await bland.getCall(acc, "c1");
+  // The AI (Bland's own agent = our tester) must be `agent`; the human (target
+  // under test) must be `target` — otherwise the judge sees only one side.
+  assert.equal(state.transcript?.[0]?.role, "agent");
+  assert.equal(state.transcript?.[1]?.role, "target");
+});
+
+test("Bland verifyCredentials only fails on an explicit 401/403", async () => {
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  // A 404 on the probe endpoint must NOT be reported as an invalid key.
+  const notFound = new BlandIntegration((async () =>
+    new Response("nope", { status: 404 })) as unknown as typeof fetch);
+  assert.equal((await notFound.verifyCredentials(acc)).ok, true);
+  // A 401 is a real auth failure.
+  const unauth = new BlandIntegration((async () =>
+    new Response("bad key", { status: 401 })) as unknown as typeof fetch);
+  assert.equal((await unauth.verifyCredentials(acc)).ok, false);
+});
+
 test("each platform compiles a structured test into its own native agent config", () => {
   const structured = {
     role: "You are a patient booking an appointment",
