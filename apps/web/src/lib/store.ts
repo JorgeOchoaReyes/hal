@@ -12,6 +12,7 @@ import {
   type TargetAgent,
   type SavedJudge,
   type JudgeSpec,
+  type ProdCall,
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
@@ -31,6 +32,7 @@ interface HalState {
   agents: Map<string, HostedTestingAgent>;
   targets: Map<string, TargetAgent>;
   judges: Map<string, SavedJudge>;
+  prodCalls: Map<string, ProdCall>;
   engine: HalEngine;
   mediaServer?: MediaServer;
   mediaGateway?: MediaGateway;
@@ -65,6 +67,8 @@ function seed(): HalState {
   for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
   const judges = new Map<string, SavedJudge>();
   for (const j of db.loadAll<SavedJudge>("judges")) judges.set(j.id, j);
+  const prodCalls = new Map<string, ProdCall>();
+  for (const p of db.loadAll<ProdCall>("prodcalls")) prodCalls.set(p.id, p);
 
   // "My agents" — the real targets under test. Seed from the sample sims so the
   // registry isn't empty, and back-link each sample sim to its seeded target.
@@ -127,7 +131,7 @@ function seed(): HalState {
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, targets, judges, engine, mediaServer, mediaGateway };
+  return { db, testCases, results, accounts, agents, targets, judges, prodCalls, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -309,6 +313,29 @@ export function deleteJudge(id: string): boolean {
   const s = halState();
   const ok = s.judges.delete(id);
   if (ok) s.db.remove("judges", id);
+  return ok;
+}
+
+// --- Production calls (uploaded/transcribed calls for offline analysis) ------
+
+export function listProdCalls(): ProdCall[] {
+  return [...halState().prodCalls.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getProdCall(id: string): ProdCall | undefined {
+  return halState().prodCalls.get(id);
+}
+
+export function upsertProdCall(p: ProdCall): void {
+  const s = halState();
+  s.prodCalls.set(p.id, p);
+  s.db.put("prodcalls", p.id, p, p.createdAt);
+}
+
+export function deleteProdCall(id: string): boolean {
+  const s = halState();
+  const ok = s.prodCalls.delete(id);
+  if (ok) s.db.remove("prodcalls", id);
   return ok;
 }
 

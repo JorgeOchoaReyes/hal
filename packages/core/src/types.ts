@@ -284,6 +284,29 @@ export interface TargetAgent {
   createdAt: number;
 }
 
+/**
+ * A production call brought into HAL for offline analysis: uploaded audio that
+ * gets transcribed, or a transcript pasted directly. A judge can then be applied
+ * to score it, and it can be assigned to a real agent under test.
+ */
+export interface ProdCall {
+  id: string;
+  name: string;
+  /** How it entered HAL: transcribed from audio, or a transcript pasted in. */
+  source: "upload" | "transcript";
+  status: "new" | "transcribing" | "scored" | "error";
+  transcript: Transcript;
+  /** Assigned real agent under test (a {@link TargetAgent} in "My agents"). */
+  targetAgentId?: string;
+  /** The judge last applied to score this call. */
+  judgeId?: string;
+  verdict?: JudgeVerdict;
+  error?: string;
+  /** Transcription provider/model used, when transcribed from audio. */
+  transcription?: { provider: string; model?: string; durationSec?: number };
+  createdAt: number;
+}
+
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "errored" | "aborted";
 
 export interface TestResult {

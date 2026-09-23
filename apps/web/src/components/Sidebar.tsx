@@ -39,6 +39,12 @@ const GROUPS: NavGroup[] = [
         icon: icon("M3 3v18h18M7 15l3-3 3 3 4-5"),
         match: (p) => p.startsWith("/results"),
       },
+      {
+        href: "/transcriptions",
+        label: "Transcriptions",
+        icon: icon("M9 18V5l12-2v13M9 13l12-2M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"),
+        match: (p) => p.startsWith("/transcriptions"),
+      },
     ],
   },
   {
