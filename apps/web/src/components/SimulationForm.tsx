@@ -8,7 +8,41 @@ import type {
   BranchAction,
   StructuredTest,
   StructuredCondition,
+  SavedJudge,
+  Transcript,
 } from "@hal/core";
+
+/**
+ * Turn a pasted transcript into the tester's linear script: the CALLER's turns
+ * become `say` steps (the tester replays the human side), the target/AI turns are
+ * dropped since that's what the agent under test must produce. Lines may be
+ * prefixed with a speaker label; unlabeled lines alternate, caller first.
+ */
+function transcriptTextToSteps(text: string): ScenarioStep[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let alt: "agent" | "target" = "agent";
+  const steps: ScenarioStep[] = [];
+  for (const line of lines) {
+    const m = line.match(/^([A-Za-z ]{1,20}?)\s*[:\-]\s*(.*)$/);
+    let role: "agent" | "target" | "system" = alt;
+    let content = line;
+    if (m) {
+      const label = m[1].toLowerCase().trim();
+      if (["agent", "caller", "customer", "user", "tester", "me", "human"].includes(label)) role = "agent";
+      else if (["target", "ai", "bot", "assistant", "system", "ivr"].includes(label)) role = "target";
+      else role = alt;
+      content = m[2] || line;
+    }
+    alt = role === "agent" ? "target" : "agent";
+    if (role === "agent" && content.trim()) steps.push({ kind: "say", text: content.trim() });
+  }
+  return steps;
+}
+
+/** The CALLER's turns from a structured transcript become `say` steps. */
+function transcriptToSteps(t: Transcript): ScenarioStep[] {
+  return t.filter((u) => u.role === "agent" && u.text.trim()).map((u) => ({ kind: "say", text: u.text.trim() }));
+}
 
 interface ProviderView {
   id: string;
@@ -52,6 +86,10 @@ export default function SimulationForm() {
   ]);
   const [rules, setRules] = useState<JudgeRule[]>([{ kind: "min-turns", count: 3 }]);
   const [metrics, setMetrics] = useState<MetricDefinition[]>([]);
+  const [judges, setJudges] = useState<SavedJudge[]>([]);
+  const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set());
+  const [importText, setImportText] = useState("");
+  const [importNote, setImportNote] = useState<string | null>(null);
   const [mode, setMode] = useState<"steps" | "structured">("steps");
   const [structured, setStructured] = useState<StructuredTest>({
     role: "You are a customer calling to book an appointment.",
@@ -80,6 +118,30 @@ export default function SimulationForm() {
       .then((r) => r.json())
       .then((d) => setTestingAgents(d.agents ?? []))
       .catch(() => undefined);
+    fetch("/api/judges")
+      .then((r) => r.json())
+      .then((d) => setJudges(d.judges ?? []))
+      .catch(() => undefined);
+
+    // Prefill from a transcribed production call: /simulations/new?fromCall=<id>
+    const fromCall = new URLSearchParams(window.location.search).get("fromCall");
+    if (fromCall) {
+      fetch("/api/prod-calls")
+        .then((r) => r.json())
+        .then((d: { prodCalls: Array<{ id: string; name: string; transcript: Transcript }> }) => {
+          const call = d.prodCalls?.find((c) => c.id === fromCall);
+          if (!call) return;
+          const s = transcriptToSteps(call.transcript);
+          if (s.length > 0) {
+            setSteps(s);
+            setMode("steps");
+            setName(`${call.name} — replay`);
+            setPersonaName("Imported caller");
+            setImportNote(`Imported ${s.length} caller turn${s.length === 1 ? "" : "s"} from “${call.name}”.`);
+          }
+        })
+        .catch(() => undefined);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -95,6 +157,33 @@ export default function SimulationForm() {
     setProviderId(pid);
     const p = providers.find((x) => x.id === pid);
     if (p) applyDefaults(p);
+  }
+
+  function importTranscript() {
+    const s = transcriptTextToSteps(importText);
+    if (s.length === 0) {
+      setImportNote("No caller turns found. Prefix lines with “agent:” / “target:”, or alternate lines.");
+      return;
+    }
+    setSteps(s);
+    setMode("steps");
+    if (!name.trim()) setName("Imported from transcript");
+    setImportNote(`Imported ${s.length} caller turn${s.length === 1 ? "" : "s"} as the tester's script. Edit below before saving.`);
+  }
+
+  async function onTranscriptFile(file: File | null) {
+    if (!file) return;
+    const text = await file.text();
+    setImportText(text);
+  }
+
+  function toggleJudge(id: string) {
+    setJudgeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function submit() {
@@ -114,6 +203,7 @@ export default function SimulationForm() {
           steps: mode === "steps" ? steps : undefined,
           structured: mode === "structured" ? structured : undefined,
           judge: { mode: "all", rules, criteria: criteria.filter((c) => c.trim()), metrics },
+          judgeIds: [...judgeIds],
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       });
@@ -143,6 +233,36 @@ export default function SimulationForm() {
           <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="booking, smoke" />
         </Field>
       </section>
+
+      <details className="card">
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+          Import from a transcript — turn a real call into a simulation
+        </summary>
+        <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+          Paste or upload a call transcript. The <strong>caller&apos;s</strong> turns become the
+          tester&apos;s script (as <span className="mono">say</span> steps); the target/AI turns are
+          left for the agent under test to produce. Prefix lines with{" "}
+          <span className="mono">agent:</span> / <span className="mono">target:</span>, or let them
+          alternate (caller first).
+        </p>
+        <Field label="Upload a transcript file (.txt)">
+          <input type="file" accept=".txt,.json,text/plain" onChange={(e) => onTranscriptFile(e.target.files?.[0] ?? null)} />
+        </Field>
+        <Field label="…or paste it here">
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            rows={6}
+            placeholder={"agent: Hi, I'd like to book an appointment.\ntarget: Sure! What day works for you?\nagent: The first available Tuesday."}
+          />
+        </Field>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button type="button" onClick={importTranscript} disabled={!importText.trim()}>
+            Import into script
+          </button>
+          {importNote && <span className="muted" style={{ fontSize: 12 }}>{importNote}</span>}
+        </div>
+      </details>
 
       <section className="card">
         <h2 style={{ marginTop: 0 }}>Target — agent under test</h2>
@@ -274,6 +394,35 @@ export default function SimulationForm() {
         setRules={setRules}
       />
       <MetricsEditor metrics={metrics} setMetrics={setMetrics} />
+
+      <section className="card">
+        <h2 style={{ marginTop: 0 }}>Judges (reusable scorers)</h2>
+        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+          Attach saved judges to score this simulation on top of the pass criteria above. Create
+          them on the <a href="/judges">Judges</a> page.
+        </p>
+        {judges.length === 0 ? (
+          <p className="muted" style={{ marginBottom: 0 }}>No saved judges yet.</p>
+        ) : (
+          <div className="grid" style={{ gap: 6 }}>
+            {judges.map((j) => (
+              <label
+                key={j.id}
+                className="card-row"
+                style={{ cursor: "pointer", background: "var(--panel-2)", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
+              >
+                <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input type="checkbox" style={{ width: "auto" }} checked={judgeIds.has(j.id)} onChange={() => toggleJudge(j.id)} />
+                  <span>
+                    <strong>{j.name}</strong> <span className="tag">{j.kind}</span>
+                    {j.description && <div className="muted" style={{ fontSize: 12 }}>{j.description}</div>}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <button onClick={submit} disabled={busy || !name.trim()}>

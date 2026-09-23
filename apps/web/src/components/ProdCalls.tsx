@@ -270,6 +270,9 @@ function CallCard({
           <button className="icon-btn" onClick={() => setOpen((o) => !o)}>
             {open ? "Hide transcript" : "Transcript"}
           </button>
+          <Link className="icon-btn" href={`/simulations/new?fromCall=${call.id}`} title="Create a simulation that replays this call's caller">
+            → Simulation
+          </Link>
           <button className="icon-btn" onClick={remove}>
             Delete
           </button>
