@@ -10,6 +10,8 @@ import {
   type ProviderAccount,
   type HostedTestingAgent,
   type TargetAgent,
+  type SavedJudge,
+  type JudgeSpec,
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
@@ -28,6 +30,7 @@ interface HalState {
   accounts: Map<string, ProviderAccount>;
   agents: Map<string, HostedTestingAgent>;
   targets: Map<string, TargetAgent>;
+  judges: Map<string, SavedJudge>;
   engine: HalEngine;
   mediaServer?: MediaServer;
   mediaGateway?: MediaGateway;
@@ -60,6 +63,8 @@ function seed(): HalState {
   for (const a of db.loadAll<ProviderAccount>("accounts")) accounts.set(a.id, a);
   const agents = new Map<string, HostedTestingAgent>();
   for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
+  const judges = new Map<string, SavedJudge>();
+  for (const j of db.loadAll<SavedJudge>("judges")) judges.set(j.id, j);
 
   // "My agents" — the real targets under test. Seed from the sample sims so the
   // registry isn't empty, and back-link each sample sim to its seeded target.
@@ -122,7 +127,7 @@ function seed(): HalState {
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, targets, engine, mediaServer, mediaGateway };
+  return { db, testCases, results, accounts, agents, targets, judges, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -140,13 +145,56 @@ export function getTestCase(id: string): TestCase | undefined {
   const s = halState();
   const tc = s.testCases.get(id);
   if (!tc) return undefined;
+  let resolved = tc;
   // Resolve the live target from the linked "My agents" entry, when set, so the
   // simulation always runs against that target's current address.
   if (tc.targetAgentId) {
     const agent = s.targets.get(tc.targetAgentId);
-    if (agent) return { ...tc, target: agent.target };
+    if (agent) resolved = { ...resolved, target: agent.target };
   }
-  return tc;
+  // Merge any attached reusable judges into the inline judge so every run path
+  // that consumes getTestCase scores with them.
+  if (tc.judgeIds && tc.judgeIds.length > 0) {
+    const specs = tc.judgeIds
+      .map((jid) => s.judges.get(jid)?.spec)
+      .filter((spec): spec is JudgeSpec => Boolean(spec));
+    if (specs.length > 0) resolved = { ...resolved, judge: mergeJudgeSpecs(resolved.judge, specs) };
+  }
+  return resolved;
+}
+
+/** The raw stored test case, without target/judge resolution — for editing. */
+export function getTestCaseRaw(id: string): TestCase | undefined {
+  return halState().testCases.get(id);
+}
+
+/** Combine a base judge spec with attached judges' specs (union of signals). */
+function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
+  const merged: JudgeSpec = {
+    mode: base.mode ?? "all",
+    model: base.model,
+    rules: [...(base.rules ?? [])],
+    criteria: [...(base.criteria ?? [])],
+    metrics: [...(base.metrics ?? [])],
+  };
+  for (const spec of extra) {
+    if (spec.rules) merged.rules!.push(...spec.rules);
+    if (spec.criteria) merged.criteria!.push(...spec.criteria);
+    if (spec.metrics) merged.metrics!.push(...spec.metrics);
+    if (!merged.model && spec.model) merged.model = spec.model;
+  }
+  return merged;
+}
+
+/** Attach/replace the reusable judges referenced by a simulation. */
+export function setTestCaseJudges(testCaseId: string, judgeIds: string[]): TestCase | undefined {
+  const s = halState();
+  const tc = s.testCases.get(testCaseId);
+  if (!tc) return undefined;
+  const next = { ...tc, judgeIds };
+  s.testCases.set(testCaseId, next);
+  s.db.put("testcases", testCaseId, next, tc.createdAt);
+  return next;
 }
 
 export function upsertTestCase(tc: TestCase): void {
@@ -239,6 +287,29 @@ export function deleteTarget(id: string): boolean {
 /** The single reusable testing agent for a provider account, if provisioned. */
 export function getAgentForAccount(accountId: string): HostedTestingAgent | undefined {
   return [...halState().agents.values()].find((a) => a.accountId === accountId);
+}
+
+// --- Judges (reusable scoring configs) --------------------------------------
+
+export function listJudges(): SavedJudge[] {
+  return [...halState().judges.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getJudge(id: string): SavedJudge | undefined {
+  return halState().judges.get(id);
+}
+
+export function upsertJudge(j: SavedJudge): void {
+  const s = halState();
+  s.judges.set(j.id, j);
+  s.db.put("judges", j.id, j, j.createdAt);
+}
+
+export function deleteJudge(id: string): boolean {
+  const s = halState();
+  const ok = s.judges.delete(id);
+  if (ok) s.db.remove("judges", id);
+  return ok;
 }
 
 function redactAccount(a: ProviderAccount): ProviderAccount {

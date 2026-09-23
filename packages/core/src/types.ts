@@ -203,6 +203,23 @@ export interface JudgeSpec {
   mode?: "all" | "rules-only" | "llm-only";
 }
 
+/**
+ * A saved, reusable judge. Wraps a {@link JudgeSpec} with identity so the same
+ * scoring config can be attached to many simulations and applied to uploaded
+ * production calls. `kind` is a UI hint derived from what the spec uses:
+ *  - "llm": natural-language criteria / typed metrics scored by an LLM
+ *  - "code": deterministic rule checks only (no LLM, free)
+ *  - "hybrid": both
+ */
+export interface SavedJudge {
+  id: string;
+  name: string;
+  description?: string;
+  kind: "llm" | "code" | "hybrid";
+  spec: JudgeSpec;
+  createdAt: number;
+}
+
 export interface CheckResult {
   id: string;
   description: string;
@@ -230,6 +247,12 @@ export interface TestCase {
   scenario: Scenario;
   target: Target;
   judge: JudgeSpec;
+  /**
+   * Optional references to saved {@link Judge}s. When set, each judge's spec is
+   * merged into the inline `judge` at run time (rules/criteria/metrics
+   * concatenated), so one simulation can be scored by several reusable judges.
+   */
+  judgeIds?: string[];
   createdAt?: number;
   tags?: string[];
   /**

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getTestCase, listResults } from "@/lib/store";
 import RunPanel from "@/components/RunPanel";
 import DispatchHosted from "@/components/DispatchHosted";
+import AttachJudges from "@/components/AttachJudges";
 import type { ScenarioStep, JudgeRule, Target } from "@hal/core";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export default async function TestDetailPage({
       <p className="sub">{tc.scenario.description}</p>
 
       <RunPanel testCaseId={tc.id} />
+
+      <h2>Judges</h2>
+      <AttachJudges testCaseId={tc.id} initial={tc.judgeIds ?? []} />
 
       {tc.scenario.structured && (
         <>
