@@ -130,6 +130,7 @@ export {
 // Utils
 export { id, now } from "./util/id.js";
 export { TypedEmitter, sleep, type Listener } from "./util/events.js";
+export { parseTranscript, transcriptToSayScript } from "./transcript.js";
 
 // Sample fixtures
 export * from "./fixtures.js";

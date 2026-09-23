@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import NumberPicker from "./NumberPicker";
+import Modal from "./Modal";
 
 interface Integration {
   id: string;
@@ -28,6 +29,8 @@ export default function HostedAgents() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [provisionOpen, setProvisionOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const [i, a, g] = await Promise.all([
@@ -46,16 +49,98 @@ export default function HostedAgents() {
 
   return (
     <div className="grid" style={{ gap: 18 }}>
-      {error && <div className="card" style={{ borderColor: "var(--fail)", color: "var(--fail)" }}>{error}</div>}
-      <ConnectAccount integrations={integrations} onDone={refresh} />
-      {accounts.length > 0 && <AccountsList accounts={accounts} />}
-      <ProvisionAgent accounts={accounts} onDone={refresh} />
-      <AgentsList agents={agents} accounts={accounts} />
+      {error && (
+        <div className="card" style={{ borderColor: "var(--fail)", color: "var(--fail)" }}>
+          {error}
+        </div>
+      )}
+
+      <div className="toolbar" style={{ margin: "4px 0 0" }}>
+        <div className="muted" style={{ fontSize: 13 }}>
+          {accounts.length} account{accounts.length === 1 ? "" : "s"} · {agents.length} testing
+          agent{agents.length === 1 ? "" : "s"}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="secondary" onClick={() => setConnectOpen(true)}>
+            + Connect provider
+          </button>
+          <button
+            onClick={() => setProvisionOpen(true)}
+            disabled={accounts.length === 0}
+            title={accounts.length === 0 ? "Connect a provider account first" : "Create a testing agent"}
+          >
+            + New testing agent
+          </button>
+        </div>
+      </div>
+
+      <section>
+        <h2 style={{ marginTop: 8 }}>Connected accounts</h2>
+        {accounts.length === 0 ? (
+          <div className="card muted">
+            No provider accounts yet. Connect one to provision a testing agent.
+          </div>
+        ) : (
+          <div className="grid stagger" style={{ gap: 8 }}>
+            {accounts.map((a) => (
+              <AccountRow key={a.id} account={a} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2>Testing agents</h2>
+        {agents.length === 0 ? (
+          <div className="card muted">No testing agents yet.</div>
+        ) : (
+          <div className="grid stagger" style={{ gap: 10 }}>
+            {agents.map((a) => (
+              <AgentRow key={a.id} agent={a} account={accounts.find((x) => x.id === a.accountId)} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <Modal open={connectOpen} onClose={() => setConnectOpen(false)} title="Connect a provider account">
+        <ConnectAccount
+          integrations={integrations}
+          onDone={() => {
+            setConnectOpen(false);
+            refresh();
+          }}
+          onCancel={() => setConnectOpen(false)}
+        />
+      </Modal>
+
+      <Modal
+        open={provisionOpen}
+        onClose={() => setProvisionOpen(false)}
+        title="Provision a testing agent"
+        wide
+      >
+        <ProvisionAgent
+          accounts={accounts}
+          onDone={() => {
+            setProvisionOpen(false);
+            refresh();
+          }}
+          onCancel={() => setProvisionOpen(false)}
+        />
+      </Modal>
     </div>
   );
 }
 
-function ConnectAccount({ integrations, onDone }: { integrations: Integration[]; onDone: () => void }) {
+function ConnectAccount({
+  integrations,
+  onDone,
+  onCancel,
+}: {
+  integrations: Integration[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const [provider, setProvider] = useState("");
   const [label, setLabel] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
@@ -80,17 +165,19 @@ function ConnectAccount({ integrations, onDone }: { integrations: Integration[];
   }
 
   return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>1. Connect a provider account</h2>
+    <>
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         Bring credentials for your voice platform. HAL uses them to create a testing agent on your
-        behalf and to place calls. Credentials are stored server-side and never sent back to the browser.
+        behalf and to place calls. Credentials are stored server-side and never sent back to the
+        browser.
       </p>
       <label className="field">
         <span className="field-label">Provider</span>
         <select value={integration?.id ?? ""} onChange={(e) => setProvider(e.target.value)}>
           {integrations.map((i) => (
-            <option key={i.id} value={i.id}>{i.label}</option>
+            <option key={i.id} value={i.id}>
+              {i.label}
+            </option>
           ))}
         </select>
       </label>
@@ -100,30 +187,31 @@ function ConnectAccount({ integrations, onDone }: { integrations: Integration[];
       </label>
       {integration?.credentialFields.map((f) => (
         <label className="field" key={f.key}>
-          <span className="field-label">{f.label}{f.required ? " *" : ""}</span>
+          <span className="field-label">
+            {f.label}
+            {f.required ? " *" : ""}
+          </span>
           <input
             type="password"
             value={creds[f.key] ?? ""}
             onChange={(e) => setCreds({ ...creds, [f.key]: e.target.value })}
           />
-          {f.help && <span className="muted" style={{ fontSize: 12 }}>{f.help}</span>}
+          {f.help && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              {f.help}
+            </span>
+          )}
         </label>
       ))}
-      <button onClick={submit} disabled={busy || !integration}>{busy ? "Connecting…" : "Connect account"}</button>
-    </section>
-  );
-}
-
-function AccountsList({ accounts }: { accounts: Account[] }) {
-  return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>Connected accounts</h2>
-      <div className="grid" style={{ gap: 8 }}>
-        {accounts.map((a) => (
-          <AccountRow key={a.id} account={a} />
-        ))}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button onClick={submit} disabled={busy || !integration}>
+          {busy ? "Connecting…" : "Connect account"}
+        </button>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -149,7 +237,15 @@ function AccountRow({ account }: { account: Account }) {
   }
 
   return (
-    <div className="card-row" style={{ background: "var(--panel-2)", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>
+    <div
+      className="card-row"
+      style={{
+        background: "var(--panel-2)",
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid var(--border)",
+      }}
+    >
       <div>
         <strong>{account.label}</strong> <span className="pill telephony">{account.provider}</span>
         {result && (
@@ -157,10 +253,14 @@ function AccountRow({ account }: { account: Account }) {
             {result.ok ? (
               <span className="label label-pass">connected ✓</span>
             ) : (
-              <span className="label label-fail" title={result.detail}>failed</span>
+              <span className="label label-fail" title={result.detail}>
+                failed
+              </span>
             )}
             {!result.ok && result.detail && (
-              <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{result.detail}</div>
+              <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>
+                {result.detail}
+              </div>
             )}
           </div>
         )}
@@ -172,7 +272,15 @@ function AccountRow({ account }: { account: Account }) {
   );
 }
 
-function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () => void }) {
+function ProvisionAgent({
+  accounts,
+  onDone,
+  onCancel,
+}: {
+  accounts: Account[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const [accountId, setAccountId] = useState("");
   const [name, setName] = useState("HAL tester");
   const [systemPrompt, setSystemPrompt] = useState(
@@ -226,7 +334,6 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      // Prefer the node-based flow config when the platform produced one.
       setPreview(JSON.stringify(data.flow ?? data.config, null, 2));
     } catch (e) {
       setErr((e as Error).message);
@@ -259,15 +366,20 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
   }
 
   return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>2. Provision a testing agent</h2>
+    <>
       {accounts.length === 0 && <p className="muted">Connect an account first.</p>}
-      {err && <div className="muted" style={{ color: "var(--fail)" }}>{err}</div>}
+      {err && (
+        <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>
+          {err}
+        </div>
+      )}
       <label className="field">
         <span className="field-label">Account</span>
         <select value={selected} onChange={(e) => setAccountId(e.target.value)}>
           {accounts.map((a) => (
-            <option key={a.id} value={a.id}>{a.label} ({a.provider})</option>
+            <option key={a.id} value={a.id}>
+              {a.label} ({a.provider})
+            </option>
           ))}
         </select>
       </label>
@@ -275,19 +387,32 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
         <span className="field-label">Agent name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label className="muted" style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
-        <input type="checkbox" style={{ width: "auto" }} checked={useStructured} onChange={(e) => setUseStructured(e.target.checked)} />
+      <label
+        className="muted"
+        style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}
+      >
+        <input
+          type="checkbox"
+          style={{ width: "auto" }}
+          checked={useStructured}
+          onChange={(e) => setUseStructured(e.target.checked)}
+        />
         Reproduce a structured (deterministic) test — compiled into this platform&apos;s native config
       </label>
       {useStructured ? (
         <label className="field">
           <span className="field-label">Structured test (role + conditions JSON)</span>
-          <textarea value={structuredJson} onChange={(e) => setStructuredJson(e.target.value)} rows={10} className="mono" />
+          <textarea
+            value={structuredJson}
+            onChange={(e) => setStructuredJson(e.target.value)}
+            rows={10}
+            className="mono"
+          />
         </label>
       ) : (
         <>
           <label className="field">
-            <span className="field-label">System prompt (the tester's behavior)</span>
+            <span className="field-label">System prompt (the tester&apos;s behavior)</span>
             <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} rows={3} />
           </label>
           <label className="field">
@@ -296,39 +421,39 @@ function ProvisionAgent({ accounts, onDone }: { accounts: Account[]; onDone: () 
           </label>
         </>
       )}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={submit} disabled={busy || accounts.length === 0}>
-          {busy ? "Creating on provider…" : "Create testing agent"}
-        </button>
-        <button type="button" className="btn secondary" onClick={doPreview} disabled={accounts.length === 0}>
-          Preview {selectedAccount?.provider ?? "platform"} config
-        </button>
-      </div>
       {preview && (
         <>
           <div className="field-label" style={{ marginTop: 12 }}>
             Native config HAL will send to {selectedAccount?.provider}
           </div>
-          <pre className="mono" style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, overflow: "auto", fontSize: 12, maxHeight: 320 }}>
+          <pre
+            className="mono"
+            style={{
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 12,
+              overflow: "auto",
+              fontSize: 12,
+              maxHeight: 320,
+            }}
+          >
             {preview}
           </pre>
         </>
       )}
-    </section>
-  );
-}
-
-function AgentsList({ agents, accounts }: { agents: Agent[]; accounts: Account[] }) {
-  return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>3. Testing agents</h2>
-      {agents.length === 0 && <p className="muted">No testing agents yet.</p>}
-      <div className="grid" style={{ gap: 10 }}>
-        {agents.map((a) => (
-          <AgentRow key={a.id} agent={a} account={accounts.find((x) => x.id === a.accountId)} />
-        ))}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="secondary" onClick={doPreview} disabled={accounts.length === 0}>
+          Preview {selectedAccount?.provider ?? "platform"} config
+        </button>
+        <button onClick={submit} disabled={busy || accounts.length === 0}>
+          {busy ? "Creating on provider…" : "Create testing agent"}
+        </button>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -362,8 +487,7 @@ function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
     <div className="card" style={{ background: "var(--panel-2)", marginBottom: 0 }}>
       <div className="card-row">
         <div>
-          <strong>{agent.name}</strong>{" "}
-          <span className="pill telephony">{agent.provider}</span>
+          <strong>{agent.name}</strong> <span className="pill telephony">{agent.provider}</span>
           <div className="muted mono" style={{ fontSize: 12 }}>
             agent {agent.externalAgentId} · {account?.label ?? agent.accountId}
           </div>
@@ -371,14 +495,22 @@ function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <NumberPicker accountId={agent.accountId} value={phone} onChange={setPhone} />
-        <button onClick={call} disabled={busy || !phone.trim()}>{busy ? "Calling…" : "Place test call"}</button>
+        <button onClick={call} disabled={busy || !phone.trim()}>
+          {busy ? "Calling…" : "Place test call"}
+        </button>
       </div>
-      {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 6 }}>{err}</div>}
+      {err && (
+        <div className="muted" style={{ color: "var(--fail)", marginTop: 6 }}>
+          {err}
+        </div>
+      )}
       {result && (
         <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span className={`pill ${result.status}`}>{result.status}</span>
           {(result.labels ?? []).map((l, i) => (
-            <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+            <span key={i} className={`label label-${l.tone}`}>
+              {l.text}
+            </span>
           ))}
         </div>
       )}

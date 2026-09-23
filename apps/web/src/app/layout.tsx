@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
+import ThemeToggle from "@/components/ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,9 +10,15 @@ export const metadata: Metadata = {
     "Self-hosted service for testing voice AI agents with simulated, turn-by-turn test calls and pass/fail judging.",
 };
 
+// Apply the persisted theme before first paint so there's no light→dark flash.
+const themeInit = `(function(){try{var t=localStorage.getItem('hal-theme');if(t&&t!=='system')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       {/* suppressHydrationWarning: browser extensions commonly inject attributes
           onto <body> before React hydrates, which is harmless. */}
       <body suppressHydrationWarning>
@@ -28,9 +35,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/agents" className="btn secondary sm">
                   Hosted agents
                 </Link>
-                <Link href="/tests/new" className="btn sm">
+                <Link href="/simulations/new" className="btn sm">
                   + New simulation
                 </Link>
+                <ThemeToggle />
               </div>
             </header>
             <main className="content">{children}</main>

@@ -10,6 +10,9 @@ import {
   type ProviderAccount,
   type HostedTestingAgent,
   type TargetAgent,
+  type SavedJudge,
+  type JudgeSpec,
+  type ProdCall,
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
@@ -28,6 +31,8 @@ interface HalState {
   accounts: Map<string, ProviderAccount>;
   agents: Map<string, HostedTestingAgent>;
   targets: Map<string, TargetAgent>;
+  judges: Map<string, SavedJudge>;
+  prodCalls: Map<string, ProdCall>;
   engine: HalEngine;
   mediaServer?: MediaServer;
   mediaGateway?: MediaGateway;
@@ -60,6 +65,10 @@ function seed(): HalState {
   for (const a of db.loadAll<ProviderAccount>("accounts")) accounts.set(a.id, a);
   const agents = new Map<string, HostedTestingAgent>();
   for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
+  const judges = new Map<string, SavedJudge>();
+  for (const j of db.loadAll<SavedJudge>("judges")) judges.set(j.id, j);
+  const prodCalls = new Map<string, ProdCall>();
+  for (const p of db.loadAll<ProdCall>("prodcalls")) prodCalls.set(p.id, p);
 
   // "My agents" — the real targets under test. Seed from the sample sims so the
   // registry isn't empty, and back-link each sample sim to its seeded target.
@@ -122,7 +131,7 @@ function seed(): HalState {
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, targets, engine, mediaServer, mediaGateway };
+  return { db, testCases, results, accounts, agents, targets, judges, prodCalls, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -140,13 +149,62 @@ export function getTestCase(id: string): TestCase | undefined {
   const s = halState();
   const tc = s.testCases.get(id);
   if (!tc) return undefined;
+  let resolved = tc;
   // Resolve the live target from the linked "My agents" entry, when set, so the
   // simulation always runs against that target's current address.
   if (tc.targetAgentId) {
     const agent = s.targets.get(tc.targetAgentId);
-    if (agent) return { ...tc, target: agent.target };
+    if (agent) resolved = { ...resolved, target: agent.target };
   }
-  return tc;
+  // Merge any attached reusable judges into the inline judge so every run path
+  // that consumes getTestCase scores with them.
+  if (tc.judgeIds && tc.judgeIds.length > 0) {
+    const specs = tc.judgeIds
+      .map((jid) => s.judges.get(jid)?.spec)
+      .filter((spec): spec is JudgeSpec => Boolean(spec));
+    if (specs.length > 0) resolved = { ...resolved, judge: mergeJudgeSpecs(resolved.judge, specs) };
+  }
+  return resolved;
+}
+
+/** The raw stored test case, without target/judge resolution — for editing. */
+export function getTestCaseRaw(id: string): TestCase | undefined {
+  return halState().testCases.get(id);
+}
+
+/** Combine a base judge spec with attached judges' specs (union of signals). */
+function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
+  const merged: JudgeSpec = {
+    mode: base.mode ?? "all",
+    model: base.model,
+    rules: [...(base.rules ?? [])],
+    criteria: [...(base.criteria ?? [])],
+    metrics: [...(base.metrics ?? [])],
+  };
+  for (const spec of extra) {
+    if (spec.rules) merged.rules!.push(...spec.rules);
+    if (spec.criteria) merged.criteria!.push(...spec.criteria);
+    if (spec.metrics) merged.metrics!.push(...spec.metrics);
+    if (!merged.model && spec.model) merged.model = spec.model;
+  }
+  // Attaching a judge is an explicit request to evaluate it, so derive the mode
+  // from the signals actually present — otherwise a restrictive base mode (e.g.
+  // "rules-only") would silently drop an attached LLM judge's criteria.
+  const hasRules = (merged.rules?.length ?? 0) > 0;
+  const hasLlm = (merged.criteria?.length ?? 0) > 0 || (merged.metrics?.length ?? 0) > 0;
+  merged.mode = hasRules && hasLlm ? "all" : hasLlm ? "llm-only" : hasRules ? "rules-only" : merged.mode;
+  return merged;
+}
+
+/** Attach/replace the reusable judges referenced by a simulation. */
+export function setTestCaseJudges(testCaseId: string, judgeIds: string[]): TestCase | undefined {
+  const s = halState();
+  const tc = s.testCases.get(testCaseId);
+  if (!tc) return undefined;
+  const next = { ...tc, judgeIds };
+  s.testCases.set(testCaseId, next);
+  s.db.put("testcases", testCaseId, next, tc.createdAt);
+  return next;
 }
 
 export function upsertTestCase(tc: TestCase): void {
@@ -241,8 +299,110 @@ export function getAgentForAccount(accountId: string): HostedTestingAgent | unde
   return [...halState().agents.values()].find((a) => a.accountId === accountId);
 }
 
+// --- Judges (reusable scoring configs) --------------------------------------
+
+export function listJudges(): SavedJudge[] {
+  return [...halState().judges.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getJudge(id: string): SavedJudge | undefined {
+  return halState().judges.get(id);
+}
+
+export function upsertJudge(j: SavedJudge): void {
+  const s = halState();
+  s.judges.set(j.id, j);
+  s.db.put("judges", j.id, j, j.createdAt);
+}
+
+export function deleteJudge(id: string): boolean {
+  const s = halState();
+  const ok = s.judges.delete(id);
+  if (ok) s.db.remove("judges", id);
+  return ok;
+}
+
+// --- Production calls (uploaded/transcribed calls for offline analysis) ------
+
+export function listProdCalls(): ProdCall[] {
+  return [...halState().prodCalls.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getProdCall(id: string): ProdCall | undefined {
+  return halState().prodCalls.get(id);
+}
+
+export function upsertProdCall(p: ProdCall): void {
+  const s = halState();
+  s.prodCalls.set(p.id, p);
+  s.db.put("prodcalls", p.id, p, p.createdAt);
+}
+
+export function deleteProdCall(id: string): boolean {
+  const s = halState();
+  const ok = s.prodCalls.delete(id);
+  if (ok) s.db.remove("prodcalls", id);
+  return ok;
+}
+
 function redactAccount(a: ProviderAccount): ProviderAccount {
   const credentials: Record<string, string> = {};
   for (const k of Object.keys(a.credentials)) credentials[k] = "••••••";
   return { ...a, credentials };
+}
+
+// --- App settings: transcription (speech-to-text) provider ------------------
+
+export interface TranscriptionSettings {
+  id: "transcription";
+  /** Provider id, e.g. "deepgram". A dropdown so more can be added later. */
+  provider: string;
+  /** Secret API key — stored server-side, never returned to the browser. */
+  apiKey?: string;
+  /** Optional model override (e.g. Deepgram "nova-2"). */
+  model?: string;
+  updatedAt: number;
+}
+
+/** Public (redacted) view of the transcription settings for the browser. */
+export interface TranscriptionSettingsPublic {
+  provider: string;
+  model?: string;
+  hasKey: boolean;
+  updatedAt: number;
+}
+
+const TRANSCRIPTION_DEFAULT: TranscriptionSettings = {
+  id: "transcription",
+  provider: "deepgram",
+  model: "nova-2",
+  updatedAt: 0,
+};
+
+export function getTranscriptionSettingsRaw(): TranscriptionSettings {
+  const rows = halState().db.loadAll<TranscriptionSettings>("settings");
+  return rows.find((r) => r.id === "transcription") ?? { ...TRANSCRIPTION_DEFAULT };
+}
+
+export function getTranscriptionSettings(): TranscriptionSettingsPublic {
+  const s = getTranscriptionSettingsRaw();
+  return { provider: s.provider, model: s.model, hasKey: Boolean(s.apiKey), updatedAt: s.updatedAt };
+}
+
+export function setTranscriptionSettings(patch: {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+}): TranscriptionSettingsPublic {
+  const cur = getTranscriptionSettingsRaw();
+  const next: TranscriptionSettings = {
+    id: "transcription",
+    provider: patch.provider ?? cur.provider,
+    // undefined = keep existing key; empty string = explicitly clear it.
+    apiKey: patch.apiKey === undefined ? cur.apiKey : patch.apiKey || undefined,
+    model: patch.model ?? cur.model,
+    updatedAt: Date.now(),
+  };
+  halState().db.put("settings", "transcription", next, next.updatedAt);
+  return getTranscriptionSettings();
 }

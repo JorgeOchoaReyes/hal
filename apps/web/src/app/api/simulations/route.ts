@@ -31,6 +31,8 @@ interface SimulationDraft {
     metrics?: MetricDefinition[];
     mode?: "all" | "rules-only" | "llm-only";
   };
+  /** Reusable judges to attach to this simulation. */
+  judgeIds?: string[];
   tags?: string[];
   maxTurns?: number;
   maxDurationMs?: number;
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
       : template!.buildTarget(`${draft.name} target`, draft.targetConfig ?? {}),
     targetAgentId: savedTarget?.id,
     testingAgentId: draft.testingAgentId,
+    judgeIds: draft.judgeIds?.length ? draft.judgeIds : undefined,
     judge: {
       mode: draft.judge?.mode ?? "all",
       rules: draft.judge?.rules ?? [],
