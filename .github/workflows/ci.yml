@@ -32,3 +32,27 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  # Boot the staged offline server (what the packaged desktop app runs) on Linux
+  # and Windows to catch bundle/module-resolution breakage — e.g. the pnpm
+  # symlink issue that black-screened the Windows build — before spending a
+  # multi-OS release build to find it.
+  desktop-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Stage web + boot smoke test
+        run: pnpm --filter @hal/desktop smoke:server
