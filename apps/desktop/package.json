@@ -29,6 +29,7 @@
   "build": {
     "appId": "ai.hal.desktop",
     "productName": "HAL",
+    "electronVersion": "33.4.11",
     "files": ["dist/**", "node_modules/**"],
     "extraResources": [{ "from": "resources/web", "to": "web" }],
     "directories": { "output": "release" },
