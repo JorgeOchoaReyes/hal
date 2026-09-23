@@ -16,7 +16,8 @@
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
     "web": "turbo run dev --filter=@hal/web",
-    "desktop": "turbo run dev --filter=@hal/desktop"
+    "desktop": "turbo run dev --filter=@hal/desktop",
+    "bland:dryrun": "pnpm --filter @hal/core build && node scripts/bland-dryrun.mjs"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
