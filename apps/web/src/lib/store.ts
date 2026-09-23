@@ -187,6 +187,12 @@ function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
     if (spec.metrics) merged.metrics!.push(...spec.metrics);
     if (!merged.model && spec.model) merged.model = spec.model;
   }
+  // Attaching a judge is an explicit request to evaluate it, so derive the mode
+  // from the signals actually present — otherwise a restrictive base mode (e.g.
+  // "rules-only") would silently drop an attached LLM judge's criteria.
+  const hasRules = (merged.rules?.length ?? 0) > 0;
+  const hasLlm = (merged.criteria?.length ?? 0) > 0 || (merged.metrics?.length ?? 0) > 0;
+  merged.mode = hasRules && hasLlm ? "all" : hasLlm ? "llm-only" : hasRules ? "rules-only" : merged.mode;
   return merged;
 }
 

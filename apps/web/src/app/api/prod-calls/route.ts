@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id, type ProdCall, type Transcript } from "@hal/core";
 import { listProdCalls, upsertProdCall } from "@/lib/store";
-import { transcribeAudio, parseTranscriptText } from "@/lib/transcribe";
+import { transcribeAudio, parseTranscript } from "@/lib/transcribe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       transcript?: Transcript;
       targetAgentId?: string;
     };
-    const transcript = body.transcript ?? parseTranscriptText(body.transcriptText ?? "");
+    const transcript = body.transcript ?? parseTranscript(body.transcriptText ?? "");
     if (transcript.length === 0) {
       return NextResponse.json({ error: "Provide audio or a non-empty transcript." }, { status: 400 });
     }

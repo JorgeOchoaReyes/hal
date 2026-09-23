@@ -1,5 +1,5 @@
 import "server-only";
-import type { Transcript, Utterance } from "@hal/core";
+import { parseTranscript, type Transcript, type Utterance } from "@hal/core";
 import { getTranscriptionSettingsRaw } from "./store";
 
 /**
@@ -74,32 +74,5 @@ interface DeepgramResponse {
   };
 }
 
-/**
- * Parse a pasted transcript into utterances. Lines may be prefixed with a
- * speaker label ("agent:", "target:", "caller:", "ai:", "bot:"); unlabeled
- * lines alternate speakers starting with the target.
- */
-export function parseTranscriptText(text: string): Transcript {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const base = Date.now();
-  let alt: "agent" | "target" = "target";
-  return lines.map((line, i): Utterance => {
-    const m = line.match(/^([A-Za-z ]{1,20}?)\s*[:\-]\s*(.*)$/);
-    let role: Utterance["role"] = alt;
-    let content = line;
-    if (m) {
-      const label = m[1].toLowerCase().trim();
-      if (["agent", "caller", "customer", "user", "tester"].includes(label)) role = "agent";
-      else if (["target", "ai", "bot", "assistant", "agent under test"].includes(label)) role = "target";
-      else if (label === "system") role = "system";
-      else role = alt;
-      if (role !== alt || m[1]) content = m[2] || line;
-    }
-    // advance the alternation only when we actually inferred it
-    alt = role === "agent" ? "target" : "agent";
-    return { role, text: content, startedAt: base + i * 1000 };
-  });
-}
+/** Re-exported for callers in this app; the parser itself lives in @hal/core. */
+export { parseTranscript } from "@hal/core";

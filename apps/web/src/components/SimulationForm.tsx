@@ -11,37 +11,18 @@ import type {
   SavedJudge,
   Transcript,
 } from "@hal/core";
+// Import the pure parser from a barrel-free subpath so the client bundle doesn't
+// pull in node:crypto (used elsewhere in the @hal/core index).
+import { parseTranscript, transcriptToSayScript } from "@hal/core/transcript";
 
-/**
- * Turn a pasted transcript into the tester's linear script: the CALLER's turns
- * become `say` steps (the tester replays the human side), the target/AI turns are
- * dropped since that's what the agent under test must produce. Lines may be
- * prefixed with a speaker label; unlabeled lines alternate, caller first.
- */
+/** Turn pasted transcript text into the tester's `say` script (caller's turns). */
 function transcriptTextToSteps(text: string): ScenarioStep[] {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  let alt: "agent" | "target" = "agent";
-  const steps: ScenarioStep[] = [];
-  for (const line of lines) {
-    const m = line.match(/^([A-Za-z ]{1,20}?)\s*[:\-]\s*(.*)$/);
-    let role: "agent" | "target" | "system" = alt;
-    let content = line;
-    if (m) {
-      const label = m[1].toLowerCase().trim();
-      if (["agent", "caller", "customer", "user", "tester", "me", "human"].includes(label)) role = "agent";
-      else if (["target", "ai", "bot", "assistant", "system", "ivr"].includes(label)) role = "target";
-      else role = alt;
-      content = m[2] || line;
-    }
-    alt = role === "agent" ? "target" : "agent";
-    if (role === "agent" && content.trim()) steps.push({ kind: "say", text: content.trim() });
-  }
-  return steps;
+  return transcriptToSayScript(parseTranscript(text));
 }
 
 /** The CALLER's turns from a structured transcript become `say` steps. */
 function transcriptToSteps(t: Transcript): ScenarioStep[] {
-  return t.filter((u) => u.role === "agent" && u.text.trim()).map((u) => ({ kind: "say", text: u.text.trim() }));
+  return transcriptToSayScript(t);
 }
 
 interface ProviderView {
