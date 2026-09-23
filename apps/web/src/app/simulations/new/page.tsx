@@ -7,7 +7,7 @@ export default function NewSimulationPage() {
   return (
     <>
       <p style={{ marginTop: 20 }}>
-        <Link href="/">← All suites</Link>
+        <Link href="/">← All simulations</Link>
       </p>
       <h1>New simulation</h1>
       <p className="sub">

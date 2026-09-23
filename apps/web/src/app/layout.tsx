@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/agents" className="btn secondary sm">
                   Hosted agents
                 </Link>
-                <Link href="/tests/new" className="btn sm">
+                <Link href="/simulations/new" className="btn sm">
                   + New simulation
                 </Link>
               </div>

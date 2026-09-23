@@ -66,7 +66,7 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
           <span className="muted" style={{ fontSize: 13 }}>
             {filtered.length} of {rows.length}
           </span>
-          <Link href="/tests/new" className="btn">
+          <Link href="/simulations/new" className="btn">
             + New simulation
           </Link>
         </div>
@@ -101,7 +101,7 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
                 <tr key={r.id}>
                   <td className="id-cell">{r.id.slice(0, 8)}</td>
                   <td>
-                    <Link href={`/tests/${r.id}`} style={{ fontWeight: 600 }}>
+                    <Link href={`/simulations/${r.id}`} style={{ fontWeight: 600 }}>
                       {r.name}
                     </Link>
                   </td>
@@ -143,7 +143,7 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
                       ) : (
                         <span className={`pill ${state}`}>{state}</span>
                       )}
-                      <Link href={`/tests/${r.id}`} className="icon-btn" title="Open">
+                      <Link href={`/simulations/${r.id}`} className="icon-btn" title="Open">
                         Open
                       </Link>
                     </div>

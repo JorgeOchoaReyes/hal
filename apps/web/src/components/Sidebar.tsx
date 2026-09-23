@@ -30,9 +30,15 @@ const GROUPS: NavGroup[] = [
         href: "/",
         label: "Simulations",
         icon: icon("M4 6h16M4 12h16M4 18h16"),
-        match: (p) => p === "/" || p.startsWith("/tests"),
+        match: (p) => p === "/" || p.startsWith("/simulations"),
       },
-      { href: "/tests/new", label: "New simulation", icon: icon("M12 5v14M5 12h14") },
+      { href: "/simulations/new", label: "New simulation", icon: icon("M12 5v14M5 12h14") },
+      {
+        href: "/results",
+        label: "Results",
+        icon: icon("M3 3v18h18M7 15l3-3 3 3 4-5"),
+        match: (p) => p.startsWith("/results"),
+      },
     ],
   },
   {

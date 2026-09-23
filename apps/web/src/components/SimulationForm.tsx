@@ -119,7 +119,7 @@ export default function SimulationForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create");
-      window.location.href = `/tests/${data.testCase.id}`;
+      window.location.href = `/simulations/${data.testCase.id}`;
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

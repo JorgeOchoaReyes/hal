@@ -20,7 +20,7 @@ export default async function TestDetailPage({
   return (
     <>
       <p style={{ marginTop: 20 }}>
-        <Link href="/">← All suites</Link>
+        <Link href="/">← All simulations</Link>
       </p>
       <div className="card-row">
         <h1 style={{ margin: 0 }}>{tc.name}</h1>
