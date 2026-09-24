@@ -15,20 +15,40 @@ interface Meta {
   group: string;
   help: string;
   secret?: boolean; // password field (default true)
-  restart?: boolean; // needs an app restart to take effect
 }
 
-const META: Meta[] = [
-  { key: "OPENAI_API_KEY", label: "OpenAI API key", group: "LLM (judge & simulated caller)", help: "Used by the LLM judge and the simulated caller when the provider is OpenAI or auto." },
-  { key: "ANTHROPIC_API_KEY", label: "Anthropic API key", group: "LLM (judge & simulated caller)", help: "Used for Claude-based judging / simulation." },
-  { key: "DEEPGRAM_API_KEY", label: "Deepgram API key", group: "Media gateway (WebRTC / SIP speech)", help: "Speech for the live WebRTC/SIP media gateway. (Transcription of uploaded calls has its own setting above.)", restart: true },
-  { key: "TWILIO_ACCOUNT_SID", label: "Twilio Account SID", group: "Telephony (real PSTN calls)", help: "Twilio account for placing real phone calls.", restart: true },
-  { key: "TWILIO_AUTH_TOKEN", label: "Twilio Auth Token", group: "Telephony (real PSTN calls)", help: "Twilio auth token.", restart: true },
-  { key: "TWILIO_FROM_NUMBER", label: "Twilio From Number", group: "Telephony (real PSTN calls)", help: "The Twilio number calls are placed from (E.164).", secret: false, restart: true },
-  { key: "HAL_PUBLIC_URL", label: "Public URL", group: "Telephony (real PSTN calls)", help: "Publicly reachable URL for Twilio media callbacks (not a secret).", secret: false, restart: true },
-];
+interface Group {
+  name: string;
+  restart?: boolean; // whole group needs an app restart to take effect
+  items: Meta[];
+}
 
-const GROUPS = Array.from(new Set(META.map((m) => m.group)));
+const GROUPS: Group[] = [
+  {
+    name: "AI models",
+    items: [
+      { key: "OPENAI_API_KEY", label: "OpenAI", group: "AI models", help: "LLM judge & simulated caller (OpenAI or auto)." },
+      { key: "ANTHROPIC_API_KEY", label: "Anthropic", group: "AI models", help: "Claude-based judging / simulation." },
+    ],
+  },
+  {
+    name: "Speech",
+    restart: true,
+    items: [
+      { key: "DEEPGRAM_API_KEY", label: "Deepgram", group: "Speech", help: "Live WebRTC/SIP media gateway. (Uploaded-call transcription is set above.)" },
+    ],
+  },
+  {
+    name: "Phone calls (Twilio)",
+    restart: true,
+    items: [
+      { key: "TWILIO_ACCOUNT_SID", label: "Account SID", group: "Phone calls (Twilio)", help: "Twilio account for real PSTN calls." },
+      { key: "TWILIO_AUTH_TOKEN", label: "Auth token", group: "Phone calls (Twilio)", help: "Twilio auth token." },
+      { key: "TWILIO_FROM_NUMBER", label: "From number", group: "Phone calls (Twilio)", help: "Caller ID in E.164, e.g. +14155550123.", secret: false },
+      { key: "HAL_PUBLIC_URL", label: "Public URL", group: "Phone calls (Twilio)", help: "Publicly reachable URL for Twilio callbacks.", secret: false },
+    ],
+  },
+];
 
 export default function SecretsSettings() {
   const [status, setStatus] = useState<Record<string, SecretStatus>>({});
@@ -68,6 +88,7 @@ export default function SecretsSettings() {
       ingest(d.secrets ?? []);
       setDrafts({});
       setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
     } finally {
       setBusy(false);
     }
@@ -93,37 +114,58 @@ export default function SecretsSettings() {
     }
   }
 
+  const dirty = Object.values(drafts).some((v) => v.trim());
+
   return (
     <div className="card">
       <div className="card-row">
         <strong>Secrets &amp; environment</strong>
         {saved && <span className="label label-pass">saved ✓</span>}
       </div>
-      <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-        Set the keys HAL needs here instead of environment variables. Stored server-side, never sent
-        back to the browser. A real environment variable, if present, always wins and shows as{" "}
-        <em>from env</em>.
+      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+        Add the keys HAL needs. Stored server-side, never shown back. A real environment variable always
+        wins and shows <em>from env</em>.
       </p>
 
       {GROUPS.map((group) => (
-        <div key={group}>
-          <div className="field-label" style={{ marginTop: 14, textTransform: "uppercase", fontSize: 11, letterSpacing: 0.5 }}>
-            {group}
+        <div key={group.name} style={{ marginTop: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+              color: "var(--muted)",
+            }}
+          >
+            {group.name}
+            {group.restart && (
+              <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>
+                · restart to apply
+              </span>
+            )}
           </div>
-          {META.filter((m) => m.group === group).map((m) => {
-            const st = status[m.key];
-            const source = st?.source ?? "none";
-            const fromEnv = source === "env";
-            return (
-              <label className="field" key={m.key}>
-                <span className="field-label" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {m.label}
-                  {loaded && source === "env" && <span className="label label-info">from env</span>}
-                  {loaded && source === "stored" && <span className="label label-pass">set</span>}
-                  {loaded && source === "none" && <span className="label label-neutral">not set</span>}
-                  {m.restart && <span className="muted" style={{ fontSize: 11 }}>· restart to apply</span>}
-                </span>
-                <div style={{ display: "flex", gap: 6 }}>
+
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            {group.items.map((m) => {
+              const st = status[m.key];
+              const source = st?.source ?? "none";
+              const fromEnv = source === "env";
+              return (
+                <div
+                  key={m.key}
+                  className="secret-row"
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
+                >
+                  <span
+                    title={`${m.key} — ${m.help}`}
+                    style={{ width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}
+                  >
+                    {m.label}
+                  </span>
                   <input
                     type={m.secret === false ? "text" : "password"}
                     value={drafts[m.key] ?? ""}
@@ -131,36 +173,52 @@ export default function SecretsSettings() {
                     onChange={(e) => setDrafts((prev) => ({ ...prev, [m.key]: e.target.value }))}
                     placeholder={
                       fromEnv
-                        ? "managed by environment variable"
+                        ? "managed by environment"
                         : source === "stored"
-                          ? "•••••••• (leave blank to keep)"
+                          ? "•••••• saved — type to replace"
                           : m.secret === false
-                            ? ""
+                            ? m.key === "TWILIO_FROM_NUMBER"
+                              ? "+14155550123"
+                              : "https://…"
                             : "paste value"
                     }
                     className={m.secret === false ? "mono" : undefined}
+                    style={{ flex: 1, minWidth: 0 }}
                   />
-                  {source === "stored" && (
-                    <button type="button" className="icon-btn" onClick={() => clearKey(m.key)} disabled={busy} title="Remove stored value">
-                      Clear
-                    </button>
+                  {loaded && (
+                    <span
+                      style={{ width: 66, flexShrink: 0, textAlign: "right" }}
+                      title={source === "env" ? "Set via environment variable" : source === "stored" ? "Saved" : "Not set"}
+                    >
+                      {source === "env" && <span className="label label-info">env</span>}
+                      {source === "stored" && (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => clearKey(m.key)}
+                          disabled={busy}
+                          title="Remove stored value"
+                          style={{ padding: "2px 8px", fontSize: 12 }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                      {source === "none" && <span className="label label-neutral">not set</span>}
+                    </span>
                   )}
                 </div>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  <span className="mono">{m.key}</span> — {m.help}
-                </span>
-              </label>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       ))}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
-        <button onClick={save} disabled={busy || !loaded}>
-          {busy ? "Saving…" : "Save secrets"}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18 }}>
+        <button onClick={save} disabled={busy || !loaded || !dirty}>
+          {busy ? "Saving…" : "Save"}
         </button>
         <span className="muted" style={{ fontSize: 12 }}>
-          LLM keys apply immediately; telephony &amp; media-gateway keys take effect after an app restart.
+          AI keys apply immediately; speech &amp; Twilio need an app restart.
         </span>
       </div>
     </div>

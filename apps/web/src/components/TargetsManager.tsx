@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
+type Direction = "inbound" | "outbound";
 
 interface TargetAgent {
   id: string;
   name: string;
   description?: string;
+  direction?: Direction;
   target: {
     transport: Transport;
     name: string;
@@ -77,6 +79,7 @@ export default function TargetsManager() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Direction</th>
               <th>Channel</th>
               <th>Address</th>
               <th>Description</th>
@@ -86,7 +89,7 @@ export default function TargetsManager() {
           <tbody>
             {targets.length === 0 && (
               <tr className="empty-row">
-                <td colSpan={5}>No target agents yet. Add the real agent you want to test above.</td>
+                <td colSpan={6}>No target agents yet. Add the real agent you want to test above.</td>
               </tr>
             )}
             {targets.map((t) => (
@@ -102,6 +105,7 @@ export default function TargetsManager() {
 function AddTarget({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<Transport>("telephony");
+  const [direction, setDirection] = useState<Direction>("inbound");
   const [address, setAddress] = useState("");
   const [room, setRoom] = useState("");
   const [description, setDescription] = useState("");
@@ -118,6 +122,7 @@ function AddTarget({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({
           name,
           description,
+          direction,
           target: buildTarget(name, transport, address, room),
         }),
       });
@@ -141,10 +146,17 @@ function AddTarget({ onDone }: { onDone: () => void }) {
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
         Register the real voice agent you want HAL to call. Simulations point at one of these.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px 150px", gap: 10 }}>
         <div className="field">
           <span className="field-label">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Support line" />
+        </div>
+        <div className="field">
+          <span className="field-label">Direction</span>
+          <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
+            <option value="inbound">inbound</option>
+            <option value="outbound">outbound</option>
+          </select>
         </div>
         <div className="field">
           <span className="field-label">Channel</span>
@@ -156,6 +168,11 @@ function AddTarget({ onDone }: { onDone: () => void }) {
           </select>
         </div>
       </div>
+      <p className="muted" style={{ fontSize: 12, marginTop: -4 }}>
+        {direction === "inbound"
+          ? "Inbound — the agent answers calls, so HAL dials it."
+          : "Outbound — the agent places calls, so HAL provides a number for it to call."}
+      </p>
       <div style={{ display: "grid", gridTemplateColumns: transport === "webrtc" ? "1fr 160px" : "1fr", gap: 10 }}>
         <div className="field">
           <span className="field-label">{ADDRESS_LABEL[transport]}</span>
@@ -205,6 +222,9 @@ function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => 
   return (
     <tr>
       <td style={{ fontWeight: 600 }}>{target.name}</td>
+      <td>
+        <span className={`pill ${target.direction ?? "inbound"}`}>{target.direction ?? "inbound"}</span>
+      </td>
       <td>
         <span className={`pill ${target.target.transport}`}>{target.target.transport}</span>
       </td>

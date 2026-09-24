@@ -281,8 +281,19 @@ export interface TargetAgent {
   name: string;
   target: Target;
   description?: string;
+  /**
+   * Which way the agent under test runs a call:
+   * - `"inbound"` — it answers calls, so HAL dials it (the default).
+   * - `"outbound"` — it places calls, so HAL provides a number for it to call
+   *   and waits to receive the call.
+   * Defaults to `"inbound"` when unset.
+   */
+  direction?: CallDirection;
   createdAt: number;
 }
+
+/** Whether the agent under test receives calls (inbound) or places them (outbound). */
+export type CallDirection = "inbound" | "outbound";
 
 /**
  * A production call brought into HAL for offline analysis: uploaded audio that

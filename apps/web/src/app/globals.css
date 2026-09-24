@@ -236,6 +236,8 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 .pill.telephony { color: #92400e; background: #fef3c7; }
 .pill.webrtc { color: #6d28d9; background: #ede9fe; }
 .pill.sip { color: #0f766e; background: #d1fae5; }
+.pill.inbound { color: #1d4ed8; background: #dbeafe; }
+.pill.outbound { color: #9d174d; background: #fce7f3; }
 .pill.passed { color: #fff; background: var(--pass); }
 .pill.failed { color: #fff; background: var(--fail); }
 .pill.running { color: #fff; background: var(--agent); }
@@ -327,6 +329,12 @@ input:focus, textarea:focus, select:focus {
 }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+@media (max-width: 560px) {
+  .secret-row { flex-wrap: wrap; }
+  .secret-row > span:first-child { width: 100% !important; }
+  .secret-row > input { flex: 1 1 auto; }
+}
 
 .provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .provider-chip {
@@ -522,12 +530,16 @@ table.data tbody tr:hover { background: var(--hover); }
   max-width: 620px;
   box-shadow: var(--shadow-lg);
   animation: scaleIn 0.2s var(--ease);
-  margin: auto;
+  /* Flex column so the body scrolls internally and the header + footer
+     (with the submit buttons) stay pinned and always reachable. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 88px);
+  overflow: hidden;
 }
 .modal.wide { max-width: 780px; }
 .modal-head {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -538,15 +550,14 @@ table.data tbody tr:hover { background: var(--hover); }
   border-radius: 14px 14px 0 0;
 }
 .modal-head h2 { margin: 0; font-size: 16px; }
-.modal-body { padding: 20px; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .modal-foot {
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
-  position: sticky;
-  bottom: 0;
   background: var(--panel);
   border-radius: 0 0 14px 14px;
 }
