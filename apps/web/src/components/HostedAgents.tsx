@@ -240,7 +240,7 @@ function AccountRow({ account }: { account: Account }) {
     <div
       className="card-row"
       style={{
-        background: "var(--panel-2)",
+        background: "var(--panel)",
         padding: "8px 12px",
         borderRadius: 8,
         border: "1px solid var(--border)",
@@ -548,7 +548,7 @@ function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
   }
 
   return (
-    <div className="card" style={{ background: "var(--panel-2)", marginBottom: 0 }}>
+    <div className="card" style={{ marginBottom: 0 }}>
       <div className="card-row">
         <div>
           <strong>{agent.name}</strong> <span className="pill telephony">{agent.provider}</span>

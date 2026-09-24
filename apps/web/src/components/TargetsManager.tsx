@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { SavedJudge } from "@hal/core";
 import Modal from "./Modal";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
@@ -55,8 +56,12 @@ function addressOf(t: TargetAgent["target"]): string {
   }
 }
 
-/** Build a Target union value from the flat form fields. */
-function buildTarget(name: string, transport: Transport, address: string, room: string) {
+/**
+ * Build a Target union value from the flat form fields. `existingSystemPrompt`
+ * preserves a mock agent's real prompt across an edit — otherwise saving would
+ * silently replace it with a generic placeholder derived from the name.
+ */
+function buildTarget(name: string, transport: Transport, address: string, room: string, existingSystemPrompt?: string) {
   switch (transport) {
     case "telephony":
       return { transport, name, phoneNumber: address };
@@ -65,7 +70,11 @@ function buildTarget(name: string, transport: Transport, address: string, room: 
     case "webrtc":
       return { transport, name, signalingUrl: address, room: room || undefined };
     case "mock":
-      return { transport, name, mock: { systemPrompt: `You are ${name}.`, greeting: address || undefined } };
+      return {
+        transport,
+        name,
+        mock: { systemPrompt: existingSystemPrompt ?? `You are ${name}.`, greeting: address || undefined },
+      };
   }
 }
 
@@ -493,8 +502,26 @@ function EditTargetModal({
   );
   const [room, setRoom] = useState(target.target.transport === "webrtc" ? target.target.room ?? "" : "");
   const [description, setDescription] = useState(target.description ?? "");
+  const [judges, setJudges] = useState<SavedJudge[]>([]);
+  const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/judges")
+      .then((r) => r.json())
+      .then((d: { judges?: SavedJudge[] }) => setJudges(d.judges ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  function toggleJudge(id: string) {
+    setJudgeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function save() {
     setBusy(true);
@@ -508,7 +535,8 @@ function EditTargetModal({
           description,
           provider,
           direction,
-          target: buildTarget(name, transport, address, room),
+          target: buildTarget(name, transport, address, room, target.target.mock?.systemPrompt),
+          judgeIds: [...judgeIds],
         }),
       });
       const data = await res.json();
@@ -598,6 +626,34 @@ function EditTargetModal({
         <div className="field">
           <span className="field-label">Description (optional)</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
+        </div>
+        <div className="field">
+          <span className="field-label">Judges (score production calls assigned to this agent)</span>
+          {judges.length === 0 ? (
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>No saved judges yet.</p>
+          ) : (
+            <div className="grid" style={{ gap: 6 }}>
+              {judges.map((j) => (
+                <label
+                  key={j.id}
+                  className="card-row"
+                  style={{ cursor: "pointer", background: "var(--panel-2)", padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)" }}
+                >
+                  <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      style={{ width: "auto" }}
+                      checked={judgeIds.has(j.id)}
+                      onChange={() => toggleJudge(j.id)}
+                    />
+                    <span>
+                      <strong>{j.name}</strong> <span className="tag">{j.kind}</span>
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         {err && <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>{err}</div>}
     </Modal>

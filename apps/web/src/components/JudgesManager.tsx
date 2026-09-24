@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import type { SavedJudge, JudgeRule, JudgeSpec, Role, TargetAgent, TestCase } from "@hal/core";
+import type { SavedJudge, JudgeRule, JudgeSpec, Role } from "@hal/core";
 import Modal from "./Modal";
 
 const RULE_TYPES: Array<{ value: JudgeRule["kind"]; label: string }> = [
@@ -98,8 +97,6 @@ function JudgeCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const [assignOpen, setAssignOpen] = useState(false);
-
   return (
     <div className="card" style={{ marginBottom: 0 }}>
       <div className="card-row">
@@ -113,13 +110,6 @@ function JudgeCard({
           )}
         </div>
         <div className="row-actions">
-          <button
-            className="icon-btn"
-            onClick={() => setAssignOpen((o) => !o)}
-            title="Which agents and simulations use this judge"
-          >
-            {assignOpen ? "Hide assignments" : "Assigned to"}
-          </button>
           <button className="icon-btn" onClick={onEdit}>
             Edit
           </button>
@@ -144,128 +134,6 @@ function JudgeCard({
             No checks defined.
           </span>
         )}
-      </div>
-      {assignOpen && <AssignedTo judgeId={judge.id} />}
-    </div>
-  );
-}
-
-/**
- * From a judge, pick which agents under test and simulations use it — the
- * reverse of the "Judges" panel on My agents / a simulation's page. Both
- * sides write to the same judgeIds arrays, so toggling here stays in sync.
- */
-function AssignedTo({ judgeId }: { judgeId: string }) {
-  const [targets, setTargets] = useState<TargetAgent[]>([]);
-  const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    const [t, tc] = await Promise.all([
-      fetch("/api/targets").then((r) => r.json()),
-      fetch("/api/testcases").then((r) => r.json()),
-    ]);
-    setTargets(t.targets ?? []);
-    setTestCases(tc.testCases ?? []);
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    refresh().catch(() => setLoaded(true));
-  }, [refresh]);
-
-  async function toggleTarget(t: TargetAgent) {
-    const has = t.judgeIds?.includes(judgeId) ?? false;
-    const nextIds = has ? (t.judgeIds ?? []).filter((id) => id !== judgeId) : [...(t.judgeIds ?? []), judgeId];
-    setBusyId(t.id);
-    try {
-      await fetch(`/api/targets/${t.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ judgeIds: nextIds }),
-      });
-      await refresh();
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function toggleTestCase(tc: TestCase) {
-    const has = tc.judgeIds?.includes(judgeId) ?? false;
-    const nextIds = has
-      ? (tc.judgeIds ?? []).filter((id) => id !== judgeId)
-      : [...(tc.judgeIds ?? []), judgeId];
-    setBusyId(tc.id);
-    try {
-      await fetch(`/api/testcases/${tc.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ judgeIds: nextIds }),
-      });
-      await refresh();
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div>
-          <div className="field-label" style={{ marginBottom: 6 }}>
-            Agents ({targets.filter((t) => t.judgeIds?.includes(judgeId)).length}/{targets.length})
-          </div>
-          {loaded && targets.length === 0 && (
-            <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-              No agents yet — add one on <Link href="/targets">My agents</Link>.
-            </p>
-          )}
-          <div className="grid" style={{ gap: 4 }}>
-            {targets.map((t) => (
-              <label
-                key={t.id}
-                style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}
-              >
-                <input
-                  type="checkbox"
-                  style={{ width: "auto" }}
-                  checked={t.judgeIds?.includes(judgeId) ?? false}
-                  disabled={busyId === t.id}
-                  onChange={() => toggleTarget(t)}
-                />
-                {t.name}
-              </label>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="field-label" style={{ marginBottom: 6 }}>
-            Simulations ({testCases.filter((tc) => tc.judgeIds?.includes(judgeId)).length}/{testCases.length})
-          </div>
-          {loaded && testCases.length === 0 && (
-            <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-              No simulations yet.
-            </p>
-          )}
-          <div className="grid" style={{ gap: 4 }}>
-            {testCases.map((tc) => (
-              <label
-                key={tc.id}
-                style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}
-              >
-                <input
-                  type="checkbox"
-                  style={{ width: "auto" }}
-                  checked={tc.judgeIds?.includes(judgeId) ?? false}
-                  disabled={busyId === tc.id}
-                  onChange={() => toggleTestCase(tc)}
-                />
-                {tc.name}
-              </label>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

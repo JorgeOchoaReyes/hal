@@ -2,7 +2,6 @@ import "server-only";
 import { join } from "node:path";
 import {
   HalEngine,
-  sampleTestCases,
   providerAvailability,
   type TestCase,
   type TestResult,
@@ -56,15 +55,7 @@ function seed(): HalState {
   applySecrets(loadSecretsDoc(db));
 
   const testCases = new Map<string, TestCase>();
-  const persisted = db.loadAll<TestCase>("testcases");
-  if (persisted.length > 0) {
-    for (const tc of persisted) testCases.set(tc.id, tc);
-  } else {
-    for (const tc of sampleTestCases()) {
-      testCases.set(tc.id, tc);
-      db.put("testcases", tc.id, tc, tc.createdAt);
-    }
-  }
+  for (const tc of db.loadAll<TestCase>("testcases")) testCases.set(tc.id, tc);
 
   const results = new Map<string, TestResult>();
   for (const r of db.loadAll<TestResult>("results")) results.set(r.id, r);
@@ -79,31 +70,9 @@ function seed(): HalState {
   const prodCalls = new Map<string, ProdCall>();
   for (const p of db.loadAll<ProdCall>("prodcalls")) prodCalls.set(p.id, p);
 
-  // "My agents" — the real targets under test. Seed from the sample sims so the
-  // registry isn't empty, and back-link each sample sim to its seeded target.
+  // "My agents" — the real targets under test.
   const targets = new Map<string, TargetAgent>();
-  const persistedTargets = db.loadAll<TargetAgent>("targets");
-  if (persistedTargets.length > 0) {
-    for (const t of persistedTargets) targets.set(t.id, t);
-  } else {
-    let n = 0;
-    for (const tc of testCases.values()) {
-      const key = `target-${tc.target.transport}-${++n}`;
-      const t: TargetAgent = {
-        id: key,
-        name: tc.target.name ?? `${tc.target.transport} target`,
-        target: tc.target,
-        description: tc.scenario.description,
-        createdAt: tc.createdAt ?? Date.now(),
-      };
-      targets.set(t.id, t);
-      db.put("targets", t.id, t, t.createdAt);
-      // Link the sample simulation to its target.
-      const linked = { ...tc, targetAgentId: t.id };
-      testCases.set(tc.id, linked);
-      db.put("testcases", tc.id, linked, tc.createdAt);
-    }
-  }
+  for (const t of db.loadAll<TargetAgent>("targets")) targets.set(t.id, t);
 
   // Start a media server for real telephony audio when Twilio is configured.
   let mediaServer: MediaServer | undefined;
