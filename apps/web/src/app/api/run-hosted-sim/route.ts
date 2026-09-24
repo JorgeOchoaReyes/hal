@@ -7,7 +7,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, getTestCase, getAgent, saveResult, upsertAgent } from "@/lib/store";
+import { getAccountRaw, getTestCase, getAgent, getTarget, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,6 +30,21 @@ export async function POST(req: NextRequest) {
   const testCase = getTestCase(body.testCaseId);
   if (!testCase) return NextResponse.json({ error: "Unknown simulation" }, { status: 404 });
   if (!body.phoneNumber) return NextResponse.json({ error: "phoneNumber required" }, { status: 400 });
+
+  // This dispatch path dials the agent under test (HAL places the call), which
+  // only fits an INBOUND agent. An OUTBOUND agent places its own calls, so HAL
+  // would have to receive one on a provisioned number — not wired up yet. Reject
+  // it explicitly instead of silently dialing an outbound agent as if inbound.
+  const targetAgent = testCase.targetAgentId ? getTarget(testCase.targetAgentId) : undefined;
+  if (targetAgent?.direction === "outbound") {
+    return NextResponse.json(
+      {
+        error:
+          "This agent is marked outbound (it places calls). HAL dialing it isn't supported yet — set it to inbound to run this simulation.",
+      },
+      { status: 400 },
+    );
+  }
 
   // A simulation can name the testing agent (caller) to run with. When set, that
   // agent's account is used and the agent is reconfigured for this simulation;
