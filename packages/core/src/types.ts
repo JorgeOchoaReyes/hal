@@ -287,6 +287,12 @@ export interface TargetAgent {
   target: Target;
   description?: string;
   /**
+   * The voice platform this agent under test is built on (e.g. "vapi",
+   * "bland", "retell", "elevenlabs", "twilio", or "custom"). Informational
+   * metadata so agents can be grouped/identified by provider.
+   */
+  provider?: string;
+  /**
    * Which way the agent under test runs a call:
    * - `"inbound"` — it answers calls, so HAL dials it (the default).
    * - `"outbound"` — it places calls, so HAL provides a number for it to call

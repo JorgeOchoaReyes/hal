@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
     name?: string;
     target?: Target;
     description?: string;
+    provider?: string;
     direction?: CallDirection;
   };
   if (!body.name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest) {
     name: body.name.trim(),
     target: body.target,
     description: body.description?.trim() || undefined,
+    provider: body.provider?.trim() || undefined,
     direction: body.direction ?? "inbound",
     createdAt: Date.now(),
   };

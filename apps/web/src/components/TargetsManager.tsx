@@ -5,10 +5,22 @@ import { useEffect, useState, useCallback } from "react";
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
 type Direction = "inbound" | "outbound";
 
+/** Voice platforms an agent under test can be built on. */
+const PROVIDERS = ["vapi", "bland", "retell", "elevenlabs", "twilio", "custom"] as const;
+const PROVIDER_LABEL: Record<string, string> = {
+  vapi: "Vapi",
+  bland: "Bland",
+  retell: "Retell",
+  elevenlabs: "ElevenLabs",
+  twilio: "Twilio",
+  custom: "Custom / other",
+};
+
 interface TargetAgent {
   id: string;
   name: string;
   description?: string;
+  provider?: string;
   direction?: Direction;
   target: {
     transport: Transport;
@@ -79,6 +91,7 @@ export default function TargetsManager() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Provider</th>
               <th>Direction</th>
               <th>Channel</th>
               <th>Address</th>
@@ -89,7 +102,7 @@ export default function TargetsManager() {
           <tbody>
             {targets.length === 0 && (
               <tr className="empty-row">
-                <td colSpan={6}>No target agents yet. Add the real agent you want to test above.</td>
+                <td colSpan={7}>No target agents yet. Add the real agent you want to test above.</td>
               </tr>
             )}
             {targets.map((t) => (
@@ -105,6 +118,7 @@ export default function TargetsManager() {
 function AddTarget({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<Transport>("telephony");
+  const [provider, setProvider] = useState<string>("vapi");
   const [direction, setDirection] = useState<Direction>("inbound");
   const [address, setAddress] = useState("");
   const [room, setRoom] = useState("");
@@ -122,6 +136,7 @@ function AddTarget({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({
           name,
           description,
+          provider,
           direction,
           target: buildTarget(name, transport, address, room),
         }),
@@ -146,10 +161,20 @@ function AddTarget({ onDone }: { onDone: () => void }) {
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
         Register the real voice agent you want HAL to call. Simulations point at one of these.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px 150px", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 130px", gap: 10 }}>
         <div className="field">
           <span className="field-label">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Support line" />
+        </div>
+        <div className="field">
+          <span className="field-label">Provider</span>
+          <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+            {PROVIDERS.map((pv) => (
+              <option key={pv} value={pv}>
+                {PROVIDER_LABEL[pv]}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field">
           <span className="field-label">Direction</span>
@@ -222,6 +247,13 @@ function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => 
   return (
     <tr>
       <td style={{ fontWeight: 600 }}>{target.name}</td>
+      <td>
+        {target.provider ? (
+          <span className="pill">{PROVIDER_LABEL[target.provider] ?? target.provider}</span>
+        ) : (
+          <span className="muted">—</span>
+        )}
+      </td>
       <td>
         <span className={`pill ${target.direction ?? "inbound"}`}>{target.direction ?? "inbound"}</span>
       </td>
