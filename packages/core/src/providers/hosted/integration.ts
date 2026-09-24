@@ -52,6 +52,13 @@ export interface TestingAgentSpec {
    * step-by-step reproduction) instead of using the plain persona prompt.
    */
   structured?: StructuredTest;
+  /**
+   * An existing provider pathway/flow id to run the call against directly,
+   * instead of provisioning one. For Bland this is a Pathway built in the
+   * Agent Builder (Bland has no documented REST endpoint to create a pathway),
+   * so supplying the id is the reliable way to use a deterministic pathway.
+   */
+  pathwayId?: string;
 }
 
 export interface HostedTestingAgent {

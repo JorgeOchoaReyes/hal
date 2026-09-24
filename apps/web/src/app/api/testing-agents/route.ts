@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     model?: string;
     /** Optional: compile a structured test into the agent's deterministic prompt. */
     structured?: StructuredTest;
+    /** Optional: run against an existing provider pathway id (e.g. a Bland Pathway). */
+    pathwayId?: string;
     /** When set, edit this existing agent in place instead of creating a new one. */
     agentId?: string;
   };
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
     voice: body.voice,
     model: body.model,
     structured: body.structured,
+    pathwayId: body.pathwayId?.trim() || undefined,
   };
 
   try {
