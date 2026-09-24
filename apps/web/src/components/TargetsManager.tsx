@@ -126,6 +126,11 @@ interface ProviderNumber {
   phoneNumber: string;
   label?: string;
 }
+interface RemoteAgent {
+  id: string;
+  name: string;
+  kind: string;
+}
 
 function AddTarget({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
@@ -138,10 +143,14 @@ function AddTarget({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Import from a connected provider: pick an account, then one of its numbers.
+  // Import from a connected provider: pick an account, then one of its actual
+  // agents (imports its config), and optionally a number to dial it on.
   const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
   const [importAccountId, setImportAccountId] = useState("");
+  const [remoteAgents, setRemoteAgents] = useState<RemoteAgent[]>([]);
+  const [agentsSupported, setAgentsSupported] = useState(true);
   const [numbers, setNumbers] = useState<ProviderNumber[]>([]);
+  const [importedAgentId, setImportedAgentId] = useState("");
 
   useEffect(() => {
     fetch("/api/provider-accounts")
@@ -151,8 +160,10 @@ function AddTarget({ onDone }: { onDone: () => void }) {
   }, []);
 
   useEffect(() => {
+    setImportedAgentId("");
     if (!importAccountId) {
       setNumbers([]);
+      setRemoteAgents([]);
       return;
     }
     let live = true;
@@ -160,11 +171,32 @@ function AddTarget({ onDone }: { onDone: () => void }) {
       .then((r) => r.json())
       .then((d: { numbers?: ProviderNumber[] }) => live && setNumbers(d.numbers ?? []))
       .catch(() => live && setNumbers([]));
+    fetch(`/api/testing-agents/remote?accountId=${encodeURIComponent(importAccountId)}`)
+      .then((r) => r.json())
+      .then((d: { supported?: boolean; agents?: RemoteAgent[] }) => {
+        if (!live) return;
+        setAgentsSupported(d.supported !== false);
+        setRemoteAgents(d.agents ?? []);
+      })
+      .catch(() => live && setRemoteAgents([]));
     return () => {
       live = false;
     };
   }, [importAccountId]);
 
+  /** Import an agent's own config: name + provider + a reference to it. */
+  function importAgent(agentId: string) {
+    if (!agentId) return;
+    const acct = accounts.find((a) => a.id === importAccountId);
+    const agent = remoteAgents.find((a) => a.id === agentId);
+    if (!agent) return;
+    setImportedAgentId(agentId);
+    setProvider(acct?.provider ?? provider);
+    setName(agent.name);
+    setDescription(`Imported ${agent.kind} "${agent.name}" (${agent.id}) from ${acct?.label ?? acct?.provider}.`);
+  }
+
+  /** Attach a dialable number from the same account — the address to call. */
   function importNumber(phone: string) {
     if (!phone) return;
     const acct = accounts.find((a) => a.id === importAccountId);
@@ -214,9 +246,6 @@ function AddTarget({ onDone }: { onDone: () => void }) {
       {accounts.length > 0 && (
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "220px 1fr",
-            gap: 10,
             marginBottom: 12,
             padding: 12,
             border: "1px solid var(--border)",
@@ -224,8 +253,8 @@ function AddTarget({ onDone }: { onDone: () => void }) {
             background: "var(--panel-2)",
           }}
         >
-          <div className="field" style={{ margin: 0 }}>
-            <span className="field-label">Import from provider</span>
+          <div className="field" style={{ margin: 0, marginBottom: 10 }}>
+            <span className="field-label">Import from a connected provider</span>
             <select value={importAccountId} onChange={(e) => setImportAccountId(e.target.value)}>
               <option value="">— select a connected account —</option>
               {accounts.map((a) => (
@@ -235,27 +264,54 @@ function AddTarget({ onDone }: { onDone: () => void }) {
               ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0 }}>
-            <span className="field-label">Agent number</span>
-            <select
-              value=""
-              disabled={!importAccountId}
-              onChange={(e) => importNumber(e.target.value)}
-            >
-              <option value="">
-                {!importAccountId
-                  ? "select an account first"
-                  : numbers.length === 0
-                    ? "no numbers found — enter manually below"
-                    : "— pick a number to import —"}
-              </option>
-              {numbers.map((n) => (
-                <option key={n.phoneNumber} value={n.phoneNumber}>
-                  {n.label ? `${n.label} · ${n.phoneNumber}` : n.phoneNumber}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="field" style={{ margin: 0 }}>
+              <span className="field-label">Agent</span>
+              <select value={importedAgentId} disabled={!importAccountId} onChange={(e) => importAgent(e.target.value)}>
+                <option value="">
+                  {!importAccountId
+                    ? "select an account first"
+                    : !agentsSupported
+                      ? "this provider doesn't list agents — use Custom below"
+                      : remoteAgents.length === 0
+                        ? "no agents found on this account"
+                        : "— pick an agent to import —"}
                 </option>
-              ))}
-            </select>
+                {remoteAgents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <span className="muted" style={{ fontSize: 12 }}>
+                Imports the agent&apos;s name and config reference.
+              </span>
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <span className="field-label">Number (optional)</span>
+              <select value="" disabled={!importAccountId} onChange={(e) => importNumber(e.target.value)}>
+                <option value="">
+                  {!importAccountId
+                    ? "select an account first"
+                    : numbers.length === 0
+                      ? "no numbers found"
+                      : "— attach a number to dial —"}
+                </option>
+                {numbers.map((n) => (
+                  <option key={n.phoneNumber} value={n.phoneNumber}>
+                    {n.label ? `${n.label} · ${n.phoneNumber}` : n.phoneNumber}
+                  </option>
+                ))}
+              </select>
+              <span className="muted" style={{ fontSize: 12 }}>
+                Sets the phone number HAL dials for this agent.
+              </span>
+            </div>
           </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+            No provider connected, or want full control? Use <strong>Custom</strong> below and fill in
+            the fields by hand.
+          </p>
         </div>
       )}
 

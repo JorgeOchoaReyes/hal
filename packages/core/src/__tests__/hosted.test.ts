@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   VapiIntegration,
   ElevenLabsIntegration,
+  RetellIntegration,
   BlandIntegration,
   runHostedCall,
   MockLLMClient,
@@ -218,6 +219,37 @@ test("Bland listRemoteAgents normalizes pathway rows from any envelope", async (
     "GET https://api.bland.ai/v1/pathway": { data: { id: "pw9", name: "Solo" } },
   }));
   assert.deepEqual(await wrapped.listRemoteAgents(acc), [{ id: "pw9", name: "Solo", kind: "pathway" }]);
+});
+
+test("Vapi/Retell/ElevenLabs listRemoteAgents let My agents import a real agent", async () => {
+  const vapi = new VapiIntegration(fakeFetch({
+    "GET https://api.vapi.ai/assistant": [
+      { id: "a1", name: "Support Assistant" },
+      { id: "a2" },
+    ],
+  }));
+  assert.deepEqual(await vapi.listRemoteAgents(account), [
+    { id: "a1", name: "Support Assistant", kind: "agent" },
+    { id: "a2", name: "a2", kind: "agent" },
+  ]);
+
+  const retell = new RetellIntegration(fakeFetch({
+    "GET https://api.retellai.com/list-agents": [
+      { agent_id: "r1", agent_name: "Booking Agent" },
+      { agent_name: "no id — skipped" },
+    ],
+  }));
+  assert.deepEqual(await retell.listRemoteAgents(account), [
+    { id: "r1", name: "Booking Agent", kind: "agent" },
+  ]);
+
+  // ElevenLabs wraps rows under `agents`.
+  const el = new ElevenLabsIntegration(fakeFetch({
+    "GET https://api.elevenlabs.io/v1/convai/agents": {
+      agents: [{ agent_id: "e1", name: "Front Desk" }],
+    },
+  }));
+  assert.deepEqual(await el.listRemoteAgents(account), [{ id: "e1", name: "Front Desk", kind: "agent" }]);
 });
 
 test("Bland sends a Bearer Authorization header", async () => {

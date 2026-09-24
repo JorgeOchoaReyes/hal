@@ -9,6 +9,7 @@ import {
   HostedTarget,
   HostedCallState,
   HostedCallStatus,
+  HostedRemoteAgent,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -125,6 +126,27 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
       status: mapStatus(data.status),
       transcript: parseTranscript(data),
     };
+  }
+
+  /**
+   * List the account's existing ElevenLabs ConvAI agents, so "My agents" can
+   * import one instead of manual entry (GET /v1/convai/agents).
+   */
+  async listRemoteAgents(account: ProviderAccount): Promise<HostedRemoteAgent[]> {
+    const res = await this.fetchImpl(`${this.base}/v1/convai/agents`, { headers: this.headers(account) });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => null)) as unknown;
+    const raw = (data && typeof data === "object" && "agents" in data
+      ? (data as { agents: unknown }).agents
+      : data) as unknown;
+    const rows = Array.isArray(raw) ? raw : [];
+    const out: HostedRemoteAgent[] = [];
+    for (const r of rows as Array<Record<string, unknown>>) {
+      const id = String(r.agent_id ?? "").trim();
+      if (!id) continue;
+      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent" });
+    }
+    return out;
   }
 }
 
