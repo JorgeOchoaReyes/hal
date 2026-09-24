@@ -115,6 +115,16 @@ export default function TargetsManager() {
   );
 }
 
+interface ProviderAccount {
+  id: string;
+  provider: string;
+  label: string;
+}
+interface ProviderNumber {
+  phoneNumber: string;
+  label?: string;
+}
+
 function AddTarget({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<Transport>("telephony");
@@ -125,6 +135,43 @@ function AddTarget({ onDone }: { onDone: () => void }) {
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Import from a connected provider: pick an account, then one of its numbers.
+  const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
+  const [importAccountId, setImportAccountId] = useState("");
+  const [numbers, setNumbers] = useState<ProviderNumber[]>([]);
+
+  useEffect(() => {
+    fetch("/api/provider-accounts")
+      .then((r) => r.json())
+      .then((d: { accounts?: ProviderAccount[] }) => setAccounts(d.accounts ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!importAccountId) {
+      setNumbers([]);
+      return;
+    }
+    let live = true;
+    fetch(`/api/hosted-integrations/numbers?accountId=${encodeURIComponent(importAccountId)}`)
+      .then((r) => r.json())
+      .then((d: { numbers?: ProviderNumber[] }) => live && setNumbers(d.numbers ?? []))
+      .catch(() => live && setNumbers([]));
+    return () => {
+      live = false;
+    };
+  }, [importAccountId]);
+
+  function importNumber(phone: string) {
+    if (!phone) return;
+    const acct = accounts.find((a) => a.id === importAccountId);
+    const num = numbers.find((n) => n.phoneNumber === phone);
+    setProvider(acct?.provider ?? provider);
+    setTransport("telephony");
+    setAddress(phone);
+    if (!name.trim()) setName(num?.label || `${acct?.label ?? "Agent"} ${phone}`);
+  }
 
   async function submit() {
     setBusy(true);
@@ -161,6 +208,55 @@ function AddTarget({ onDone }: { onDone: () => void }) {
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
         Register the real voice agent you want HAL to call. Simulations point at one of these.
       </p>
+
+      {accounts.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "220px 1fr",
+            gap: 10,
+            marginBottom: 12,
+            padding: 12,
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            background: "var(--panel-2)",
+          }}
+        >
+          <div className="field" style={{ margin: 0 }}>
+            <span className="field-label">Import from provider</span>
+            <select value={importAccountId} onChange={(e) => setImportAccountId(e.target.value)}>
+              <option value="">— select a connected account —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label} ({a.provider})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <span className="field-label">Agent number</span>
+            <select
+              value=""
+              disabled={!importAccountId}
+              onChange={(e) => importNumber(e.target.value)}
+            >
+              <option value="">
+                {!importAccountId
+                  ? "select an account first"
+                  : numbers.length === 0
+                    ? "no numbers found — enter manually below"
+                    : "— pick a number to import —"}
+              </option>
+              {numbers.map((n) => (
+                <option key={n.phoneNumber} value={n.phoneNumber}>
+                  {n.label ? `${n.label} · ${n.phoneNumber}` : n.phoneNumber}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 130px", gap: 10 }}>
         <div className="field">
           <span className="field-label">Name</span>

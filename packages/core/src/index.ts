@@ -120,6 +120,7 @@ export {
   type HostedTestingAgent,
   type HostedTarget,
   type HostedNumber,
+  type HostedRemoteAgent,
   type HostedCallState,
   type HostedCallStatus,
   type HostedRunOptions,

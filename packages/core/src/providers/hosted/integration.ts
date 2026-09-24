@@ -90,6 +90,16 @@ export interface HostedNumber {
   capabilities?: Array<"inbound" | "outbound">;
 }
 
+/** An existing agent/pathway/flow already on the provider, offered for import. */
+export interface HostedRemoteAgent {
+  /** The provider id used to run a call (a pathway id, agent id, …). */
+  id: string;
+  /** Friendly name to show in the picker. */
+  name: string;
+  /** What the id refers to, so the caller can wire it up correctly. */
+  kind: "pathway" | "agent";
+}
+
 export type HostedCallStatus = "queued" | "in-progress" | "ended" | "failed";
 
 export interface HostedCallState {
@@ -146,6 +156,13 @@ export interface VoiceProviderIntegration {
    * plain text field, so the user can always type a number by hand.
    */
   listNumbers?(account: ProviderAccount): Promise<HostedNumber[]>;
+  /**
+   * List agents/pathways/flows that already exist on this account, so the UI
+   * can offer them for import instead of building a new one. Optional —
+   * providers that can't enumerate them omit it and the UI falls back to a
+   * manual id field.
+   */
+  listRemoteAgents?(account: ProviderAccount): Promise<HostedRemoteAgent[]>;
 }
 
 const registry = new Map<string, VoiceProviderIntegration>();
