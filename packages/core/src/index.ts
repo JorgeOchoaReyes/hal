@@ -5,6 +5,7 @@ export * from "./types.js";
 export * from "./llm/client.js";
 export { OpenAIClient } from "./llm/openai.js";
 export { AnthropicClient } from "./llm/anthropic.js";
+export { GeminiClient } from "./llm/gemini.js";
 export { MockLLMClient } from "./llm/mock.js";
 export { createLLM, type LLMProvider } from "./llm/factory.js";
 

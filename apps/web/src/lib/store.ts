@@ -185,6 +185,7 @@ export function getTestCaseRaw(id: string): TestCase | undefined {
 function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
   const merged: JudgeSpec = {
     mode: base.mode ?? "all",
+    provider: base.provider,
     model: base.model,
     rules: [...(base.rules ?? [])],
     criteria: [...(base.criteria ?? [])],
@@ -195,6 +196,7 @@ function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
     if (spec.criteria) merged.criteria!.push(...spec.criteria);
     if (spec.metrics) merged.metrics!.push(...spec.metrics);
     if (!merged.model && spec.model) merged.model = spec.model;
+    if ((!merged.provider || merged.provider === "auto") && spec.provider) merged.provider = spec.provider;
   }
   // Attaching a judge is an explicit request to evaluate it, so derive the mode
   // from the signals actually present — otherwise a restrictive base mode (e.g.
@@ -423,6 +425,7 @@ export function setTranscriptionSettings(patch: {
 export const SECRET_KEYS = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
+  "GEMINI_API_KEY",
   "DEEPGRAM_API_KEY",
 ] as const;
 export type SecretKey = (typeof SECRET_KEYS)[number];

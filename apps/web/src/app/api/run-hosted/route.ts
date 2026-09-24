@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     agent,
     target: { phoneNumber: body.phoneNumber },
     judge: body.judge ?? { mode: "llm-only", criteria: ["The call completed successfully."] },
-    llm: createLLM("auto"),
+    llm: createLLM(body.judge?.provider ?? "auto", body.judge?.model),
   });
 
   saveResult(result);

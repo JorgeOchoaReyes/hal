@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * A lightweight, dependency-free modal. Renders a backdrop + centered panel,
  * closes on Escape or backdrop click, and locks body scroll while open. Used
  * for flows that used to be inline forms (e.g. provisioning a testing agent).
+ *
+ * The backdrop is portaled to `document.body` so its `position: fixed` is
+ * relative to the real viewport. Otherwise a transformed/animated ancestor
+ * (the page's motion wrapper) becomes the containing block for the fixed
+ * element, and `inset:0` / `100vh` map to the scrolled content area instead of
+ * the window — which clipped the panel (and its submit buttons) on short
+ * viewports.
  */
 export default function Modal({
   open,
@@ -22,6 +30,10 @@ export default function Modal({
   footer?: ReactNode;
   wide?: boolean;
 }) {
+  // Only portal after mount so SSR and the first client render agree.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -36,9 +48,9 @@ export default function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
@@ -57,6 +69,7 @@ export default function Modal({
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

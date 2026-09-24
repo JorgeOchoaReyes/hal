@@ -192,6 +192,11 @@ export interface JudgeSpec {
    * the LLM judge. Blocking metrics that fail also fail the overall run.
    */
   metrics?: import("./metrics/definitions.js").MetricDefinition[];
+  /**
+   * LLM provider for the judge. "auto" (default) picks the first provider with
+   * credentials; set it to pin the judge to OpenAI, Anthropic, or Gemini.
+   */
+  provider?: "auto" | "openai" | "anthropic" | "gemini";
   /** Model to use for the LLM judge. */
   model?: string;
   /**

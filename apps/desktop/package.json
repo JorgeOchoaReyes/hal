@@ -1,6 +1,6 @@
 {
   "name": "@hal/desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "HAL desktop app — an Electron shell around the HAL web app for a local, self-contained voice AI test lab.",
   "main": "dist/main.js",

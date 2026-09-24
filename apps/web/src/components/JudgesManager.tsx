@@ -137,6 +137,7 @@ function JudgeEditor({
   const [name, setName] = useState(judge?.name ?? "");
   const [description, setDescription] = useState(judge?.description ?? "");
   const [mode, setMode] = useState<NonNullable<JudgeSpec["mode"]>>(judge?.spec.mode ?? "all");
+  const [provider, setProvider] = useState<NonNullable<JudgeSpec["provider"]>>(judge?.spec.provider ?? "auto");
   const [model, setModel] = useState(judge?.spec.model ?? "");
   const [criteria, setCriteria] = useState<string[]>(judge?.spec.criteria ?? [""]);
   const [rules, setRules] = useState<JudgeRule[]>(judge?.spec.rules ?? []);
@@ -159,6 +160,7 @@ function JudgeEditor({
     try {
       const spec: JudgeSpec = {
         mode,
+        provider,
         model: model.trim() || undefined,
         criteria: criteria.map((c) => c.trim()).filter(Boolean),
         rules,
@@ -257,6 +259,15 @@ function JudgeEditor({
             <option value="all">All — rules AND LLM must pass</option>
             <option value="rules-only">Rules only — ignore LLM</option>
             <option value="llm-only">LLM only — ignore rules</option>
+          </select>
+        </label>
+        <label className="field" style={{ flex: 1, minWidth: 200 }}>
+          <span className="field-label">LLM provider</span>
+          <select value={provider} onChange={(e) => setProvider(e.target.value as typeof provider)}>
+            <option value="auto">Auto — first configured</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="gemini">Google Gemini</option>
           </select>
         </label>
         <label className="field" style={{ flex: 1, minWidth: 200 }}>

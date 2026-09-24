@@ -18,9 +18,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!judge) return NextResponse.json({ error: "Unknown or missing judge" }, { status: 400 });
 
   try {
-    // `auto` uses OpenAI/Anthropic when a key is set, else a deterministic mock;
-    // code-rule checks work regardless of LLM availability.
-    const evaluator = new Judge(createLLM("auto", judge.spec.model));
+    // The judge's provider ("auto" by default) picks OpenAI/Anthropic/Gemini
+    // when a key is set, else a deterministic mock; code-rule checks work
+    // regardless of LLM availability.
+    const evaluator = new Judge(createLLM(judge.spec.provider ?? "auto", judge.spec.model));
     const verdict = await evaluator.evaluate(judge.spec, call.transcript);
     const next = { ...call, judgeId: judge.id, verdict, status: "scored" as const, error: undefined };
     upsertProdCall(next);
