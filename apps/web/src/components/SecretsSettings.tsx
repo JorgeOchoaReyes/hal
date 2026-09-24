@@ -9,16 +9,20 @@ interface SecretStatus {
   source: Source;
 }
 
+type Requirement = "one-of" | "optional";
+
 interface Meta {
   key: string;
   label: string;
   group: string;
   help: string;
+  req: Requirement;
   secret?: boolean; // password field (default true)
 }
 
 interface Group {
   name: string;
+  note?: string; // requirement summary shown next to the group header
   restart?: boolean; // whole group needs an app restart to take effect
   items: Meta[];
 }
@@ -26,19 +30,26 @@ interface Group {
 const GROUPS: Group[] = [
   {
     name: "AI models",
+    note: "Required — set at least one",
     items: [
-      { key: "OPENAI_API_KEY", label: "OpenAI", group: "AI models", help: "LLM judge & simulated caller (OpenAI or auto)." },
-      { key: "ANTHROPIC_API_KEY", label: "Anthropic", group: "AI models", help: "Claude-based judging / simulation." },
+      { key: "OPENAI_API_KEY", label: "OpenAI", group: "AI models", req: "one-of", help: "LLM judge & simulated caller (OpenAI or auto)." },
+      { key: "ANTHROPIC_API_KEY", label: "Anthropic", group: "AI models", req: "one-of", help: "Claude-based judging / simulation." },
     ],
   },
   {
     name: "Speech",
+    note: "Optional",
     restart: true,
     items: [
-      { key: "DEEPGRAM_API_KEY", label: "Deepgram", group: "Speech", help: "Live WebRTC/SIP media gateway. (Uploaded-call transcription is set above.)" },
+      { key: "DEEPGRAM_API_KEY", label: "Deepgram", group: "Speech", req: "optional", help: "Live WebRTC/SIP media gateway. (Uploaded-call transcription is set above.)" },
     ],
   },
 ];
+
+const REQ_LABEL: Record<Requirement, { text: string; className: string }> = {
+  "one-of": { text: "one required", className: "label label-warn" },
+  optional: { text: "optional", className: "label label-neutral" },
+};
 
 export default function SecretsSettings() {
   const [status, setStatus] = useState<Record<string, SecretStatus>>({});
@@ -105,6 +116,8 @@ export default function SecretsSettings() {
   }
 
   const dirty = Object.values(drafts).some((v) => v.trim());
+  const hasAiKey =
+    (status.OPENAI_API_KEY?.set ?? false) || (status.ANTHROPIC_API_KEY?.set ?? false);
 
   return (
     <div className="card">
@@ -116,6 +129,23 @@ export default function SecretsSettings() {
         Add the keys HAL needs. Stored server-side, never shown back. A real environment variable always
         wins and shows <em>from env</em>.
       </p>
+
+      {loaded && !hasAiKey && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "var(--accent-dim)",
+            color: "var(--accent)",
+            fontSize: 13,
+          }}
+        >
+          <strong>Set at least one AI model key</strong> (OpenAI or Anthropic) to run real simulations and
+          LLM judging. Without one, HAL falls back to a mock model. Real phone calls also need a provider
+          connected under <em>Providers</em>.
+        </div>
+      )}
 
       {GROUPS.map((group) => (
         <div key={group.name} style={{ marginTop: 16 }}>
@@ -132,6 +162,11 @@ export default function SecretsSettings() {
             }}
           >
             {group.name}
+            {group.note && (
+              <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>
+                · {group.note}
+              </span>
+            )}
             {group.restart && (
               <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>
                 · restart to apply
@@ -152,9 +187,12 @@ export default function SecretsSettings() {
                 >
                   <span
                     title={`${m.key} — ${m.help}`}
-                    style={{ width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}
+                    style={{ width: 168, flexShrink: 0, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
                   >
                     {m.label}
+                    <span className={REQ_LABEL[m.req].className} style={{ fontSize: 10, padding: "1px 6px" }}>
+                      {REQ_LABEL[m.req].text}
+                    </span>
                   </span>
                   <input
                     type={m.secret === false ? "text" : "password"}
