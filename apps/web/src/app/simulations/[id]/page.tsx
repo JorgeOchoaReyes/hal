@@ -29,17 +29,23 @@ export default async function TestDetailPage({
       </div>
       <p className="sub">{tc.scenario.description}</p>
 
+      <h2>Run this simulation</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 12 }}>
+        How this runs is decided here, not at creation: run it as authored (against the mock
+        target, or your saved &quot;My agents&quot; target if you picked one), or dispatch it to a
+        hosted provider for a real call — pick an account and number below and HAL pulls the
+        result once the call ends.
+      </p>
       <RunPanel testCaseId={tc.id} />
+      <div style={{ marginTop: 12 }}>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          Or dispatch to a hosted provider (real call)
+        </div>
+        <DispatchHosted testCaseId={tc.id} />
+      </div>
 
       <h2>Judges</h2>
       <AttachJudges patchUrl={`/api/testcases/${tc.id}`} initial={tc.judgeIds ?? []} />
-
-      {tc.scenario.structured && (
-        <>
-          <h2>Dispatch to a hosted provider</h2>
-          <DispatchHosted testCaseId={tc.id} />
-        </>
-      )}
 
       {results.length > 0 && (
         <>
