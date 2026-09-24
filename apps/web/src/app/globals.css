@@ -528,12 +528,16 @@ table.data tbody tr:hover { background: var(--hover); }
   max-width: 620px;
   box-shadow: var(--shadow-lg);
   animation: scaleIn 0.2s var(--ease);
-  margin: auto;
+  /* Flex column so the body scrolls internally and the header + footer
+     (with the submit buttons) stay pinned and always reachable. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 88px);
+  overflow: hidden;
 }
 .modal.wide { max-width: 780px; }
 .modal-head {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -544,15 +548,14 @@ table.data tbody tr:hover { background: var(--hover); }
   border-radius: 14px 14px 0 0;
 }
 .modal-head h2 { margin: 0; font-size: 16px; }
-.modal-body { padding: 20px; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .modal-foot {
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
-  position: sticky;
-  bottom: 0;
   background: var(--panel);
   border-radius: 0 0 14px 14px;
 }
