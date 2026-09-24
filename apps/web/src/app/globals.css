@@ -236,6 +236,8 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 .pill.telephony { color: #92400e; background: #fef3c7; }
 .pill.webrtc { color: #6d28d9; background: #ede9fe; }
 .pill.sip { color: #0f766e; background: #d1fae5; }
+.pill.inbound { color: #1d4ed8; background: #dbeafe; }
+.pill.outbound { color: #9d174d; background: #fce7f3; }
 .pill.passed { color: #fff; background: var(--pass); }
 .pill.failed { color: #fff; background: var(--fail); }
 .pill.running { color: #fff; background: var(--agent); }
