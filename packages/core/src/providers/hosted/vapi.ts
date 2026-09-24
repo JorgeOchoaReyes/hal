@@ -9,6 +9,7 @@ import {
   HostedTarget,
   HostedCallState,
   HostedCallStatus,
+  HostedRemoteAgent,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -145,6 +146,25 @@ export class VapiIntegration implements VoiceProviderIntegration {
       transcript: parseVapiTranscript(data),
       endedReason: data.endedReason,
     };
+  }
+
+  /**
+   * List the account's existing Vapi assistants, so "My agents" can import one
+   * (the real agent under test) instead of manual entry. GET /assistant is the
+   * same list endpoint verifyCredentials probes.
+   */
+  async listRemoteAgents(account: ProviderAccount): Promise<HostedRemoteAgent[]> {
+    const res = await this.fetchImpl(`${this.base}/assistant`, { headers: this.headers(account) });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => null)) as unknown;
+    const rows = Array.isArray(data) ? data : [];
+    const out: HostedRemoteAgent[] = [];
+    for (const r of rows as Array<Record<string, unknown>>) {
+      const id = String(r.id ?? "").trim();
+      if (!id) continue;
+      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent" });
+    }
+    return out;
   }
 }
 

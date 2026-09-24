@@ -8,6 +8,7 @@ import {
   HostedTarget,
   HostedCallState,
   HostedCallStatus,
+  HostedRemoteAgent,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -143,6 +144,25 @@ export class RetellIntegration implements VoiceProviderIntegration {
       transcript: parseTranscript(data),
       endedReason: data.disconnection_reason,
     };
+  }
+
+  /**
+   * List the account's existing Retell agents, so "My agents" can import one
+   * instead of manual entry. GET /list-agents is the same endpoint
+   * verifyCredentials probes.
+   */
+  async listRemoteAgents(account: ProviderAccount): Promise<HostedRemoteAgent[]> {
+    const res = await this.fetchImpl(`${this.base}/list-agents`, { headers: this.headers(account) });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => null)) as unknown;
+    const rows = Array.isArray(data) ? data : [];
+    const out: HostedRemoteAgent[] = [];
+    for (const r of rows as Array<Record<string, unknown>>) {
+      const id = String(r.agent_id ?? "").trim();
+      if (!id) continue;
+      out.push({ id, name: String(r.agent_name ?? id).trim(), kind: "agent" });
+    }
+    return out;
   }
 }
 
