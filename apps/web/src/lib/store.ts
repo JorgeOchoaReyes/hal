@@ -16,6 +16,7 @@ import {
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
+import { encryptCredentials, decryptCredentials } from "./secretbox";
 
 /**
  * Process-wide state, persisted via the {@link Persistence} layer (SQLite by
@@ -68,7 +69,9 @@ function seed(): HalState {
   const results = new Map<string, TestResult>();
   for (const r of db.loadAll<TestResult>("results")) results.set(r.id, r);
   const accounts = new Map<string, ProviderAccount>();
-  for (const a of db.loadAll<ProviderAccount>("accounts")) accounts.set(a.id, a);
+  // Credentials are stored encrypted at rest; decrypt into memory for use.
+  for (const a of db.loadAll<ProviderAccount>("accounts"))
+    accounts.set(a.id, { ...a, credentials: decryptCredentials(a.credentials) });
   const agents = new Map<string, HostedTestingAgent>();
   for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
   const judges = new Map<string, SavedJudge>();
@@ -259,8 +262,9 @@ export function getAccountRaw(id: string): ProviderAccount | undefined {
 
 export function upsertAccount(a: ProviderAccount): void {
   const s = halState();
+  // Keep plaintext credentials in memory; persist them encrypted at rest.
   s.accounts.set(a.id, a);
-  s.db.put("accounts", a.id, a, a.createdAt);
+  s.db.put("accounts", a.id, { ...a, credentials: encryptCredentials(a.credentials) }, a.createdAt);
 }
 
 export function listAgents(): HostedTestingAgent[] {
@@ -420,10 +424,6 @@ export const SECRET_KEYS = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "DEEPGRAM_API_KEY",
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_FROM_NUMBER",
-  "HAL_PUBLIC_URL",
 ] as const;
 export type SecretKey = (typeof SECRET_KEYS)[number];
 

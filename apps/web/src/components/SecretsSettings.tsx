@@ -38,16 +38,6 @@ const GROUPS: Group[] = [
       { key: "DEEPGRAM_API_KEY", label: "Deepgram", group: "Speech", help: "Live WebRTC/SIP media gateway. (Uploaded-call transcription is set above.)" },
     ],
   },
-  {
-    name: "Phone calls (Twilio)",
-    restart: true,
-    items: [
-      { key: "TWILIO_ACCOUNT_SID", label: "Account SID", group: "Phone calls (Twilio)", help: "Twilio account for real PSTN calls." },
-      { key: "TWILIO_AUTH_TOKEN", label: "Auth token", group: "Phone calls (Twilio)", help: "Twilio auth token." },
-      { key: "TWILIO_FROM_NUMBER", label: "From number", group: "Phone calls (Twilio)", help: "Caller ID in E.164, e.g. +14155550123.", secret: false },
-      { key: "HAL_PUBLIC_URL", label: "Public URL", group: "Phone calls (Twilio)", help: "Publicly reachable URL for Twilio callbacks.", secret: false },
-    ],
-  },
 ];
 
 export default function SecretsSettings() {
@@ -176,11 +166,7 @@ export default function SecretsSettings() {
                         ? "managed by environment"
                         : source === "stored"
                           ? "•••••• saved — type to replace"
-                          : m.secret === false
-                            ? m.key === "TWILIO_FROM_NUMBER"
-                              ? "+14155550123"
-                              : "https://…"
-                            : "paste value"
+                          : "paste value"
                     }
                     className={m.secret === false ? "mono" : undefined}
                     style={{ flex: 1, minWidth: 0 }}
@@ -218,7 +204,7 @@ export default function SecretsSettings() {
           {busy ? "Saving…" : "Save"}
         </button>
         <span className="muted" style={{ fontSize: 12 }}>
-          AI keys apply immediately; speech &amp; Twilio need an app restart.
+          AI keys apply immediately; the speech key needs an app restart.
         </span>
       </div>
     </div>
