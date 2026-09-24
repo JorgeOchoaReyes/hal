@@ -328,6 +328,12 @@ input:focus, textarea:focus, select:focus {
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field-label { font-size: 13px; font-weight: 600; color: var(--muted); }
 
+@media (max-width: 560px) {
+  .secret-row { flex-wrap: wrap; }
+  .secret-row > span:first-child { width: 100% !important; }
+  .secret-row > input { flex: 1 1 auto; }
+}
+
 .provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .provider-chip {
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
