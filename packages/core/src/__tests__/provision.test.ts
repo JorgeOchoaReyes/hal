@@ -45,12 +45,19 @@ const agentFrom = (id: string): HostedTestingAgent => ({
   id: "h", accountId: "a", provider: "x", externalAgentId: id, name: "n", createdAt: 0, spec,
 });
 
-test("Bland provisions a Pathway and calls with pathway_id", async () => {
-  const { fetch, calls } = capturing({ "/v1/pathway": { pathway_id: "pw1" }, "/v1/calls": { call_id: "c1" } });
+test("Bland provisions a Pathway (create + set graph) and calls with pathway_id", async () => {
+  const { fetch, calls } = capturing({
+    "/v1/pathway/create": { pathway_id: "pw1" },
+    "/v1/calls": { call_id: "c1" },
+  });
   const bland = new BlandIntegration(fetch);
   const { externalAgentId } = await bland.createTestingAgent(account, spec);
   assert.equal(externalAgentId, "pw1");
-  assert.ok(calls.some((c) => c.url.endsWith("/v1/pathway")));
+  // Creates the pathway shell, then sets its nodes/edges on the returned id.
+  assert.ok(calls.some((c) => c.url.endsWith("/v1/pathway/create")));
+  const graphCall = calls.find((c) => c.url.endsWith("/v1/pathway/pw1"));
+  assert.ok(graphCall, "sets the node graph on the created pathway");
+  assert.ok(Array.isArray((graphCall!.body as { nodes: unknown[] }).nodes));
 
   await bland.placeCall(account, agentFrom("pw1"), { phoneNumber: "+14155550123" });
   const call = calls.find((c) => c.url.endsWith("/v1/calls"))!;

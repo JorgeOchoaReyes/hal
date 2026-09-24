@@ -91,6 +91,71 @@ export class BlandIntegration implements VoiceProviderIntegration {
     };
   }
 
+  private post(account: ProviderAccount, path: string, body: unknown): ReturnType<FetchLike> {
+    return this.fetchImpl(`${this.base}${path}`, {
+      method: "POST",
+      headers: this.headers(account),
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Provision a Bland Pathway from a structured test (a deterministic node
+   * graph). Bland has shipped more than one pathway API shape over time
+   * (a single-shot create, and a create-then-set-version flow), so we create
+   * the pathway shell, then set its nodes/edges, trying the documented endpoint
+   * variants and surfacing every attempt's response if it fails. Creating a
+   * pathway places no call and costs nothing.
+   */
+  private async provisionPathway(
+    account: ProviderAccount,
+    spec: TestingAgentSpec,
+  ): Promise<string> {
+    const graph = this.buildFlowConfig(spec)! as {
+      name?: string;
+      nodes: unknown[];
+      edges: unknown[];
+    };
+    const name = spec.name || "HAL test";
+    const description = "Provisioned by HAL for a deterministic voice test.";
+    const attempts: string[] = [];
+
+    // 1) Create the pathway shell to get an id.
+    let pathwayId: string | undefined;
+    for (const path of ["/v1/pathway/create", "/v1/pathways"]) {
+      const res = await this.post(account, path, { name, description });
+      const text = await safeText(res);
+      if (res.ok) {
+        try {
+          const d = JSON.parse(text) as Record<string, unknown> & { data?: Record<string, unknown> };
+          pathwayId = String(
+            d.pathway_id ?? d.id ?? d.data?.pathway_id ?? d.data?.id ?? "",
+          ) || undefined;
+        } catch {
+          /* fallthrough */
+        }
+        if (pathwayId) break;
+        attempts.push(`POST ${path} → ${res.status} but no pathway id in ${text.slice(0, 160)}`);
+      } else {
+        attempts.push(`POST ${path} → ${res.status}: ${text.slice(0, 160)}`);
+      }
+    }
+    if (!pathwayId) {
+      throw new Error(`Bland create pathway failed. Attempts: ${attempts.join(" | ")}`);
+    }
+
+    // 2) Set the node graph on the pathway (documented variants).
+    const graphBody = { name, nodes: graph.nodes, edges: graph.edges };
+    for (const path of [`/v1/pathway/${pathwayId}`, `/v1/pathway/${pathwayId}/version`]) {
+      const res = await this.post(account, path, graphBody);
+      if (res.ok) return pathwayId;
+      attempts.push(`update ${path} → ${res.status}: ${(await safeText(res)).slice(0, 160)}`);
+    }
+    throw new Error(
+      `Bland pathway ${pathwayId} was created but setting its nodes/edges failed. Attempts: ${attempts.join(" | ")}`,
+    );
+  }
+
   async createTestingAgent(
     account: ProviderAccount,
     spec: TestingAgentSpec,
@@ -98,17 +163,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
     // Node-native: a structured test becomes a Bland Pathway. The returned
     // pathway id is used to place the call (deterministic node graph).
     if (spec.structured) {
-      const pathway = this.buildFlowConfig(spec)!;
-      const res = await this.fetchImpl(`${this.base}/v1/pathway`, {
-        method: "POST",
-        headers: this.headers(account),
-        body: JSON.stringify(pathway),
-      });
-      if (!res.ok) throw new Error(`Bland createPathway failed (${res.status}): ${await safeText(res)}`);
-      const data = (await res.json()) as { pathway_id?: string; id?: string };
-      const pathwayId = data.pathway_id ?? data.id;
-      if (!pathwayId) throw new Error("Bland createPathway returned no pathway id");
-      return { externalAgentId: pathwayId };
+      return { externalAgentId: await this.provisionPathway(account, spec) };
     }
 
     // Prompt mode: register a persistent Bland agent.
