@@ -14,6 +14,8 @@ export interface ResultRow {
   turns: number;
   score?: number;
   labels: { text: string; tone: string }[];
+  /** Free-text label the run was given (e.g. a batch run's name), if any. */
+  runLabel?: string;
 }
 
 /**
@@ -38,7 +40,8 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
         r.simName.toLowerCase().includes(needle) ||
         r.testCaseId.toLowerCase().includes(needle) ||
         r.id.toLowerCase().includes(needle) ||
-        r.status.toLowerCase().includes(needle)
+        r.status.toLowerCase().includes(needle) ||
+        (r.runLabel?.toLowerCase().includes(needle) ?? false)
       );
     });
   }, [rows, q, status]);
@@ -50,7 +53,7 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
           className="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search runs by simulation, id, or status…"
+          placeholder="Search runs by simulation, id, status, or label…"
         />
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {statuses.map((s) => (
@@ -75,6 +78,7 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
             <tr>
               <th style={{ width: 170 }}>When</th>
               <th>Simulation</th>
+              <th>Run label</th>
               <th>Channel</th>
               <th style={{ width: 110 }}>Status</th>
               <th style={{ width: 70, textAlign: "center" }}>Turns</th>
@@ -85,7 +89,7 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
           <tbody>
             {filtered.length === 0 && (
               <tr className="empty-row">
-                <td colSpan={7}>
+                <td colSpan={8}>
                   {rows.length === 0
                     ? "No runs yet — run a simulation to see results here."
                     : "No runs match your filter."}
@@ -101,6 +105,9 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
                   <Link href={`/simulations/${r.testCaseId}`} style={{ fontWeight: 600 }}>
                     {r.simName}
                   </Link>
+                </td>
+                <td className="muted mono" style={{ fontSize: 12 }}>
+                  {r.runLabel ?? "—"}
                 </td>
                 <td>
                   <span className={`pill ${r.transport}`}>{r.transport}</span>

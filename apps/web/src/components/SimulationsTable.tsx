@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import type { RunStatus } from "@hal/core";
 import { useNewSimulation } from "./NewSimulationContext";
+import RunModal from "./RunModal";
 
 export interface SimRow {
   id: string;
@@ -15,7 +17,7 @@ export interface SimRow {
   tags: string[];
 }
 
-type RunState = "idle" | "running" | "passed" | "failed" | "errored" | "aborted";
+type RunState = "idle" | RunStatus;
 
 /**
  * A clean, tabular list of simulations — one row per scenario with its persona,
@@ -25,6 +27,7 @@ type RunState = "idle" | "running" | "passed" | "failed" | "errored" | "aborted"
 export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
   const [q, setQ] = useState("");
   const [runState, setRunState] = useState<Record<string, RunState>>({});
+  const [runModalFor, setRunModalFor] = useState<string | null>(null);
   const { openNewSimulation } = useNewSimulation();
 
   const filtered = useMemo(() => {
@@ -39,20 +42,8 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
     );
   }, [rows, q]);
 
-  function run(id: string) {
-    setRunState((s) => ({ ...s, [id]: "running" }));
-    const es = new EventSource(`/api/run?testCaseId=${encodeURIComponent(id)}`);
-    es.onmessage = (e) => {
-      const event = JSON.parse(e.data) as { type: string; result?: { status: RunState } };
-      if (event.type === "done" && event.result) {
-        setRunState((s) => ({ ...s, [id]: event.result!.status }));
-      }
-    };
-    es.addEventListener("end", () => es.close());
-    es.onerror = () => {
-      es.close();
-      setRunState((s) => ({ ...s, [id]: s[id] === "running" ? "errored" : s[id] }));
-    };
+  function onRunComplete(id: string, status: RunStatus) {
+    setRunState((s) => ({ ...s, [id]: status }));
   }
 
   return (
@@ -133,18 +124,14 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
                   </td>
                   <td>
                     <div className="row-actions">
-                      {state === "idle" || state === "running" ? (
-                        <button
-                          className="icon-btn"
-                          onClick={() => run(r.id)}
-                          disabled={state === "running"}
-                          title="Run this simulation"
-                        >
-                          {state === "running" ? "…" : "▶ Run"}
-                        </button>
-                      ) : (
-                        <span className={`pill ${state}`}>{state}</span>
-                      )}
+                      <button
+                        className="icon-btn"
+                        onClick={() => setRunModalFor(r.id)}
+                        title="Configure and run this simulation"
+                      >
+                        ▶ Run
+                      </button>
+                      {state !== "idle" && <span className={`pill ${state}`}>{state}</span>}
                       <Link href={`/simulations/${r.id}`} className="icon-btn" title="Open">
                         Open
                       </Link>
@@ -156,6 +143,14 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {runModalFor && (
+        <RunModal
+          testCaseId={runModalFor}
+          onClose={() => setRunModalFor(null)}
+          onRunComplete={(status) => onRunComplete(runModalFor, status)}
+        />
+      )}
     </>
   );
 }

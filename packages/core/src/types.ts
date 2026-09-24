@@ -355,6 +355,12 @@ export interface TestResult {
   metrics?: import("./metrics/metrics.js").CallMetrics;
   /** Human-readable labels derived from the metrics. */
   labels?: import("./metrics/metrics.js").Label[];
+  /**
+   * Optional free-text label the caller gave this run (e.g. "regression-2026-09-24"),
+   * so a batch or ad-hoc run can be found again on the Results page. Distinct from
+   * {@link labels}, which are derived pass/fail tags computed from the metrics.
+   */
+  runLabel?: string;
 }
 
 // ---------------------------------------------------------------------------

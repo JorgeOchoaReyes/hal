@@ -19,6 +19,7 @@ export default function ResultsPage() {
       turns: r.transcript?.length ?? 0,
       score: r.verdict?.score,
       labels: (r.labels ?? []).map((l) => ({ text: l.text, tone: l.tone })),
+      runLabel: r.runLabel,
     };
   });
 
@@ -29,7 +30,8 @@ export default function ResultsPage() {
           <h1 style={{ margin: 0 }}>Results</h1>
           <p className="sub" style={{ margin: "4px 0 0" }}>
             Every run across all simulations, newest first — status, verdict score, and the
-            labels the judge assigned. Click a simulation to open its detail and full transcript.
+            labels the judge assigned. Give a run a label when you start it (or a batch of them)
+            to find it again here. Click a simulation to open its detail and full transcript.
           </p>
         </div>
       </div>
