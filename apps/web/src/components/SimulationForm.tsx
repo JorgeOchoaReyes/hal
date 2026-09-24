@@ -41,6 +41,12 @@ interface SavedTarget {
   description?: string;
 }
 
+interface ProviderAccount {
+  id: string;
+  provider: string;
+  label: string;
+}
+
 export default function SimulationForm({
   fromCallId,
   onCreated,
@@ -77,6 +83,11 @@ export default function SimulationForm({
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set());
   const [importText, setImportText] = useState("");
   const [importNote, setImportNote] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
+  const [callAccountId, setCallAccountId] = useState("");
+  const [callId, setCallId] = useState("");
+  const [callImportBusy, setCallImportBusy] = useState(false);
+  const [callImportError, setCallImportError] = useState<string | null>(null);
   const [mode, setMode] = useState<"steps" | "structured">("steps");
   const [structured, setStructured] = useState<StructuredTest>({
     role: "You are a customer calling to book an appointment.",
@@ -112,6 +123,10 @@ export default function SimulationForm({
     fetch("/api/judges")
       .then((r) => r.json())
       .then((d) => setJudges(d.judges ?? []))
+      .catch(() => undefined);
+    fetch("/api/provider-accounts")
+      .then((r) => r.json())
+      .then((d: { accounts?: ProviderAccount[] }) => setAccounts(d.accounts ?? []))
       .catch(() => undefined);
 
     if (fromCallId) {
@@ -150,6 +165,31 @@ export default function SimulationForm({
     if (!file) return;
     const text = await file.text();
     setImportText(text);
+  }
+
+  async function importFromProviderCall() {
+    setCallImportBusy(true);
+    setCallImportError(null);
+    try {
+      const res = await fetch(
+        `/api/hosted-integrations/call-transcript?accountId=${encodeURIComponent(callAccountId)}&callId=${encodeURIComponent(callId)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to fetch transcript");
+      const s = transcriptToSteps(data.transcript);
+      if (s.length === 0) {
+        setCallImportError("That call's transcript has no caller turns to import.");
+        return;
+      }
+      setSteps(s);
+      setMode("steps");
+      if (!name.trim()) setName(`Call ${callId} — replay`);
+      setImportNote(`Imported ${s.length} caller turn${s.length === 1 ? "" : "s"} from call “${callId}”. Edit below before saving.`);
+    } catch (e) {
+      setCallImportError((e as Error).message);
+    } finally {
+      setCallImportBusy(false);
+    }
   }
 
   function toggleJudge(id: string) {
@@ -237,6 +277,44 @@ export default function SimulationForm({
           </button>
           {importNote && <span className="muted" style={{ fontSize: 12 }}>{importNote}</span>}
         </div>
+
+        <p className="muted" style={{ fontSize: 13, marginTop: 16, marginBottom: 4 }}>
+          …or pull a call straight from a connected provider by its call id.
+        </p>
+        {accounts.length === 0 ? (
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            No provider accounts connected — connect one on <a href="/agents">Hosted agents</a>.
+          </p>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <select value={callAccountId} onChange={(e) => setCallAccountId(e.target.value)} style={{ width: "auto" }}>
+              <option value="">— select a connected account —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label} ({a.provider})
+                </option>
+              ))}
+            </select>
+            <input
+              value={callId}
+              onChange={(e) => setCallId(e.target.value)}
+              placeholder="Call id"
+              style={{ width: "auto" }}
+            />
+            <button
+              type="button"
+              onClick={importFromProviderCall}
+              disabled={callImportBusy || !callAccountId || !callId.trim()}
+            >
+              {callImportBusy ? "Fetching…" : "Fetch transcript"}
+            </button>
+          </div>
+        )}
+        {callImportError && (
+          <div className="muted" style={{ color: "var(--fail)", fontSize: 12, marginTop: 6 }}>
+            {callImportError}
+          </div>
+        )}
       </details>
 
       <section className="card">
