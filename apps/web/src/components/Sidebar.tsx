@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { useNewSimulation } from "./NewSimulationContext";
 
 interface NavItem {
   href: string;
@@ -10,6 +11,8 @@ interface NavItem {
   icon: ReactNode;
   external?: boolean;
   match?: (path: string) => boolean;
+  /** Opens the "New simulation" popup instead of navigating to `href`. */
+  action?: "new-simulation";
 }
 interface NavGroup {
   title: string;
@@ -32,7 +35,7 @@ const GROUPS: NavGroup[] = [
         icon: icon("M4 6h16M4 12h16M4 18h16"),
         match: (p) => p === "/" || p.startsWith("/simulations"),
       },
-      { href: "/simulations/new", label: "New simulation", icon: icon("M12 5v14M5 12h14") },
+      { href: "/simulations/new", label: "New simulation", icon: icon("M12 5v14M5 12h14"), action: "new-simulation" },
       {
         href: "/results",
         label: "Results",
@@ -91,6 +94,7 @@ const GROUPS: NavGroup[] = [
 
 export default function Sidebar() {
   const pathname = usePathname() ?? "/";
+  const { openNewSimulation } = useNewSimulation();
 
   return (
     <aside className="sidebar">
@@ -108,6 +112,27 @@ export default function Sidebar() {
             <div className="nav-group-title">{g.title}</div>
             {g.items.map((it) => {
               const active = it.match ? it.match(pathname) : pathname === it.href;
+              if (it.action === "new-simulation") {
+                return (
+                  <button
+                    key={it.href}
+                    type="button"
+                    className="nav-link"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      width: "100%",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      font: "inherit",
+                    }}
+                    onClick={() => openNewSimulation()}
+                  >
+                    <span className="nav-icon">{it.icon}</span>
+                    {it.label}
+                  </button>
+                );
+              }
               if (it.external) {
                 return (
                   <a key={it.href} href={it.href} className="nav-link" target="_blank" rel="noreferrer">

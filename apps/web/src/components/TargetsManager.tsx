@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, type ReactNode } from "react";
+import { useEffect, useState, useCallback } from "react";
+import Modal from "./Modal";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
 type Direction = "inbound" | "outbound";
@@ -128,40 +129,6 @@ export default function TargetsManager() {
   );
 }
 
-function Modal({
-  onClose,
-  width = 480,
-  children,
-}: {
-  onClose: () => void;
-  width?: number;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="card"
-        style={{ width, maxWidth: "90vw", maxHeight: "85vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 
 interface ProviderAccount {
   id: string;
@@ -283,14 +250,23 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   }
 
   return (
-    <Modal onClose={onClose}>
-      <div className="card-row">
-        <strong>Add an agent under test</strong>
-        <button className="icon-btn" onClick={onClose} title="Close">
-          ✕
-        </button>
-      </div>
-      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+    <Modal
+      open
+      onClose={onClose}
+      title="Add an agent under test"
+      wide
+      footer={
+        <>
+          <button className="icon-btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={busy || !name.trim()}>
+            {busy ? "Saving…" : "Add agent"}
+          </button>
+        </>
+      }
+    >
+      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         Register the real voice agent you want HAL to call. Simulations point at one of these.
       </p>
 
@@ -434,14 +410,6 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
       </div>
       {err && <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>{err}</div>}
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button className="icon-btn" onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
-        <button onClick={submit} disabled={busy || !name.trim()}>
-          {busy ? "Saving…" : "Add agent"}
-        </button>
-      </div>
     </Modal>
   );
 }
@@ -554,14 +522,22 @@ function EditTargetModal({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <div className="card-row">
-        <strong>Edit agent</strong>
-        <button className="icon-btn" onClick={onClose} title="Close">
-          ✕
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 10, marginTop: 10 }}>
+    <Modal
+      open
+      onClose={onClose}
+      title="Edit agent"
+      footer={
+        <>
+          <button className="icon-btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={busy || !name.trim()}>
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 10 }}>
           <div className="field">
             <span className="field-label">Name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Support line" />
@@ -624,14 +600,6 @@ function EditTargetModal({
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
         </div>
         {err && <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>{err}</div>}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="icon-btn" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button onClick={save} disabled={busy || !name.trim()}>
-            {busy ? "Saving…" : "Save changes"}
-          </button>
-        </div>
     </Modal>
   );
 }

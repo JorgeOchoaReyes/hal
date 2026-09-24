@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { ProdCall, SavedJudge, TargetAgent } from "@hal/core";
 import Modal from "./Modal";
+import { useNewSimulation } from "./NewSimulationContext";
 
 const STATUS_TONE: Record<ProdCall["status"], string> = {
   new: "neutral",
@@ -236,6 +237,7 @@ function CallCard({
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const assigned = targets.find((t) => t.id === call.targetAgentId);
+  const { openNewSimulation } = useNewSimulation();
 
   async function assignAgent(id: string) {
     await fetch(`/api/prod-calls/${call.id}`, {
@@ -286,9 +288,14 @@ function CallCard({
           <button className="icon-btn" onClick={() => setOpen((o) => !o)}>
             {open ? "Hide transcript" : "Transcript"}
           </button>
-          <Link className="icon-btn" href={`/simulations/new?fromCall=${call.id}`} title="Create a simulation that replays this call's caller">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => openNewSimulation({ fromCallId: call.id })}
+            title="Create a simulation that replays this call's caller"
+          >
             → Simulation
-          </Link>
+          </button>
           <button className="icon-btn" onClick={remove}>
             Delete
           </button>

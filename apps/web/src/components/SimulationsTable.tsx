@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useNewSimulation } from "./NewSimulationContext";
 
 export interface SimRow {
   id: string;
@@ -24,6 +25,7 @@ type RunState = "idle" | "running" | "passed" | "failed" | "errored" | "aborted"
 export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
   const [q, setQ] = useState("");
   const [runState, setRunState] = useState<Record<string, RunState>>({});
+  const { openNewSimulation } = useNewSimulation();
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -66,9 +68,9 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
           <span className="muted" style={{ fontSize: 13 }}>
             {filtered.length} of {rows.length}
           </span>
-          <Link href="/simulations/new" className="btn">
+          <button type="button" className="btn" onClick={() => openNewSimulation()}>
             + New simulation
-          </Link>
+          </button>
         </div>
       </div>
 
