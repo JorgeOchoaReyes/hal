@@ -307,6 +307,9 @@ function ProvisionAgent({
   const [err, setErr] = useState<string | null>(null);
   const selected = accountId || accounts[0]?.id || "";
   const selectedAccount = accounts.find((a) => a.id === selected);
+  // Bland calls the structured/deterministic form a "Pathway"; other providers
+  // use a "workflow"/"conversation flow". Label the option per provider.
+  const structuredLabel = selectedAccount?.provider === "bland" ? "Pathway" : "Structured flow";
 
   function structuredPayload() {
     if (!useStructured) return undefined;
@@ -387,18 +390,21 @@ function ProvisionAgent({
         <span className="field-label">Agent name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label
-        className="muted"
-        style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}
-      >
-        <input
-          type="checkbox"
-          style={{ width: "auto" }}
-          checked={useStructured}
-          onChange={(e) => setUseStructured(e.target.checked)}
-        />
-        Reproduce a structured (deterministic) test — compiled into this platform&apos;s native config
+      <label className="field">
+        <span className="field-label">Agent type</span>
+        <select
+          value={useStructured ? "structured" : "simple"}
+          onChange={(e) => setUseStructured(e.target.value === "structured")}
+        >
+          <option value="simple">Simple agent — single prompt</option>
+          <option value="structured">{structuredLabel} — deterministic flow</option>
+        </select>
       </label>
+      <p className="muted" style={{ fontSize: 12, marginTop: -4, marginBottom: 10 }}>
+        {useStructured
+          ? `HAL compiles your role + conditions into ${selectedAccount?.provider ?? "the provider"}'s native ${structuredLabel.toLowerCase()} for a deterministic tester.`
+          : "A single system prompt drives the tester's replies — flexible but non-deterministic."}
+      </p>
       {useStructured ? (
         <label className="field">
           <span className="field-label">Structured test (role + conditions JSON)</span>
