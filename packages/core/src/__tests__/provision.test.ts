@@ -64,6 +64,21 @@ test("Bland provisions a Pathway (create + set graph) and calls with pathway_id"
   assert.equal((call.body as { pathway_id: string }).pathway_id, "pw1");
 });
 
+test("Bland versions and publishes the pathway when the version endpoint returns an id", async () => {
+  const { fetch, calls } = capturing({
+    "/v1/pathway/create": { pathway_id: "pw1" },
+    "/v1/pathway/pw1/version": { version_number: 3 },
+  });
+  const bland = new BlandIntegration(fetch);
+  await bland.createTestingAgent(account, spec);
+  // Documented lifecycle: create → set graph → create version → publish it.
+  assert.ok(calls.some((c) => c.url.endsWith("/v1/pathway/pw1/version")));
+  const publish = calls.find((c) => c.url.endsWith("/v1/pathway/pw1/publish"));
+  assert.ok(publish, "promotes the created version");
+  assert.equal((publish!.body as { version_id: number }).version_id, 3);
+  assert.equal((publish!.body as { environment: string }).environment, "production");
+});
+
 test("Vapi provisions a Workflow and calls with workflowId", async () => {
   const { fetch, calls } = capturing({ "/workflow": { id: "wf1" }, "/call": { id: "c1" } });
   const vapi = new VapiIntegration(fetch);
