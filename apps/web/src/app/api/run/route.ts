@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { halState, getTestCase, saveResult } from "@/lib/store";
-import type { RunEvent } from "@hal/core";
+import { halState, saveResult } from "@/lib/store";
+import { resolveOverriddenTestCase } from "@/lib/runOverrides";
+import type { RunEvent, TestResult } from "@hal/core";
 
 export const dynamic = "force-dynamic";
 // Runs may outlive the default serverless timeout; keep the node runtime.
@@ -14,10 +15,18 @@ export const maxDuration = 300;
  */
 export async function GET(req: NextRequest) {
   const testCaseId = req.nextUrl.searchParams.get("testCaseId");
-  const testCase = testCaseId ? getTestCase(testCaseId) : undefined;
+  if (!testCaseId) return new Response("testCaseId required", { status: 400 });
 
-  if (!testCase) {
-    return new Response("Unknown test case", { status: 404 });
+  const targetAgentIdParam = req.nextUrl.searchParams.get("targetAgentId");
+  const judgeIdsParam = req.nextUrl.searchParams.get("judgeIds");
+  const label = req.nextUrl.searchParams.get("label") || undefined;
+
+  const { testCase, error, status } = resolveOverriddenTestCase(testCaseId, {
+    targetAgentId: targetAgentIdParam,
+    judgeIds: judgeIdsParam !== null ? judgeIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : null,
+  });
+  if (error || !testCase) {
+    return new Response(error ?? "Unknown test case", { status: status ?? 404 });
   }
 
   const encoder = new TextEncoder();
@@ -31,12 +40,15 @@ export async function GET(req: NextRequest) {
 
       const handle = engine.run(testCase);
       const unsub = handle.events.on((event) => {
-        send(event);
         if (event.type === "done") {
-          saveResult(event.result);
+          const result: TestResult = label ? { ...event.result, runLabel: label } : event.result;
+          saveResult(result);
+          send({ ...event, result });
           unsub();
           controller.enqueue(encoder.encode("event: end\ndata: {}\n\n"));
           controller.close();
+        } else {
+          send(event);
         }
       });
 

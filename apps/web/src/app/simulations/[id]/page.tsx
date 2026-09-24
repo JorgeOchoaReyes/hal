@@ -31,10 +31,10 @@ export default async function TestDetailPage({
 
       <h2>Run this simulation</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 12 }}>
-        How this runs is decided here, not at creation: run it as authored (against the mock
-        target, or your saved &quot;My agents&quot; target if you picked one), or dispatch it to a
-        hosted provider for a real call — pick an account and number below and HAL pulls the
-        result once the call ends.
+        How this runs is decided here, not at creation. Clicking run opens a popup where you can
+        pick which agent to run against, its direction, which judges score it, an optional label
+        to find the run(s) later on the Results page, and how many times to run it — or dispatch
+        it to a hosted provider for a real call below, where HAL pulls the result once it ends.
       </p>
       <RunPanel testCaseId={tc.id} />
       <div style={{ marginTop: 12 }}>
@@ -55,6 +55,7 @@ export default async function TestDetailPage({
               <div className="card-row" key={r.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
                 <div className="muted" style={{ fontSize: 13 }}>
                   {new Date(r.startedAt).toLocaleString()}
+                  {r.runLabel && <span className="mono" style={{ marginLeft: 8 }}>“{r.runLabel}”</span>}
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   {(r.labels ?? []).map((l, i) => (
