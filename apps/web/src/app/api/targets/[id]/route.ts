@@ -22,6 +22,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ target: updated });
 }
 
+/** Patch a target agent — currently used to attach/detach reusable judges. */
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const existing = getTarget(id);
+  if (!existing) return NextResponse.json({ error: "Unknown target" }, { status: 404 });
+
+  const body = (await req.json()) as { judgeIds?: string[]; name?: string; description?: string };
+  const updated = {
+    ...existing,
+    ...(body.judgeIds !== undefined ? { judgeIds: body.judgeIds } : {}),
+    ...(body.name?.trim() ? { name: body.name.trim() } : {}),
+    ...(body.description !== undefined ? { description: body.description.trim() || undefined } : {}),
+  };
+  upsertTarget(updated);
+  return NextResponse.json({ target: updated });
+}
+
 /** Remove a target agent. */
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

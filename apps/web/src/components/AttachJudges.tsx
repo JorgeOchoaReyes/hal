@@ -8,14 +8,18 @@ const KIND_TONE: Record<SavedJudge["kind"], string> = { llm: "info", code: "neut
 
 /**
  * Attach/detach reusable judges on a simulation. Persists each change via
- * PATCH /api/testcases/[id]; those judges are merged into the run's scoring.
+ * PATCH `patchUrl`; those judges are merged into that thing's scoring — a
+ * simulation's run (PATCH /api/testcases/[id]) or an agent under test's
+ * production calls (PATCH /api/targets/[id]).
  */
 export default function AttachJudges({
-  testCaseId,
+  patchUrl,
   initial,
+  subtitle,
 }: {
-  testCaseId: string;
+  patchUrl: string;
   initial: string[];
+  subtitle?: string;
 }) {
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set(initial));
@@ -37,7 +41,7 @@ export default function AttachJudges({
     setSelected(next);
     setSaving(true);
     try {
-      await fetch(`/api/testcases/${testCaseId}`, {
+      await fetch(patchUrl, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ judgeIds: [...next] }),
@@ -62,7 +66,7 @@ export default function AttachJudges({
         )}
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-        Reusable judges applied on top of this simulation&apos;s own pass criteria when it runs.
+        {subtitle ?? "Reusable judges applied on top of this simulation's own pass criteria when it runs."}
       </p>
       {loaded && judges.length === 0 && (
         <p className="muted" style={{ marginBottom: 0 }}>

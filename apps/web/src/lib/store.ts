@@ -181,6 +181,20 @@ export function getTestCaseRaw(id: string): TestCase | undefined {
   return halState().testCases.get(id);
 }
 
+/**
+ * Merge the specs of several saved judges into one JudgeSpec (union of rules,
+ * criteria, and metrics), so a set of attached judges can score a call in one
+ * pass. Returns undefined when none of the ids resolve to a judge.
+ */
+export function mergeJudgesById(judgeIds: string[]): JudgeSpec | undefined {
+  const s = halState();
+  const specs = judgeIds
+    .map((jid) => s.judges.get(jid)?.spec)
+    .filter((spec): spec is JudgeSpec => Boolean(spec));
+  if (specs.length === 0) return undefined;
+  return mergeJudgeSpecs({ mode: "all" }, specs);
+}
+
 /** Combine a base judge spec with attached judges' specs (union of signals). */
 function mergeJudgeSpecs(base: JudgeSpec, extra: JudgeSpec[]): JudgeSpec {
   const merged: JudgeSpec = {

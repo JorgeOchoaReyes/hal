@@ -32,7 +32,7 @@ export default async function TestDetailPage({
       <RunPanel testCaseId={tc.id} />
 
       <h2>Judges</h2>
-      <AttachJudges testCaseId={tc.id} initial={tc.judgeIds ?? []} />
+      <AttachJudges patchUrl={`/api/testcases/${tc.id}`} initial={tc.judgeIds ?? []} />
 
       {tc.scenario.structured && (
         <>
