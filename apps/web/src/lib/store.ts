@@ -45,8 +45,14 @@ declare global {
 
 const DATA_DIR = process.env.HAL_DATA_DIR ?? join(process.cwd(), "data");
 
+// Snapshot the environment as it was at process start, so real (deployment) env
+// vars always win over UI-stored secrets and we can tell the two apart.
+const REAL_ENV: Record<string, string | undefined> = { ...process.env };
+
 function seed(): HalState {
   const db = createPersistence(DATA_DIR);
+  // Apply UI-stored secrets to process.env before anything reads them.
+  applySecrets(loadSecretsDoc(db));
 
   const testCases = new Map<string, TestCase>();
   const persisted = db.loadAll<TestCase>("testcases");
@@ -405,4 +411,89 @@ export function setTranscriptionSettings(patch: {
   };
   halState().db.put("settings", "transcription", next, next.updatedAt);
   return getTranscriptionSettings();
+}
+
+// --- App secrets / environment (set from the UI, applied to process.env) ------
+
+/** The env vars HAL reads that can be configured from the Settings UI. */
+export const SECRET_KEYS = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "DEEPGRAM_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_FROM_NUMBER",
+  "HAL_PUBLIC_URL",
+] as const;
+export type SecretKey = (typeof SECRET_KEYS)[number];
+
+interface SecretsDoc {
+  id: "secrets";
+  values: Partial<Record<SecretKey, string>>;
+  updatedAt: number;
+}
+
+/** Where a secret's live value comes from. */
+export interface SecretStatus {
+  key: SecretKey;
+  set: boolean;
+  source: "env" | "stored" | "none";
+}
+
+function loadSecretsDoc(db: Persistence): SecretsDoc {
+  const rows = db.loadAll<SecretsDoc>("settings");
+  return rows.find((r) => r.id === "secrets") ?? { id: "secrets", values: {}, updatedAt: 0 };
+}
+
+/**
+ * Apply UI-stored secrets to process.env so the rest of the app (LLM factory,
+ * telephony, media gateway) reads them without knowing they came from the UI.
+ * A real environment variable present at process start always wins; stored
+ * values only fill the gaps. Removing a stored value clears it (unless a real
+ * env var covers it).
+ */
+function applySecrets(doc: SecretsDoc): void {
+  for (const k of SECRET_KEYS) {
+    const real = REAL_ENV[k]?.trim();
+    if (real) {
+      process.env[k] = REAL_ENV[k]!;
+      continue;
+    }
+    const v = doc.values[k];
+    if (v) process.env[k] = v;
+    else delete process.env[k];
+  }
+}
+
+/** Status of each configurable secret — never returns the value itself. */
+export function getSecretsStatus(): SecretStatus[] {
+  const doc = loadSecretsDoc(halState().db);
+  return SECRET_KEYS.map((key) => {
+    const real = REAL_ENV[key]?.trim();
+    if (real) return { key, set: true, source: "env" };
+    if (doc.values[key]) return { key, set: true, source: "stored" };
+    return { key, set: false, source: "none" };
+  });
+}
+
+/**
+ * Save UI secrets. For each key: a non-empty string sets it, null or "" clears
+ * the stored value, and `undefined` (key omitted) leaves it unchanged. Applied
+ * to process.env immediately so per-request consumers (LLM judge, transcription)
+ * pick it up without a restart; long-lived services started at boot (telephony /
+ * media gateway) need an app restart.
+ */
+export function setSecrets(patch: Partial<Record<SecretKey, string | null>>): SecretStatus[] {
+  const s = halState();
+  const doc = loadSecretsDoc(s.db);
+  for (const key of SECRET_KEYS) {
+    if (!(key in patch)) continue;
+    const v = patch[key];
+    if (v == null || v === "") delete doc.values[key];
+    else doc.values[key] = v;
+  }
+  doc.updatedAt = Date.now();
+  s.db.put("settings", "secrets", doc, doc.updatedAt);
+  applySecrets(doc);
+  return getSecretsStatus();
 }
