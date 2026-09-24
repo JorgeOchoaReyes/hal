@@ -27,7 +27,9 @@ import { structuredToFlow, toBlandPathway } from "../../simulation/flow.js";
  * it can be reused, but we keep the spec on the HAL agent record and send the
  * prompt as the call `task` at run time so calls work regardless.
  *
- * Auth: Bland uses the raw API key in the Authorization header (no "Bearer").
+ * Auth: Bland's current API recommends `Authorization: Bearer <key>` (it also
+ * accepts a bare key for older examples, but the Send Call endpoint does not
+ * accept `x-api-key`). A key already prefixed with "Bearer " is passed through.
  * `fetchImpl` is injectable for unit tests.
  */
 export class BlandIntegration implements VoiceProviderIntegration {
@@ -51,8 +53,9 @@ export class BlandIntegration implements VoiceProviderIntegration {
   }
 
   private headers(account: ProviderAccount): Record<string, string> {
+    const key = (account.credentials.apiKey ?? "").trim();
     return {
-      authorization: account.credentials.apiKey ?? "",
+      authorization: key && !/^bearer\s/i.test(key) ? `Bearer ${key}` : key,
       "content-type": "application/json",
     };
   }
@@ -160,8 +163,16 @@ export class BlandIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
-    // Node-native: a structured test becomes a Bland Pathway. The returned
-    // pathway id is used to place the call (deterministic node graph).
+    // Preferred: an existing Bland Pathway id (built in the Agent Builder).
+    // Bland has no documented REST endpoint to create a pathway, so supplying
+    // the id is the reliable way to run a deterministic pathway.
+    if (spec.pathwayId?.trim()) {
+      return { externalAgentId: spec.pathwayId.trim() };
+    }
+
+    // Best-effort: compile a structured test into a Bland Pathway. The returned
+    // pathway id is used to place the call. (Uses undocumented create endpoints,
+    // so it may fail on some plans — prefer supplying a pathwayId above.)
     if (spec.structured) {
       return { externalAgentId: await this.provisionPathway(account, spec) };
     }
@@ -187,8 +198,9 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const resolved = agent.spec
       ? resolveSpecPrompt(agent.spec)
       : { systemPrompt: "You are a QA tester calling to evaluate a voice AI.", firstMessage: undefined };
-    // Node-native pathway call when the agent was built from a structured test.
-    const body = agent.spec?.structured
+    // Pathway call when the agent is pathway-based (a supplied pathway id or a
+    // compiled structured test). The pathway id lives on externalAgentId.
+    const body = agent.spec?.structured || agent.spec?.pathwayId
       ? {
           phone_number: target.phoneNumber,
           pathway_id: agent.externalAgentId,

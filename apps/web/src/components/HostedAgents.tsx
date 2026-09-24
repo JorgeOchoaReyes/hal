@@ -288,6 +288,7 @@ function ProvisionAgent({
   );
   const [firstMessage, setFirstMessage] = useState("Hi, I'd like to book an appointment.");
   const [useStructured, setUseStructured] = useState(false);
+  const [pathwayId, setPathwayId] = useState("");
   const [structuredJson, setStructuredJson] = useState(
     JSON.stringify(
       {
@@ -333,6 +334,7 @@ function ProvisionAgent({
           systemPrompt,
           firstMessage,
           structured: structuredPayload(),
+          pathwayId: pathwayId.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -356,6 +358,7 @@ function ProvisionAgent({
           systemPrompt,
           firstMessage,
           structured: structuredPayload(),
+          pathwayId: pathwayId.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -406,15 +409,37 @@ function ProvisionAgent({
           : "A single system prompt drives the tester's replies — flexible but non-deterministic."}
       </p>
       {useStructured ? (
-        <label className="field">
-          <span className="field-label">Structured test (role + conditions JSON)</span>
-          <textarea
-            value={structuredJson}
-            onChange={(e) => setStructuredJson(e.target.value)}
-            rows={10}
-            className="mono"
-          />
-        </label>
+        <>
+          {selectedAccount?.provider === "bland" && (
+            <label className="field">
+              <span className="field-label">Bland Pathway ID (recommended)</span>
+              <input
+                value={pathwayId}
+                onChange={(e) => setPathwayId(e.target.value)}
+                placeholder="paste a pathway_id from Bland's Agent Builder"
+                className="mono"
+              />
+              <span className="muted" style={{ fontSize: 12 }}>
+                Build the pathway in Bland&apos;s Agent Builder and paste its id — HAL runs the call
+                against it directly. Bland has no public endpoint to create a pathway, so the JSON
+                below is a best-effort auto-build that may fail on some plans.
+              </span>
+            </label>
+          )}
+          <label className="field">
+            <span className="field-label">
+              {selectedAccount?.provider === "bland"
+                ? "Structured test — auto-build fallback (role + conditions JSON)"
+                : "Structured test (role + conditions JSON)"}
+            </span>
+            <textarea
+              value={structuredJson}
+              onChange={(e) => setStructuredJson(e.target.value)}
+              rows={10}
+              className="mono"
+            />
+          </label>
+        </>
       ) : (
         <>
           <label className="field">

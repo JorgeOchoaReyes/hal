@@ -172,6 +172,47 @@ test("Bland verifyCredentials only fails on an explicit 401/403", async () => {
   assert.equal((await unauth.verifyCredentials(acc)).ok, false);
 });
 
+test("Bland uses a supplied pathwayId directly (no create call) and calls with it", async () => {
+  const reqs: { url: string; body: Record<string, unknown> }[] = [];
+  const capture = (async (url: string | URL, init?: RequestInit) => {
+    reqs.push({ url: url.toString(), body: init?.body ? JSON.parse(String(init.body)) : {} });
+    return new Response(JSON.stringify({ call_id: "c9" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  const bland = new BlandIntegration(capture);
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  const spec = { name: "T", persona: { name: "T", systemPrompt: "x" }, pathwayId: "pw_existing" };
+
+  const { externalAgentId } = await bland.createTestingAgent(acc, spec);
+  assert.equal(externalAgentId, "pw_existing");
+  // No pathway-create request is made when an id is supplied.
+  assert.ok(!reqs.some((r) => r.url.includes("/v1/pathway")));
+
+  const agent: HostedTestingAgent = {
+    id: "a", accountId: acc.id, provider: "bland", externalAgentId, name: "T", createdAt: 0, spec,
+  };
+  await bland.placeCall(acc, agent, { phoneNumber: "+14155550123" });
+  const call = reqs.find((r) => r.url.endsWith("/v1/calls"))!;
+  assert.equal((call.body as { pathway_id: string }).pathway_id, "pw_existing");
+});
+
+test("Bland sends a Bearer Authorization header", async () => {
+  let auth = "";
+  const capture = (async (_url: string | URL, init?: RequestInit) => {
+    auth = String((init?.headers as Record<string, string>)?.authorization ?? "");
+    return new Response(JSON.stringify({ completed: true, transcripts: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  const bland = new BlandIntegration(capture);
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  await bland.getCall(acc, "c1");
+  assert.equal(auth, "Bearer bk");
+});
+
 test("each platform compiles a structured test into its own native agent config", () => {
   const structured = {
     role: "You are a patient booking an appointment",
