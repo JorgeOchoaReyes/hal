@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import AttachJudges from "./AttachJudges";
+import Modal from "./Modal";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
 type Direction = "inbound" | "outbound";
@@ -72,6 +72,7 @@ function buildTarget(name: string, transport: Transport, address: string, room: 
 export default function TargetsManager() {
   const [targets, setTargets] = useState<TargetAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const d = await fetch("/api/targets").then((r) => r.json());
@@ -87,7 +88,18 @@ export default function TargetsManager() {
       {error && (
         <div className="card" style={{ borderColor: "var(--fail)", color: "var(--fail)" }}>{error}</div>
       )}
-      <AddTarget onDone={refresh} />
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => setAddOpen(true)}>+ Add agent under test</button>
+      </div>
+      {addOpen && (
+        <AddTarget
+          onDone={() => {
+            setAddOpen(false);
+            refresh();
+          }}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
       <div className="table-wrap">
         <table className="data">
           <thead>
@@ -117,6 +129,7 @@ export default function TargetsManager() {
   );
 }
 
+
 interface ProviderAccount {
   id: string;
   provider: string;
@@ -132,7 +145,7 @@ interface RemoteAgent {
   kind: string;
 }
 
-function AddTarget({ onDone }: { onDone: () => void }) {
+function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<Transport>("telephony");
   const [provider, setProvider] = useState<string>("vapi");
@@ -237,9 +250,23 @@ function AddTarget({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="card">
-      <strong>Add an agent under test</strong>
-      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+    <Modal
+      open
+      onClose={onClose}
+      title="Add an agent under test"
+      wide
+      footer={
+        <>
+          <button className="icon-btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={busy || !name.trim()}>
+            {busy ? "Saving…" : "Add agent"}
+          </button>
+        </>
+      }
+    >
+      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         Register the real voice agent you want HAL to call. Simulations point at one of these.
       </p>
 
@@ -315,7 +342,7 @@ function AddTarget({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px 130px 130px", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 10 }}>
         <div className="field">
           <span className="field-label">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Support line" />
@@ -330,6 +357,8 @@ function AddTarget({ onDone }: { onDone: () => void }) {
             ))}
           </select>
         </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div className="field">
           <span className="field-label">Direction</span>
           <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
@@ -381,17 +410,13 @@ function AddTarget({ onDone }: { onDone: () => void }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
       </div>
       {err && <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>{err}</div>}
-      <button onClick={submit} disabled={busy || !name.trim()}>
-        {busy ? "Saving…" : "Add agent"}
-      </button>
-    </div>
+    </Modal>
   );
 }
 
 function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
-  const [judgesOpen, setJudgesOpen] = useState(false);
-  const judgeCount = target.judgeIds?.length ?? 0;
+  const [editOpen, setEditOpen] = useState(false);
 
   async function remove() {
     setBusy(true);
@@ -421,12 +446,8 @@ function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => 
         <td className="muted">{target.description ?? "—"}</td>
         <td>
           <div className="row-actions">
-            <button
-              className="icon-btn"
-              onClick={() => setJudgesOpen((o) => !o)}
-              title="Judges applied to production calls assigned to this agent"
-            >
-              Judges{judgeCount > 0 ? ` (${judgeCount})` : ""}
+            <button className="icon-btn" onClick={() => setEditOpen(true)} title="Edit this agent">
+              Edit
             </button>
             <button className="icon-btn" onClick={remove} disabled={busy} title="Remove">
               {busy ? "…" : "Delete"}
@@ -434,17 +455,151 @@ function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => 
           </div>
         </td>
       </tr>
-      {judgesOpen && (
-        <tr>
-          <td colSpan={7} style={{ background: "var(--panel-2)" }}>
-            <AttachJudges
-              patchUrl={`/api/targets/${target.id}`}
-              initial={target.judgeIds ?? []}
-              subtitle="Judges applied when scoring a production call assigned to this agent."
-            />
-          </td>
-        </tr>
+      {editOpen && (
+        <EditTargetModal
+          target={target}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false);
+            onChange();
+          }}
+        />
       )}
     </>
+  );
+}
+
+function EditTargetModal({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: TargetAgent;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(target.name);
+  const [provider, setProvider] = useState(target.provider ?? "custom");
+  const [direction, setDirection] = useState<Direction>(target.direction ?? "inbound");
+  const [transport, setTransport] = useState<Transport>(target.target.transport);
+  const [address, setAddress] = useState(
+    target.target.transport === "telephony"
+      ? target.target.phoneNumber ?? ""
+      : target.target.transport === "sip"
+        ? target.target.uri ?? ""
+        : target.target.transport === "webrtc"
+          ? target.target.signalingUrl ?? ""
+          : target.target.mock?.greeting ?? ""
+  );
+  const [room, setRoom] = useState(target.target.transport === "webrtc" ? target.target.room ?? "" : "");
+  const [description, setDescription] = useState(target.description ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/targets/${target.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          description,
+          provider,
+          direction,
+          target: buildTarget(name, transport, address, room),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Edit agent"
+      footer={
+        <>
+          <button className="icon-btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={busy || !name.trim()}>
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 10 }}>
+          <div className="field">
+            <span className="field-label">Name</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Support line" />
+          </div>
+          <div className="field">
+            <span className="field-label">Provider</span>
+            <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+              {PROVIDERS.map((pv) => (
+                <option key={pv} value={pv}>
+                  {PROVIDER_LABEL[pv]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="field">
+            <span className="field-label">Direction</span>
+            <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
+              <option value="inbound">inbound</option>
+              <option value="outbound">outbound</option>
+            </select>
+          </div>
+          <div className="field">
+            <span className="field-label">Channel</span>
+            <select value={transport} onChange={(e) => setTransport(e.target.value as Transport)}>
+              <option value="telephony">telephony</option>
+              <option value="sip">sip</option>
+              <option value="webrtc">webrtc</option>
+              <option value="mock">mock</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: transport === "webrtc" ? "1fr 160px" : "1fr", gap: 10 }}>
+          <div className="field">
+            <span className="field-label">{ADDRESS_LABEL[transport]}</span>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={
+                transport === "telephony"
+                  ? "+14155550123"
+                  : transport === "sip"
+                    ? "sip:agent@pbx.example.com"
+                    : transport === "webrtc"
+                      ? "wss://signal.example.com"
+                      : "Hi, thanks for calling…"
+              }
+            />
+          </div>
+          {transport === "webrtc" && (
+            <div className="field">
+              <span className="field-label">Room (optional)</span>
+              <input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="room-id" />
+            </div>
+          )}
+        </div>
+        <div className="field">
+          <span className="field-label">Description (optional)</span>
+          <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
+        </div>
+        {err && <div className="muted" style={{ color: "var(--fail)", marginBottom: 8 }}>{err}</div>}
+    </Modal>
   );
 }

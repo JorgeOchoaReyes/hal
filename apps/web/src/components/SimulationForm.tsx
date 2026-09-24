@@ -41,7 +41,18 @@ interface SavedTarget {
   description?: string;
 }
 
-export default function SimulationForm() {
+export default function SimulationForm({
+  fromCallId,
+  onCreated,
+  onCancel,
+}: {
+  /** Prefill from a transcribed production call, e.g. when opened from its "→ Simulation" action. */
+  fromCallId?: string;
+  /** Called with the new simulation's id once it's created. */
+  onCreated: (id: string) => void;
+  /** Called when the user cancels out of the form. */
+  onCancel: () => void;
+}) {
   // "Mock" is the only inline target template offered at creation — a real
   // transport is decided later, either by picking a saved "My agents" entry
   // above, or by dispatching to a hosted provider when the simulation runs.
@@ -103,13 +114,11 @@ export default function SimulationForm() {
       .then((d) => setJudges(d.judges ?? []))
       .catch(() => undefined);
 
-    // Prefill from a transcribed production call: /simulations/new?fromCall=<id>
-    const fromCall = new URLSearchParams(window.location.search).get("fromCall");
-    if (fromCall) {
+    if (fromCallId) {
       fetch("/api/prod-calls")
         .then((r) => r.json())
         .then((d: { prodCalls: Array<{ id: string; name: string; transcript: Transcript }> }) => {
-          const call = d.prodCalls?.find((c) => c.id === fromCall);
+          const call = d.prodCalls?.find((c) => c.id === fromCallId);
           if (!call) return;
           const s = transcriptToSteps(call.transcript);
           if (s.length > 0) {
@@ -175,7 +184,7 @@ export default function SimulationForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create");
-      window.location.href = `/simulations/${data.testCase.id}`;
+      onCreated(data.testCase.id);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -368,7 +377,9 @@ export default function SimulationForm() {
         <button onClick={submit} disabled={busy || !name.trim()}>
           {busy ? "Creating…" : "Create simulation"}
         </button>
-        <a href="/" className="btn secondary">Cancel</a>
+        <button type="button" className="btn secondary" onClick={onCancel}>
+          Cancel
+        </button>
       </div>
     </div>
   );
