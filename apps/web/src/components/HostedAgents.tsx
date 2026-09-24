@@ -306,11 +306,30 @@ function ProvisionAgent({
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [remoteAgents, setRemoteAgents] = useState<{ id: string; name: string; kind: string }[]>([]);
   const selected = accountId || accounts[0]?.id || "";
   const selectedAccount = accounts.find((a) => a.id === selected);
   // Bland calls the structured/deterministic form a "Pathway"; other providers
   // use a "workflow"/"conversation flow". Label the option per provider.
   const structuredLabel = selectedAccount?.provider === "bland" ? "Pathway" : "Structured flow";
+
+  // When importing, list the agents/pathways already on the selected account.
+  useEffect(() => {
+    if (!selected || !useStructured) {
+      setRemoteAgents([]);
+      return;
+    }
+    let live = true;
+    fetch(`/api/testing-agents/remote?accountId=${encodeURIComponent(selected)}`)
+      .then((r) => r.json())
+      .then((d: { agents?: { id: string; name: string; kind: string }[] }) => {
+        if (live) setRemoteAgents(d.agents ?? []);
+      })
+      .catch(() => live && setRemoteAgents([]));
+    return () => {
+      live = false;
+    };
+  }, [selected, useStructured]);
 
   function structuredPayload() {
     if (!useStructured) return undefined;
@@ -412,17 +431,31 @@ function ProvisionAgent({
         <>
           {selectedAccount?.provider === "bland" && (
             <label className="field">
-              <span className="field-label">Existing Bland Pathway ID (optional)</span>
+              <span className="field-label">Existing Bland Pathway (optional)</span>
+              {remoteAgents.length > 0 && (
+                <select
+                  value={remoteAgents.some((a) => a.id === pathwayId) ? pathwayId : ""}
+                  onChange={(e) => setPathwayId(e.target.value)}
+                  style={{ marginBottom: 6 }}
+                >
+                  <option value="">— import a pathway from this account —</option>
+                  {remoteAgents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 value={pathwayId}
                 onChange={(e) => setPathwayId(e.target.value)}
-                placeholder="reuse a pathway_id from Bland's Agent Builder"
+                placeholder="or paste a pathway_id from Bland's Agent Builder"
                 className="mono"
               />
               <span className="muted" style={{ fontSize: 12 }}>
-                Leave blank to have HAL build the pathway from the JSON below (create → set graph →
-                version → publish). Or paste an existing pathway&apos;s id to run the call against it
-                directly.
+                Pick an existing pathway on this account, or paste its id, to run the call against it
+                directly. Leave blank to have HAL build one from the JSON below (create → set graph →
+                version → publish).
               </span>
             </label>
           )}

@@ -9,6 +9,7 @@ import {
   HostedCallState,
   HostedCallStatus,
   HostedNumber,
+  HostedRemoteAgent,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -273,6 +274,31 @@ export class BlandIntegration implements VoiceProviderIntegration {
         label: label ? String(label) : undefined,
         capabilities: ["inbound", "outbound"],
       });
+    }
+    return out;
+  }
+
+  /**
+   * List the account's Bland Pathways so the UI can offer them for import
+   * (GET /v1/pathway). The response envelope varies (a bare array, a `data`
+   * array, or a single object), so we normalize defensively and skip rows with
+   * no id. Returns an empty list on any non-OK response.
+   */
+  async listRemoteAgents(account: ProviderAccount): Promise<HostedRemoteAgent[]> {
+    const res = await this.fetchImpl(`${this.base}/v1/pathway`, { headers: this.headers(account) });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => null)) as unknown;
+    const raw = (data && typeof data === "object" && "data" in data
+      ? (data as { data: unknown }).data
+      : data) as unknown;
+    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const out: HostedRemoteAgent[] = [];
+    for (const r of rows as Array<Record<string, unknown>>) {
+      if (!r || typeof r !== "object") continue;
+      const id = String(r.id ?? r.pathway_id ?? r._id ?? "").trim();
+      if (!id) continue;
+      const name = String(r.name ?? r.pathway_name ?? id).trim();
+      out.push({ id, name, kind: "pathway" });
     }
     return out;
   }

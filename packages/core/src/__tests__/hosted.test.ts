@@ -198,6 +198,28 @@ test("Bland uses a supplied pathwayId directly (no create call) and calls with i
   assert.equal((call.body as { pathway_id: string }).pathway_id, "pw_existing");
 });
 
+test("Bland listRemoteAgents normalizes pathway rows from any envelope", async () => {
+  const acc: ProviderAccount = { ...account, provider: "bland", credentials: { apiKey: "bk" } };
+  // Bare array.
+  const arr = new BlandIntegration(fakeFetch({
+    "GET https://api.bland.ai/v1/pathway": [
+      { id: "pw1", name: "Booking" },
+      { pathway_id: "pw2", name: "Support" },
+      { name: "no id — skipped" },
+    ],
+  }));
+  const list = await arr.listRemoteAgents(acc);
+  assert.deepEqual(list, [
+    { id: "pw1", name: "Booking", kind: "pathway" },
+    { id: "pw2", name: "Support", kind: "pathway" },
+  ]);
+  // `data`-wrapped single object.
+  const wrapped = new BlandIntegration(fakeFetch({
+    "GET https://api.bland.ai/v1/pathway": { data: { id: "pw9", name: "Solo" } },
+  }));
+  assert.deepEqual(await wrapped.listRemoteAgents(acc), [{ id: "pw9", name: "Solo", kind: "pathway" }]);
+});
+
 test("Bland sends a Bearer Authorization header", async () => {
   let auth = "";
   const capture = (async (_url: string | URL, init?: RequestInit) => {
