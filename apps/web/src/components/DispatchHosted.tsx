@@ -10,9 +10,11 @@ interface Account {
 }
 
 /**
- * Ad-hoc dispatch of a structured simulation to a hosted provider: HAL compiles
- * the simulation into that platform's native agent config at dispatch time,
- * creates the agent, places the call, and judges it.
+ * Ad-hoc dispatch of any simulation (steps or structured) to a hosted provider:
+ * HAL compiles it into that platform's native agent config at dispatch time —
+ * this is where "how to run it" is actually decided, not at creation — creates
+ * the agent, places the call, waits for it to finish, and pulls the judged
+ * result from the provider.
  */
 export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]);

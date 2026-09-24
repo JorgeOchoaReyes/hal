@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import type {
   ScenarioStep,
-  JudgeRule,
-  MetricDefinition,
   BranchAction,
   StructuredTest,
   StructuredCondition,
@@ -44,8 +42,10 @@ interface SavedTarget {
 }
 
 export default function SimulationForm() {
-  const [providers, setProviders] = useState<ProviderView[]>([]);
-  const [providerId, setProviderId] = useState("mock");
+  // "Mock" is the only inline target template offered at creation — a real
+  // transport is decided later, either by picking a saved "My agents" entry
+  // above, or by dispatching to a hosted provider when the simulation runs.
+  const [mockTemplate, setMockTemplate] = useState<ProviderView | null>(null);
   const [name, setName] = useState("");
   const [tags, setTags] = useState("");
   const [targetConfig, setTargetConfig] = useState<Record<string, string>>({});
@@ -62,11 +62,6 @@ export default function SimulationForm() {
   const [steps, setSteps] = useState<ScenarioStep[]>([
     { kind: "say", text: "Hi, I'd like some help please." },
   ]);
-  const [criteria, setCriteria] = useState<string[]>([
-    "The target stayed polite and on-topic.",
-  ]);
-  const [rules, setRules] = useState<JudgeRule[]>([{ kind: "min-turns", count: 3 }]);
-  const [metrics, setMetrics] = useState<MetricDefinition[]>([]);
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set());
   const [importText, setImportText] = useState("");
@@ -86,9 +81,13 @@ export default function SimulationForm() {
     fetch("/api/providers")
       .then((r) => r.json())
       .then((d) => {
-        setProviders(d.providers);
         const mock = d.providers.find((p: ProviderView) => p.id === "mock");
-        if (mock) applyDefaults(mock);
+        if (mock) {
+          setMockTemplate(mock);
+          const cfg: Record<string, string> = {};
+          for (const f of mock.fields) cfg[f.key] = f.default ?? "";
+          setTargetConfig(cfg);
+        }
       })
       .catch(() => setError("Failed to load providers"));
     fetch("/api/targets")
@@ -126,20 +125,6 @@ export default function SimulationForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const provider = providers.find((p) => p.id === providerId);
-
-  function applyDefaults(p: ProviderView) {
-    const cfg: Record<string, string> = {};
-    for (const f of p.fields) cfg[f.key] = f.default ?? "";
-    setTargetConfig(cfg);
-  }
-
-  function selectProvider(pid: string) {
-    setProviderId(pid);
-    const p = providers.find((x) => x.id === pid);
-    if (p) applyDefaults(p);
-  }
-
   function importTranscript() {
     const s = transcriptTextToSteps(importText);
     if (s.length === 0) {
@@ -176,14 +161,14 @@ export default function SimulationForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name,
-          providerId,
+          providerId: "mock",
           targetConfig,
           targetAgentId: targetAgentId || undefined,
           testingAgentId: testingAgentId || undefined,
           persona: { name: personaName, systemPrompt: personaPrompt },
           steps: mode === "steps" ? steps : undefined,
           structured: mode === "structured" ? structured : undefined,
-          judge: { mode: "all", rules, criteria: criteria.filter((c) => c.trim()), metrics },
+          judge: { mode: "all" },
           judgeIds: [...judgeIds],
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
@@ -277,52 +262,33 @@ export default function SimulationForm() {
         </Field>
       </section>
 
-      {!targetAgentId && (
+      {!targetAgentId && mockTemplate && (
       <section className="card">
-        <h2 style={{ marginTop: 0 }}>Provider template</h2>
-        <div className="provider-grid">
-          {providers.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`provider-chip ${p.id === providerId ? "active" : ""}`}
-              onClick={() => selectProvider(p.id)}
-            >
-              <span className={`pill ${p.transport}`}>{p.transport}</span>
-              <strong>{p.label}</strong>
-              {!p.available && <span className="muted" style={{ fontSize: 11 }}>needs config</span>}
-            </button>
-          ))}
-        </div>
-        {provider && (
-          <>
-            <p className="muted" style={{ fontSize: 13 }}>{provider.description}</p>
-            {!provider.available && (
-              <div className="card" style={{ borderColor: "var(--warn)", fontSize: 13 }}>
-                Missing env: <span className="mono">{provider.missingEnv.join(", ")}</span>. You can
-                still save this simulation; runs will fail until these are set.
-              </div>
+        <h2 style={{ marginTop: 0 }}>Simulated target (for authoring)</h2>
+        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+          No saved agent picked above, so this simulation authors against a simulated (mock)
+          target — an LLM standing in for the real voice AI, no call or credentials needed. How to
+          actually run this for real is decided later, when you run it: dispatch it to a hosted
+          provider, or point it at a real agent by picking one under &quot;My agents&quot; above.
+        </p>
+        {mockTemplate.fields.map((f) => (
+          <Field key={f.key} label={f.label + (f.required ? " *" : "")} help={f.help}>
+            {f.kind === "textarea" ? (
+              <textarea
+                value={targetConfig[f.key] ?? ""}
+                onChange={(e) => setTargetConfig({ ...targetConfig, [f.key]: e.target.value })}
+                placeholder={f.placeholder}
+                rows={3}
+              />
+            ) : (
+              <input
+                value={targetConfig[f.key] ?? ""}
+                onChange={(e) => setTargetConfig({ ...targetConfig, [f.key]: e.target.value })}
+                placeholder={f.placeholder}
+              />
             )}
-            {provider.fields.map((f) => (
-              <Field key={f.key} label={f.label + (f.required ? " *" : "")} help={f.help}>
-                {f.kind === "textarea" ? (
-                  <textarea
-                    value={targetConfig[f.key] ?? ""}
-                    onChange={(e) => setTargetConfig({ ...targetConfig, [f.key]: e.target.value })}
-                    placeholder={f.placeholder}
-                    rows={3}
-                  />
-                ) : (
-                  <input
-                    value={targetConfig[f.key] ?? ""}
-                    onChange={(e) => setTargetConfig({ ...targetConfig, [f.key]: e.target.value })}
-                    placeholder={f.placeholder}
-                  />
-                )}
-              </Field>
-            ))}
-          </>
-        )}
+          </Field>
+        ))}
       </section>
       )}
 
@@ -368,19 +334,12 @@ export default function SimulationForm() {
       ) : (
         <StructuredEditor test={structured} setTest={setStructured} />
       )}
-      <JudgeEditor
-        criteria={criteria}
-        setCriteria={setCriteria}
-        rules={rules}
-        setRules={setRules}
-      />
-      <MetricsEditor metrics={metrics} setMetrics={setMetrics} />
-
       <section className="card">
-        <h2 style={{ marginTop: 0 }}>Judges (reusable scorers)</h2>
+        <h2 style={{ marginTop: 0 }}>Judges (how this simulation is scored)</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-          Attach saved judges to score this simulation on top of the pass criteria above. Create
-          them on the <a href="/judges">Judges</a> page.
+          Attach one or more reusable judges — LLM criteria, deterministic rules, or typed metrics —
+          to score this simulation. Create and edit them on the <a href="/judges">Judges</a> page,
+          where they can also be attached to other simulations or to agents under test.
         </p>
         {judges.length === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>No saved judges yet.</p>
@@ -522,65 +481,6 @@ function StepEditor({
           </button>
         ))}
       </div>
-    </section>
-  );
-}
-
-function JudgeEditor({
-  criteria,
-  setCriteria,
-  rules,
-  setRules,
-}: {
-  criteria: string[];
-  setCriteria: (c: string[]) => void;
-  rules: JudgeRule[];
-  setRules: (r: JudgeRule[]) => void;
-}) {
-  return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>Judge — pass criteria</h2>
-
-      <div className="field-label">LLM-judged criteria</div>
-      {criteria.map((c, i) => (
-        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-          <input
-            value={c}
-            placeholder="The target booked the appointment and confirmed the date."
-            onChange={(e) => {
-              const next = [...criteria];
-              next[i] = e.target.value;
-              setCriteria(next);
-            }}
-          />
-          <button type="button" className="btn secondary" onClick={() => setCriteria(criteria.filter((_, idx) => idx !== i))}>✕</button>
-        </div>
-      ))}
-      <button type="button" className="btn secondary" onClick={() => setCriteria([...criteria, ""])}>+ criterion</button>
-
-      <div className="field-label" style={{ marginTop: 16 }}>Deterministic rules</div>
-      {rules.map((r, i) => (
-        <div key={i} className="rule-row">
-          <select
-            value={r.kind}
-            onChange={(e) => {
-              const kind = e.target.value as JudgeRule["kind"];
-              const next = [...rules];
-              next[i] = defaultRule(kind);
-              setRules(next);
-            }}
-          >
-            <option value="transcript-contains">transcript contains</option>
-            <option value="transcript-not-contains">transcript must not contain</option>
-            <option value="min-turns">min turns</option>
-            <option value="max-turns">max turns</option>
-            <option value="max-latency">max target latency (ms)</option>
-          </select>
-          <RuleValue rule={r} onChange={(nr) => { const next = [...rules]; next[i] = nr; setRules(next); }} />
-          <button type="button" className="btn secondary" onClick={() => setRules(rules.filter((_, idx) => idx !== i))}>✕</button>
-        </div>
-      ))}
-      <button type="button" className="btn secondary" onClick={() => setRules([...rules, { kind: "min-turns", count: 3 }])}>+ rule</button>
     </section>
   );
 }
@@ -767,111 +667,3 @@ function BranchActionValue({ action, onChange }: { action: BranchAction; onChang
   return <span className="muted">ends call</span>;
 }
 
-function MetricsEditor({ metrics, setMetrics }: { metrics: MetricDefinition[]; setMetrics: (m: MetricDefinition[]) => void }) {
-  function update(i: number, m: MetricDefinition) {
-    const next = [...metrics];
-    next[i] = m;
-    setMetrics(next);
-  }
-  function add() {
-    setMetrics([
-      ...metrics,
-      { id: `m${metrics.length + 1}`, name: "", description: "", outputType: "boolean", passIf: { kind: "is-true" } },
-    ]);
-  }
-  return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>Metrics (typed outputs)</h2>
-      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-        User-defined metrics the LLM judge scores per call: boolean, rating (scale), enum
-        (categories), or number. A pass condition turns a metric into pass/fail.
-      </p>
-      {metrics.map((m, i) => (
-        <div className="card" key={i} style={{ background: "var(--panel-2)" }}>
-          <div className="rule-row" style={{ gridTemplateColumns: "1fr 130px auto" }}>
-            <input value={m.name} placeholder="Metric name" onChange={(e) => update(i, { ...m, name: e.target.value })} />
-            <select
-              value={m.outputType}
-              onChange={(e) => update(i, { ...m, outputType: e.target.value as MetricDefinition["outputType"] })}
-            >
-              <option value="boolean">boolean (pass/fail)</option>
-              <option value="rating">rating (0–100%)</option>
-              <option value="numeric">numeric</option>
-              <option value="enum">enum</option>
-            </select>
-            <button type="button" className="btn secondary" onClick={() => setMetrics(metrics.filter((_, idx) => idx !== i))}>✕</button>
-          </div>
-          <input
-            style={{ marginTop: 6 }}
-            value={m.description}
-            placeholder="How the judge should score this (definition)"
-            onChange={(e) => update(i, { ...m, description: e.target.value })}
-          />
-          {m.outputType === "rating" && (
-            <div className="rule-row" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 6 }}>
-              <input type="number" value={m.scale?.min ?? 0} onChange={(e) => update(i, { ...m, scale: { min: Number(e.target.value), max: m.scale?.max ?? 100 } })} placeholder="min" />
-              <input type="number" value={m.scale?.max ?? 100} onChange={(e) => update(i, { ...m, scale: { min: m.scale?.min ?? 0, max: Number(e.target.value) } })} placeholder="max" />
-            </div>
-          )}
-          {m.outputType === "enum" && (
-            <input
-              style={{ marginTop: 6 }}
-              value={(m.options ?? []).join(", ")}
-              placeholder="options, comma-separated (e.g. resolved, escalated, abandoned)"
-              onChange={(e) => update(i, { ...m, options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-            />
-          )}
-        </div>
-      ))}
-      <button type="button" className="btn secondary" onClick={add}>+ metric</button>
-    </section>
-  );
-}
-
-function defaultRule(kind: JudgeRule["kind"]): JudgeRule {
-  switch (kind) {
-    case "transcript-contains":
-      return { kind, needle: "", ignoreCase: true };
-    case "transcript-not-contains":
-      return { kind, needle: "", ignoreCase: true };
-    case "min-turns":
-      return { kind, count: 3 };
-    case "max-turns":
-      return { kind, count: 20 };
-    case "max-latency":
-      return { kind, ms: 3000, role: "target" };
-    case "regex":
-      return { kind, pattern: "" };
-  }
-}
-
-function RuleValue({ rule, onChange }: { rule: JudgeRule; onChange: (r: JudgeRule) => void }) {
-  if (rule.kind === "transcript-contains" || rule.kind === "transcript-not-contains") {
-    return (
-      <input
-        value={rule.needle}
-        placeholder="phrase"
-        onChange={(e) => onChange({ ...rule, needle: e.target.value })}
-      />
-    );
-  }
-  if (rule.kind === "min-turns" || rule.kind === "max-turns") {
-    return (
-      <input
-        type="number"
-        value={rule.count}
-        onChange={(e) => onChange({ ...rule, count: Number(e.target.value) })}
-      />
-    );
-  }
-  if (rule.kind === "max-latency") {
-    return (
-      <input
-        type="number"
-        value={rule.ms}
-        onChange={(e) => onChange({ ...rule, ms: Number(e.target.value) })}
-      />
-    );
-  }
-  return null;
-}
