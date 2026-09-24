@@ -94,23 +94,26 @@ function UploadForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const selectedAgent = targets.find((t) => t.id === targetAgentId);
+
   async function submit() {
     setBusy(true);
     setErr(null);
     try {
+      if (!targetAgentId) throw new Error("Pick which agent this call belongs to.");
       let res: Response;
       if (tab === "audio") {
         if (!file) throw new Error("Choose an audio file to transcribe.");
         const fd = new FormData();
         fd.set("file", file);
         fd.set("name", name);
-        if (targetAgentId) fd.set("targetAgentId", targetAgentId);
+        fd.set("targetAgentId", targetAgentId);
         res = await fetch("/api/prod-calls", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/prod-calls", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name, transcriptText, targetAgentId: targetAgentId || undefined }),
+          body: JSON.stringify({ name, transcriptText, targetAgentId }),
         });
       }
       const data = await res.json();
@@ -153,15 +156,28 @@ function UploadForm({
       </label>
 
       <label className="field">
-        <span className="field-label">Assign agent (optional)</span>
-        <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)}>
-          <option value="">— none —</option>
-          {targets.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <span className="field-label">Agent this call belongs to</span>
+        {targets.length === 0 ? (
+          <span className="muted" style={{ fontSize: 13 }}>
+            No agents registered yet — add one under <Link href="/targets">My agents</Link> first.
+          </span>
+        ) : (
+          <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)} required>
+            <option value="">— pick an agent —</option>
+            {targets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {selectedAgent && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            {(selectedAgent.judgeIds?.length ?? 0) > 0
+              ? `Scoring will suggest this agent's ${selectedAgent.judgeIds!.length} attached judge(s).`
+              : "This agent has no judges attached yet — attach some under My agents, or pick a judge manually after upload."}
+          </span>
+        )}
       </label>
 
       {tab === "audio" ? (
@@ -196,7 +212,7 @@ function UploadForm({
         <button type="button" className="secondary" onClick={onCancel}>
           Cancel
         </button>
-        <button onClick={submit} disabled={busy}>
+        <button onClick={submit} disabled={busy || !targetAgentId}>
           {busy ? (tab === "audio" ? "Transcribing…" : "Saving…") : "Add call"}
         </button>
       </div>
@@ -230,15 +246,15 @@ function CallCard({
     onChange();
   }
 
-  async function score() {
-    if (!judgeId) return;
+  async function score(useAgentJudges = false) {
+    if (!useAgentJudges && !judgeId) return;
     setBusy(true);
     setErr(null);
     try {
       const res = await fetch(`/api/prod-calls/${call.id}/score`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ judgeId }),
+        body: JSON.stringify(useAgentJudges ? { judgeIds: assigned?.judgeIds ?? [] } : { judgeId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scoring failed");
@@ -302,14 +318,29 @@ function CallCard({
             ))}
           </select>
         </label>
-        <button onClick={score} disabled={busy || !judgeId}>
+        <button onClick={() => score()} disabled={busy || !judgeId}>
           {busy ? "Scoring…" : "Apply judge"}
         </button>
+        {(assigned?.judgeIds?.length ?? 0) > 0 && (
+          <button
+            className="secondary"
+            onClick={() => score(true)}
+            disabled={busy}
+            title={`Score with ${assigned!.name}'s attached judges`}
+          >
+            {busy ? "Scoring…" : `Apply ${assigned!.name}'s judges (${assigned!.judgeIds!.length})`}
+          </button>
+        )}
       </div>
 
       {assigned && (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
           Assigned to <Link href="/targets">{assigned.name}</Link>.
+          {(assigned.judgeIds?.length ?? 0) === 0 && (
+            <>
+              {" "}No judges attached yet — <Link href="/targets">attach some on My agents</Link>.
+            </>
+          )}
         </div>
       )}
       {err && (

@@ -293,6 +293,11 @@ export interface TargetAgent {
    */
   provider?: string;
   /**
+   * Reusable {@link SavedJudge}s attached to this agent. Production calls
+   * assigned to this agent are scored with these judges' merged criteria.
+   */
+  judgeIds?: string[];
+  /**
    * Which way the agent under test runs a call:
    * - `"inbound"` — it answers calls, so HAL dials it (the default).
    * - `"outbound"` — it places calls, so HAL provides a number for it to call
@@ -322,6 +327,8 @@ export interface ProdCall {
   targetAgentId?: string;
   /** The judge last applied to score this call. */
   judgeId?: string;
+  /** All judges applied in the last scoring pass (e.g. the assigned agent's). */
+  judgeIds?: string[];
   verdict?: JudgeVerdict;
   error?: string;
   /** Transcription provider/model used, when transcribed from audio. */

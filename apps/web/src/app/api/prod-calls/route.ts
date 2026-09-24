@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id, type ProdCall, type Transcript } from "@hal/core";
-import { listProdCalls, upsertProdCall } from "@/lib/store";
+import { listProdCalls, upsertProdCall, getTarget } from "@/lib/store";
 import { transcribeAudio, parseTranscript } from "@/lib/transcribe";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,12 @@ export async function POST(req: NextRequest) {
       const file = form.get("file");
       const name = String(form.get("name") ?? "").trim();
       const targetAgentId = (form.get("targetAgentId") as string) || undefined;
+      if (!targetAgentId || !getTarget(targetAgentId)) {
+        return NextResponse.json(
+          { error: "targetAgentId is required — pick which agent this call belongs to" },
+          { status: 400 },
+        );
+      }
       if (!(file instanceof Blob)) {
         return NextResponse.json({ error: "file is required" }, { status: 400 });
       }
@@ -59,13 +65,19 @@ export async function POST(req: NextRequest) {
     if (transcript.length === 0) {
       return NextResponse.json({ error: "Provide audio or a non-empty transcript." }, { status: 400 });
     }
+    if (!body.targetAgentId || !getTarget(body.targetAgentId)) {
+      return NextResponse.json(
+        { error: "targetAgentId is required — pick which agent this call belongs to" },
+        { status: 400 },
+      );
+    }
     const call: ProdCall = {
       id: id("call"),
       name: body.name?.trim() || "Pasted call",
       source: "transcript",
       status: "new",
       transcript,
-      targetAgentId: body.targetAgentId || undefined,
+      targetAgentId: body.targetAgentId,
       createdAt: Date.now(),
     };
     upsertProdCall(call);

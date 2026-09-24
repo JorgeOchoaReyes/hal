@@ -40,10 +40,10 @@ const GROUPS: NavGroup[] = [
         match: (p) => p.startsWith("/results"),
       },
       {
-        href: "/transcriptions",
-        label: "Transcriptions",
+        href: "/production-calls",
+        label: "Production calls",
         icon: icon("M9 18V5l12-2v13M9 13l12-2M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"),
-        match: (p) => p.startsWith("/transcriptions"),
+        match: (p) => p.startsWith("/production-calls") || p.startsWith("/transcriptions"),
       },
     ],
   },

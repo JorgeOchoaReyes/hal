@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import AttachJudges from "./AttachJudges";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
 type Direction = "inbound" | "outbound";
@@ -22,6 +23,7 @@ interface TargetAgent {
   description?: string;
   provider?: string;
   direction?: Direction;
+  judgeIds?: string[];
   target: {
     transport: Transport;
     name: string;
@@ -332,6 +334,8 @@ function AddTarget({ onDone }: { onDone: () => void }) {
 
 function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [judgesOpen, setJudgesOpen] = useState(false);
+  const judgeCount = target.judgeIds?.length ?? 0;
 
   async function remove() {
     setBusy(true);
@@ -341,30 +345,50 @@ function TargetRow({ target, onChange }: { target: TargetAgent; onChange: () => 
   }
 
   return (
-    <tr>
-      <td style={{ fontWeight: 600 }}>{target.name}</td>
-      <td>
-        {target.provider ? (
-          <span className="pill">{PROVIDER_LABEL[target.provider] ?? target.provider}</span>
-        ) : (
-          <span className="muted">—</span>
-        )}
-      </td>
-      <td>
-        <span className={`pill ${target.direction ?? "inbound"}`}>{target.direction ?? "inbound"}</span>
-      </td>
-      <td>
-        <span className={`pill ${target.target.transport}`}>{target.target.transport}</span>
-      </td>
-      <td className="mono muted" style={{ fontSize: 12 }}>{addressOf(target.target)}</td>
-      <td className="muted">{target.description ?? "—"}</td>
-      <td>
-        <div className="row-actions">
-          <button className="icon-btn" onClick={remove} disabled={busy} title="Remove">
-            {busy ? "…" : "Delete"}
-          </button>
-        </div>
-      </td>
-    </tr>
+    <>
+      <tr>
+        <td style={{ fontWeight: 600 }}>{target.name}</td>
+        <td>
+          {target.provider ? (
+            <span className="pill">{PROVIDER_LABEL[target.provider] ?? target.provider}</span>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+        <td>
+          <span className={`pill ${target.direction ?? "inbound"}`}>{target.direction ?? "inbound"}</span>
+        </td>
+        <td>
+          <span className={`pill ${target.target.transport}`}>{target.target.transport}</span>
+        </td>
+        <td className="mono muted" style={{ fontSize: 12 }}>{addressOf(target.target)}</td>
+        <td className="muted">{target.description ?? "—"}</td>
+        <td>
+          <div className="row-actions">
+            <button
+              className="icon-btn"
+              onClick={() => setJudgesOpen((o) => !o)}
+              title="Judges applied to production calls assigned to this agent"
+            >
+              Judges{judgeCount > 0 ? ` (${judgeCount})` : ""}
+            </button>
+            <button className="icon-btn" onClick={remove} disabled={busy} title="Remove">
+              {busy ? "…" : "Delete"}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {judgesOpen && (
+        <tr>
+          <td colSpan={7} style={{ background: "var(--panel-2)" }}>
+            <AttachJudges
+              patchUrl={`/api/targets/${target.id}`}
+              initial={target.judgeIds ?? []}
+              subtitle="Judges applied when scoring a production call assigned to this agent."
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
