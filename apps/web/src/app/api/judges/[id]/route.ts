@@ -17,6 +17,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   };
   const spec: JudgeSpec = {
     mode: body.spec?.mode ?? existing.spec.mode ?? "all",
+    provider: body.spec?.provider ?? existing.spec.provider ?? "auto",
     model: body.spec?.model ?? existing.spec.model,
     rules: body.spec?.rules ?? existing.spec.rules ?? [],
     criteria: (body.spec?.criteria ?? existing.spec.criteria ?? []).filter((c) => c.trim()),

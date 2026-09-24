@@ -30,26 +30,20 @@ interface Group {
 const GROUPS: Group[] = [
   {
     name: "AI models",
-    note: "Required — set at least one",
     items: [
       { key: "OPENAI_API_KEY", label: "OpenAI", group: "AI models", req: "one-of", help: "LLM judge & simulated caller (OpenAI or auto)." },
       { key: "ANTHROPIC_API_KEY", label: "Anthropic", group: "AI models", req: "one-of", help: "Claude-based judging / simulation." },
+      { key: "GEMINI_API_KEY", label: "Gemini", group: "AI models", req: "one-of", help: "Google Gemini judging / simulation." },
     ],
   },
   {
     name: "Speech",
-    note: "Optional",
     restart: true,
     items: [
       { key: "DEEPGRAM_API_KEY", label: "Deepgram", group: "Speech", req: "optional", help: "Live WebRTC/SIP media gateway. (Uploaded-call transcription is set above.)" },
     ],
   },
 ];
-
-const REQ_LABEL: Record<Requirement, { text: string; className: string }> = {
-  "one-of": { text: "one required", className: "label label-warn" },
-  optional: { text: "optional", className: "label label-neutral" },
-};
 
 export default function SecretsSettings() {
   const [status, setStatus] = useState<Record<string, SecretStatus>>({});
@@ -117,7 +111,9 @@ export default function SecretsSettings() {
 
   const dirty = Object.values(drafts).some((v) => v.trim());
   const hasAiKey =
-    (status.OPENAI_API_KEY?.set ?? false) || (status.ANTHROPIC_API_KEY?.set ?? false);
+    (status.OPENAI_API_KEY?.set ?? false) ||
+    (status.ANTHROPIC_API_KEY?.set ?? false) ||
+    (status.GEMINI_API_KEY?.set ?? false);
 
   return (
     <div className="card">
@@ -127,7 +123,8 @@ export default function SecretsSettings() {
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
         Add the keys HAL needs. Stored server-side, never shown back. A real environment variable always
-        wins and shows <em>from env</em>.
+        wins and shows <em>from env</em>. <span style={{ color: "var(--fail)" }}>*</span> marks a required
+        key — set at least one AI model key.
       </p>
 
       {loaded && !hasAiKey && (
@@ -141,7 +138,7 @@ export default function SecretsSettings() {
             fontSize: 13,
           }}
         >
-          <strong>Set at least one AI model key</strong> (OpenAI or Anthropic) to run real simulations and
+          <strong>Set at least one AI model key</strong> (OpenAI, Anthropic, or Gemini) to run real simulations and
           LLM judging. Without one, HAL falls back to a mock model. Real phone calls also need a provider
           connected under <em>Providers</em>.
         </div>
@@ -187,12 +184,14 @@ export default function SecretsSettings() {
                 >
                   <span
                     title={`${m.key} — ${m.help}`}
-                    style={{ width: 168, flexShrink: 0, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+                    style={{ width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 2 }}
                   >
                     {m.label}
-                    <span className={REQ_LABEL[m.req].className} style={{ fontSize: 10, padding: "1px 6px" }}>
-                      {REQ_LABEL[m.req].text}
-                    </span>
+                    {m.req === "one-of" && (
+                      <span style={{ color: "var(--fail)" }} title="Required — set at least one">
+                        *
+                      </span>
+                    )}
                   </span>
                   <input
                     type={m.secret === false ? "text" : "password"}

@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
       agent,
       target: { phoneNumber: body.phoneNumber },
       judge: testCase.judge,
-      llm: createLLM("auto"),
+      llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
     });
     saveResult(result);
     return NextResponse.json({ result, agentId: agent.id });

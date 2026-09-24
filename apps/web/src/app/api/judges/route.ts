@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   }
   const spec: JudgeSpec = {
     mode: body.spec?.mode ?? "all",
+    provider: body.spec?.provider ?? "auto",
     model: body.spec?.model,
     rules: body.spec?.rules ?? [],
     criteria: (body.spec?.criteria ?? []).filter((c) => c.trim()),
