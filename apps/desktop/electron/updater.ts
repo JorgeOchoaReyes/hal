@@ -87,9 +87,17 @@ export function initUpdater(): void {
     return state;
   });
 
-  // Check on launch (packaged builds only).
+  // Auto-sync: check on launch, then every hour, so a long-running app keeps
+  // itself on the latest release without the user checking manually. Updates
+  // download automatically and install on quit (autoInstallOnAppQuit above).
   if (state.supported) {
     autoUpdater.checkForUpdates().catch(failUpdater);
+    const HOURLY = 60 * 60 * 1000;
+    const timer = setInterval(() => {
+      autoUpdater.checkForUpdates().catch(failUpdater);
+    }, HOURLY);
+    // Don't let the poll timer keep the process alive on its own.
+    timer.unref?.();
   } else {
     set({ status: "up-to-date", checkedAt: Date.now() });
   }
