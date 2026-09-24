@@ -412,24 +412,24 @@ function ProvisionAgent({
         <>
           {selectedAccount?.provider === "bland" && (
             <label className="field">
-              <span className="field-label">Bland Pathway ID (recommended)</span>
+              <span className="field-label">Existing Bland Pathway ID (optional)</span>
               <input
                 value={pathwayId}
                 onChange={(e) => setPathwayId(e.target.value)}
-                placeholder="paste a pathway_id from Bland's Agent Builder"
+                placeholder="reuse a pathway_id from Bland's Agent Builder"
                 className="mono"
               />
               <span className="muted" style={{ fontSize: 12 }}>
-                Build the pathway in Bland&apos;s Agent Builder and paste its id — HAL runs the call
-                against it directly. Bland has no public endpoint to create a pathway, so the JSON
-                below is a best-effort auto-build that may fail on some plans.
+                Leave blank to have HAL build the pathway from the JSON below (create → set graph →
+                version → publish). Or paste an existing pathway&apos;s id to run the call against it
+                directly.
               </span>
             </label>
           )}
           <label className="field">
             <span className="field-label">
               {selectedAccount?.provider === "bland"
-                ? "Structured test — auto-build fallback (role + conditions JSON)"
+                ? "Structured test — auto-builds a Bland Pathway (role + conditions JSON)"
                 : "Structured test (role + conditions JSON)"}
             </span>
             <textarea

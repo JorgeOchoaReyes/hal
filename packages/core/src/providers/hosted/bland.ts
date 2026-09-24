@@ -104,11 +104,14 @@ export class BlandIntegration implements VoiceProviderIntegration {
 
   /**
    * Provision a Bland Pathway from a structured test (a deterministic node
-   * graph). Bland has shipped more than one pathway API shape over time
-   * (a single-shot create, and a create-then-set-version flow), so we create
-   * the pathway shell, then set its nodes/edges, trying the documented endpoint
-   * variants and surfacing every attempt's response if it fails. Creating a
-   * pathway places no call and costs nothing.
+   * graph), following Bland's documented V1 lifecycle:
+   *   1. POST /v1/pathway/create              → get a pathway id
+   *   2. POST /v1/pathway/{id}                → set the node/edge graph
+   *   3. POST /v1/pathway/{id}/version        → snapshot a version (best-effort)
+   *   4. POST /v1/pathway/{id}/publish        → promote it to production (best-effort)
+   * The version/publish steps make the call run a stable graph; a call by
+   * pathway_id still works without them, so a failure there doesn't fail
+   * provisioning. Creating a pathway places no call and costs nothing.
    */
   private async provisionPathway(
     account: ProviderAccount,
@@ -121,42 +124,59 @@ export class BlandIntegration implements VoiceProviderIntegration {
     };
     const name = spec.name || "HAL test";
     const description = "Provisioned by HAL for a deterministic voice test.";
-    const attempts: string[] = [];
 
-    // 1) Create the pathway shell to get an id.
+    // 1) Create the pathway shell (POST /v1/pathway/create).
+    const createRes = await this.post(account, "/v1/pathway/create", { name, description });
+    const createText = await safeText(createRes);
+    if (!createRes.ok) {
+      throw new Error(`Bland create pathway failed (${createRes.status}): ${createText.slice(0, 200)}`);
+    }
     let pathwayId: string | undefined;
-    for (const path of ["/v1/pathway/create", "/v1/pathways"]) {
-      const res = await this.post(account, path, { name, description });
-      const text = await safeText(res);
-      if (res.ok) {
-        try {
-          const d = JSON.parse(text) as Record<string, unknown> & { data?: Record<string, unknown> };
-          pathwayId = String(
-            d.pathway_id ?? d.id ?? d.data?.pathway_id ?? d.data?.id ?? "",
-          ) || undefined;
-        } catch {
-          /* fallthrough */
-        }
-        if (pathwayId) break;
-        attempts.push(`POST ${path} → ${res.status} but no pathway id in ${text.slice(0, 160)}`);
-      } else {
-        attempts.push(`POST ${path} → ${res.status}: ${text.slice(0, 160)}`);
-      }
+    try {
+      const d = JSON.parse(createText) as Record<string, unknown> & { data?: Record<string, unknown> };
+      pathwayId = String(d.pathway_id ?? d.id ?? d.data?.pathway_id ?? d.data?.id ?? "") || undefined;
+    } catch {
+      /* fallthrough */
     }
     if (!pathwayId) {
-      throw new Error(`Bland create pathway failed. Attempts: ${attempts.join(" | ")}`);
+      throw new Error(`Bland create pathway returned no id: ${createText.slice(0, 200)}`);
     }
 
-    // 2) Set the node graph on the pathway (documented variants).
-    const graphBody = { name, nodes: graph.nodes, edges: graph.edges };
-    for (const path of [`/v1/pathway/${pathwayId}`, `/v1/pathway/${pathwayId}/version`]) {
-      const res = await this.post(account, path, graphBody);
-      if (res.ok) return pathwayId;
-      attempts.push(`update ${path} → ${res.status}: ${(await safeText(res)).slice(0, 160)}`);
+    // 2) Set the node/edge graph (POST /v1/pathway/{id}).
+    const graphBody = { name, description, nodes: graph.nodes, edges: graph.edges };
+    const updateRes = await this.post(account, `/v1/pathway/${pathwayId}`, graphBody);
+    if (!updateRes.ok) {
+      throw new Error(
+        `Bland pathway ${pathwayId} created but setting nodes/edges failed (${updateRes.status}): ${(await safeText(updateRes)).slice(0, 200)}`,
+      );
     }
-    throw new Error(
-      `Bland pathway ${pathwayId} was created but setting its nodes/edges failed. Attempts: ${attempts.join(" | ")}`,
-    );
+
+    // 3) Best-effort: snapshot a version and promote it to production so the
+    //    test call runs a stable graph. A call by pathway_id works without it.
+    try {
+      const verRes = await this.post(account, `/v1/pathway/${pathwayId}/version`, {
+        name,
+        nodes: graph.nodes,
+        edges: graph.edges,
+      });
+      if (verRes.ok) {
+        const vd = JSON.parse(await safeText(verRes)) as Record<string, unknown> & {
+          data?: Record<string, unknown>;
+        };
+        const versionId =
+          vd.version_number ?? vd.version_id ?? vd.data?.version_number ?? vd.data?.version_id;
+        if (versionId != null) {
+          await this.post(account, `/v1/pathway/${pathwayId}/publish`, {
+            version_id: versionId,
+            environment: "production",
+          });
+        }
+      }
+    } catch {
+      /* the dev version is fine for a test call */
+    }
+
+    return pathwayId;
   }
 
   async createTestingAgent(
@@ -170,9 +190,8 @@ export class BlandIntegration implements VoiceProviderIntegration {
       return { externalAgentId: spec.pathwayId.trim() };
     }
 
-    // Best-effort: compile a structured test into a Bland Pathway. The returned
-    // pathway id is used to place the call. (Uses undocumented create endpoints,
-    // so it may fail on some plans — prefer supplying a pathwayId above.)
+    // Compile a structured test into a Bland Pathway via the documented V1
+    // pathway lifecycle. The returned pathway id is used to place the call.
     if (spec.structured) {
       return { externalAgentId: await this.provisionPathway(account, spec) };
     }
