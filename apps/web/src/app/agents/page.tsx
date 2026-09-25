@@ -7,9 +7,9 @@ export default function AgentsPage() {
     <>
       <h1 style={{ margin: 0 }}>Providers &amp; credentials</h1>
       <p className="sub" style={{ marginTop: 4 }}>
-        Connect a voice platform (Vapi, ElevenLabs, Bland, Retell) with your own credentials. HAL
-        keeps <strong>one reusable testing agent per provider</strong> — the caller it uses to run
-        your simulations — and reconfigures it for each run. Re-provisioning edits that same agent.
+        Connect a voice platform (Vapi, ElevenLabs, Bland, Retell) with your own credentials.
+        Once an account is connected, head to <strong>Testing agents</strong> to provision the
+        callers HAL uses to run your simulations.
       </p>
       <HostedAgents />
     </>
