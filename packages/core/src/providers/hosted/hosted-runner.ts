@@ -22,10 +22,19 @@ export interface HostedRunOptions {
   llm: LLMClient;
   pollIntervalMs?: number;
   timeoutMs?: number;
+  /**
+   * How the call is placed. Defaults to `integration.placeCall(account,
+   * agent, target)` — the testing agent dials the target. Override to place
+   * the call a different way (e.g. triggering another agent's own pathway
+   * for the "agent under test is outbound" direction) while reusing the same
+   * poll/judge/metrics pipeline.
+   */
+  place?: () => Promise<{ externalCallId: string }>;
 }
 
 /**
- * Run a call through a hosted testing agent: place the call, poll the platform
+ * Run a hosted call: place it (by default, the testing agent dials the
+ * target — pass `place` to place it a different way), poll the platform
  * until it ends, then judge the returned transcript with the same Judge +
  * metrics pipeline as every other run. The hosted agent runs the conversation
  * itself (scripted via its system prompt), so there is no live turn-by-turn
@@ -37,7 +46,8 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
   let externalCallId: string | undefined;
 
   try {
-    const placed = await opts.integration.placeCall(opts.account, opts.agent, opts.target);
+    const place = opts.place ?? (() => opts.integration.placeCall(opts.account, opts.agent, opts.target));
+    const placed = await place();
     externalCallId = placed.externalCallId;
 
     const interval = opts.pollIntervalMs ?? 3000;

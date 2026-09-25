@@ -119,6 +119,7 @@ export {
   type TestingAgentSpec,
   type HostedTestingAgent,
   type HostedTarget,
+  type OutboundAgentRef,
   type HostedNumber,
   type HostedRemoteAgent,
   type HostedCallState,

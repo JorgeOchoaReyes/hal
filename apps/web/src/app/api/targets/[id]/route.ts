@@ -23,6 +23,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
      * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
      */
     encryptedKey?: string;
+    /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
+    externalAgentId?: string;
   };
   const updated = {
     ...existing,
@@ -33,6 +35,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     direction: body.direction ?? existing.direction,
     judgeIds: body.judgeIds ?? existing.judgeIds,
     encryptedKey: body.encryptedKey !== undefined ? body.encryptedKey.trim() || undefined : existing.encryptedKey,
+    externalAgentId:
+      body.externalAgentId !== undefined ? body.externalAgentId.trim() || undefined : existing.externalAgentId,
   };
   upsertTarget(updated);
   return NextResponse.json({ target: updated });

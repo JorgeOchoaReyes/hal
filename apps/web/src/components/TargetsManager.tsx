@@ -26,6 +26,7 @@ interface TargetAgent {
   direction?: Direction;
   judgeIds?: string[];
   encryptedKey?: string;
+  externalAgentId?: string;
   target: {
     transport: Transport;
     name: string;
@@ -164,6 +165,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   const [room, setRoom] = useState("");
   const [description, setDescription] = useState("");
   const [encryptedKey, setEncryptedKey] = useState("");
+  const [externalAgentId, setExternalAgentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -218,6 +220,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
     setProvider(acct?.provider ?? provider);
     setName(agent.name);
     setDescription(`Imported ${agent.kind} "${agent.name}" (${agent.id}) from ${acct?.label ?? acct?.provider}.`);
+    setExternalAgentId(agent.id);
   }
 
   /** Attach a dialable number from the same account — the address to call. */
@@ -245,6 +248,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           direction,
           target: buildTarget(name, transport, address, room),
           encryptedKey: encryptedKey.trim() || undefined,
+          externalAgentId: externalAgentId.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -254,6 +258,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
       setRoom("");
       setDescription("");
       setEncryptedKey("");
+      setExternalAgentId("");
       onDone();
     } catch (e) {
       setErr((e as Error).message);
@@ -419,19 +424,32 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
         )}
       </div>
       {direction === "outbound" && (
-        <div className="field">
-          <span className="field-label">Encrypted key</span>
-          <input
-            type="password"
-            value={encryptedKey}
-            onChange={(e) => setEncryptedKey(e.target.value)}
-            placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
-            className="mono"
-          />
-          <span className="muted" style={{ fontSize: 12 }}>
-            Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
-            call. Different per agent — stored as given.
-          </span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="field">
+            <span className="field-label">Pathway / agent id</span>
+            <input
+              value={externalAgentId}
+              onChange={(e) => setExternalAgentId(e.target.value)}
+              placeholder={provider === "bland" ? "Bland pathway_id for this agent" : "Provider agent id"}
+              className="mono"
+            />
+            <span className="muted" style={{ fontSize: 12 }}>
+              Which pathway on the provider to trigger — set automatically when imported above.
+            </span>
+          </div>
+          <div className="field">
+            <span className="field-label">Encrypted key</span>
+            <input
+              type="password"
+              value={encryptedKey}
+              onChange={(e) => setEncryptedKey(e.target.value)}
+              placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
+              className="mono"
+            />
+            <span className="muted" style={{ fontSize: 12 }}>
+              Per-agent secret used to trigger this agent&apos;s own pathway. Stored as given.
+            </span>
+          </div>
         </div>
       )}
       <div className="field">
@@ -523,6 +541,7 @@ function EditTargetModal({
   const [room, setRoom] = useState(target.target.transport === "webrtc" ? target.target.room ?? "" : "");
   const [description, setDescription] = useState(target.description ?? "");
   const [encryptedKey, setEncryptedKey] = useState(target.encryptedKey ?? "");
+  const [externalAgentId, setExternalAgentId] = useState(target.externalAgentId ?? "");
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
   const [busy, setBusy] = useState(false);
@@ -559,6 +578,7 @@ function EditTargetModal({
           target: buildTarget(name, transport, address, room, target.target.mock?.systemPrompt),
           judgeIds: [...judgeIds],
           encryptedKey: encryptedKey.trim(),
+          externalAgentId: externalAgentId.trim(),
         }),
       });
       const data = await res.json();
@@ -646,19 +666,32 @@ function EditTargetModal({
           )}
         </div>
         {direction === "outbound" && (
-          <div className="field">
-            <span className="field-label">Encrypted key</span>
-            <input
-              type="password"
-              value={encryptedKey}
-              onChange={(e) => setEncryptedKey(e.target.value)}
-              placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
-              className="mono"
-            />
-            <span className="muted" style={{ fontSize: 12 }}>
-              Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
-              call. Different per agent — stored as given.
-            </span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="field">
+              <span className="field-label">Pathway / agent id</span>
+              <input
+                value={externalAgentId}
+                onChange={(e) => setExternalAgentId(e.target.value)}
+                placeholder={provider === "bland" ? "Bland pathway_id for this agent" : "Provider agent id"}
+                className="mono"
+              />
+              <span className="muted" style={{ fontSize: 12 }}>
+                Which pathway on the provider to trigger for outbound dispatch.
+              </span>
+            </div>
+            <div className="field">
+              <span className="field-label">Encrypted key</span>
+              <input
+                type="password"
+                value={encryptedKey}
+                onChange={(e) => setEncryptedKey(e.target.value)}
+                placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
+                className="mono"
+              />
+              <span className="muted" style={{ fontSize: 12 }}>
+                Per-agent secret used to trigger this agent&apos;s own pathway. Stored as given.
+              </span>
+            </div>
           </div>
         )}
         <div className="field">
