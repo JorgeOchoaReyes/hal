@@ -221,18 +221,19 @@ export class BlandIntegration implements VoiceProviderIntegration {
       : { systemPrompt: "You are a QA tester calling to evaluate a voice AI.", firstMessage: undefined };
     // Pathway call when the agent is pathway-based (a supplied pathway id or a
     // compiled structured test). The pathway id lives on externalAgentId.
+    const from = target.fromNumber || account.credentials.from;
     const body = agent.spec?.structured || agent.spec?.pathwayId
       ? {
           phone_number: target.phoneNumber,
           pathway_id: agent.externalAgentId,
-          ...(account.credentials.from ? { from: account.credentials.from } : {}),
+          ...(from ? { from } : {}),
         }
       : {
           phone_number: target.phoneNumber,
           task: resolved.systemPrompt,
           first_sentence: resolved.firstMessage,
           voice: agent.spec?.voice,
-          ...(account.credentials.from ? { from: account.credentials.from } : {}),
+          ...(from ? { from } : {}),
           wait_for_greeting: true,
         };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
@@ -261,10 +262,11 @@ export class BlandIntegration implements VoiceProviderIntegration {
     outbound: OutboundAgentRef,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }> {
+    const from = target.fromNumber || account.credentials.from;
     const body: Record<string, unknown> = {
       phone_number: target.phoneNumber,
       pathway_id: outbound.externalAgentId,
-      ...(account.credentials.from ? { from: account.credentials.from } : {}),
+      ...(from ? { from } : {}),
       ...(outbound.encryptedKey ? { encrypted_key: outbound.encryptedKey } : {}),
     };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {

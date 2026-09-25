@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
     accountId: string;
     /** The inbound agent's own number — the one the outbound side dials. */
     phoneNumber: string;
+    /** The outbound agent's own number — its caller id for this call. */
+    fromNumber?: string;
     inboundAgent?: AgentRef;
     outboundAgent?: AgentRef;
   };
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
       integration,
       account,
       agent,
-      target: { phoneNumber: body.phoneNumber },
+      target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
       place: outboundIsTarget
@@ -119,7 +121,7 @@ export async function POST(req: NextRequest) {
             integration.placeOutboundCall!(
               account,
               { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
-              { phoneNumber: body.phoneNumber },
+              { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
             )
         : undefined,
     });

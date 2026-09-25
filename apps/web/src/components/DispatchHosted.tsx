@@ -55,6 +55,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [inbound, setInbound] = useState<AgentValue>("target:");
   const [outbound, setOutbound] = useState<AgentValue>(AUTO);
   const [phone, setPhone] = useState("");
+  const [fromPhone, setFromPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ status: string; labels?: Array<{ text: string; tone: string }> } | null>(null);
@@ -98,14 +99,20 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   ];
 
   const inboundParsed = parse(inbound);
+  const outboundParsed = parse(outbound);
   const inboundTarget = inboundParsed.kind === "target" ? targets.find((t) => t.id === inboundParsed.id) : undefined;
+  const outboundTarget = outboundParsed.kind === "target" ? targets.find((t) => t.id === outboundParsed.id) : undefined;
 
   // The phone field is always the INBOUND agent's own number — the one the
-  // outbound side dials. Picking a saved agent under test as inbound
-  // auto-fills its number; still editable afterward.
+  // outbound side dials. The from-number field is the OUTBOUND agent's own
+  // number — its caller id for the call. Picking a saved agent under test
+  // for either side auto-fills its stored number; both stay editable.
   useEffect(() => {
     if (inboundTarget?.target.phoneNumber) setPhone(inboundTarget.target.phoneNumber);
   }, [inboundTarget]);
+  useEffect(() => {
+    setFromPhone(outboundTarget?.target.phoneNumber ?? "");
+  }, [outboundTarget]);
 
   const sameAgent = inbound === outbound;
   const bothTesting = inboundParsed.kind === "testing" && parse(outbound).kind === "testing";
@@ -124,6 +131,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           testCaseId,
           accountId: selected,
           phoneNumber: phone,
+          fromNumber: fromPhone.trim() || undefined,
           inboundAgent: parse(inbound),
           outboundAgent: parse(outbound),
         }),
@@ -205,6 +213,15 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
                 value={phone}
                 onChange={setPhone}
                 placeholder="+14155550123 (inbound agent)"
+              />
+            </label>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">Outbound agent&apos;s number (optional)</span>
+              <NumberPicker
+                accountId={selected}
+                value={fromPhone}
+                onChange={setFromPhone}
+                placeholder="+14155550123 (outbound agent)"
               />
             </label>
             <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair}>
