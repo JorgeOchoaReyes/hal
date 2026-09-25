@@ -122,7 +122,7 @@ export class RetellIntegration implements VoiceProviderIntegration {
       method: "POST",
       headers: this.headers(account),
       body: JSON.stringify({
-        from_number: account.credentials.from,
+        from_number: target.fromNumber || account.credentials.from,
         to_number: target.phoneNumber,
         override_agent_id: agent.externalAgentId,
       }),

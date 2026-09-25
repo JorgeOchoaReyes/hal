@@ -16,12 +16,22 @@ interface TestingAgentLite {
 interface TargetAgentLite {
   id: string;
   name: string;
-  direction?: "inbound" | "outbound";
   target: { transport: string; phoneNumber?: string };
 }
 interface TestCaseLite {
   targetAgentId?: string;
   testingAgentId?: string;
+}
+
+type AgentKind = "testing" | "target";
+/** "kind:id" — id is "" for the testing side's "Auto — provision ad-hoc". */
+type AgentValue = `${AgentKind}:${string}`;
+
+const AUTO: AgentValue = "testing:";
+
+function parse(value: string): { kind: AgentKind; id: string } {
+  const i = value.indexOf(":");
+  return { kind: value.slice(0, i) as AgentKind, id: value.slice(i + 1) };
 }
 
 /**
@@ -31,16 +41,21 @@ interface TestCaseLite {
  * (or reconfigures) the testing agent to match this simulation's current
  * persona/scenario, places the call, waits for it to finish, and pulls the
  * judged result from the provider.
+ *
+ * Either side of the call can be any saved agent — pick which one waits
+ * (inbound) and which one places the call (outbound). One side must be a
+ * testing agent (the one HAL manages and judges through) and the other a
+ * saved agent under test.
  */
 export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
   const [testingAgents, setTestingAgents] = useState<TestingAgentLite[]>([]);
-  const [testingAgentId, setTestingAgentId] = useState("");
   const [targets, setTargets] = useState<TargetAgentLite[]>([]);
-  const [targetAgentId, setTargetAgentId] = useState("");
-  const [direction, setDirection] = useState<"inbound" | "outbound">("inbound");
+  const [inbound, setInbound] = useState<AgentValue>("target:");
+  const [outbound, setOutbound] = useState<AgentValue>(AUTO);
   const [phone, setPhone] = useState("");
+  const [fromPhone, setFromPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ status: string; labels?: Array<{ text: string; tone: string }> } | null>(null);
@@ -63,27 +78,46 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       .then((d: { testCase?: TestCaseLite }) => {
         const tc = d.testCase;
         if (!tc) return;
-        setTestingAgentId(tc.testingAgentId ?? "");
-        if (tc.targetAgentId) setTargetAgentId(tc.targetAgentId);
+        setOutbound(`testing:${tc.testingAgentId ?? ""}`);
+        if (tc.targetAgentId) setInbound(`target:${tc.targetAgentId}`);
       })
       .catch(() => undefined);
   }, [testCaseId]);
 
   const selected = accountId || accounts[0]?.id || "";
-  const selectedTarget = targets.find((t) => t.id === targetAgentId);
 
-  // Picking a saved agent under test (or loading the simulation's own default)
-  // defaults the direction to that agent's own, and — for inbound — auto-fills
-  // its number. Both stay editable afterward.
+  const options: { value: AgentValue; label: string }[] = [
+    { value: AUTO, label: "Testing agent: Auto — provision ad-hoc" },
+    ...testingAgents.map((a): { value: AgentValue; label: string } => ({
+      value: `testing:${a.id}`,
+      label: `Testing agent: ${a.name} (${a.provider})`,
+    })),
+    ...targets.map((t): { value: AgentValue; label: string } => ({
+      value: `target:${t.id}`,
+      label: `Agent under test: ${t.name}`,
+    })),
+  ];
+
+  const inboundParsed = parse(inbound);
+  const outboundParsed = parse(outbound);
+  const inboundTarget = inboundParsed.kind === "target" ? targets.find((t) => t.id === inboundParsed.id) : undefined;
+  const outboundTarget = outboundParsed.kind === "target" ? targets.find((t) => t.id === outboundParsed.id) : undefined;
+
+  // The phone field is always the INBOUND agent's own number — the one the
+  // outbound side dials. The from-number field is the OUTBOUND agent's own
+  // number — its caller id for the call. Picking a saved agent under test
+  // for either side auto-fills its stored number; both stay editable.
   useEffect(() => {
-    if (!targetAgentId) return;
-    const agent = targets.find((t) => t.id === targetAgentId);
-    if (!agent) return;
-    setDirection(agent.direction ?? "inbound");
-    if ((agent.direction ?? "inbound") === "inbound" && agent.target.phoneNumber) {
-      setPhone(agent.target.phoneNumber);
-    }
-  }, [targetAgentId, targets]);
+    if (inboundTarget?.target.phoneNumber) setPhone(inboundTarget.target.phoneNumber);
+  }, [inboundTarget]);
+  useEffect(() => {
+    setFromPhone(outboundTarget?.target.phoneNumber ?? "");
+  }, [outboundTarget]);
+
+  const sameAgent = inbound === outbound;
+  const bothTesting = inboundParsed.kind === "testing" && parse(outbound).kind === "testing";
+  const bothTarget = inboundParsed.kind === "target" && parse(outbound).kind === "target";
+  const invalidPair = sameAgent || bothTesting || bothTarget;
 
   async function dispatch() {
     setBusy(true);
@@ -97,8 +131,9 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           testCaseId,
           accountId: selected,
           phoneNumber: phone,
-          testingAgentId: testingAgentId || undefined,
-          direction,
+          fromNumber: fromPhone.trim() || undefined,
+          inboundAgent: parse(inbound),
+          outboundAgent: parse(outbound),
         }),
       });
       const data = await res.json();
@@ -114,9 +149,9 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   return (
     <div className="card">
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-        Dispatch this simulation to a hosted platform. HAL reconfigures the chosen testing agent
-        to match this simulation&apos;s current persona/scenario, places the call, and judges the
-        result.
+        Dispatch this simulation to a hosted platform. Pick which agent waits (inbound) and which
+        one places the call (outbound) — one side must be a testing agent, HAL reconfigures it to
+        match this simulation&apos;s current persona/scenario before the call and judges the result.
       </p>
       {accounts.length === 0 ? (
         <p className="muted">
@@ -136,33 +171,35 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               </select>
             </label>
             <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Testing agent</span>
+              <span className="field-label">
+                Inbound <span className="pill inbound" style={{ marginLeft: 4 }}>waits</span>
+              </span>
               <select
-                value={testingAgentId}
-                onChange={(e) => setTestingAgentId(e.target.value)}
+                value={inbound}
+                onChange={(e) => setInbound(e.target.value as AgentValue)}
                 style={{ width: "auto" }}
-                title="The testing agent — reconfigured to match this simulation before the call"
+                title="The agent that waits and answers the call"
               >
-                <option value="">Auto — provision ad-hoc</option>
-                {testingAgents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({a.provider})
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
                   </option>
                 ))}
               </select>
             </label>
             <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Agent under test</span>
+              <span className="field-label">
+                Outbound <span className="pill outbound" style={{ marginLeft: 4 }}>calls</span>
+              </span>
               <select
-                value={targetAgentId}
-                onChange={(e) => setTargetAgentId(e.target.value)}
+                value={outbound}
+                onChange={(e) => setOutbound(e.target.value as AgentValue)}
                 style={{ width: "auto" }}
-                title="Pick a saved agent under test to fill in its number and direction"
+                title="The agent that places the call"
               >
-                <option value="">— manual number —</option>
-                {targets.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
                   </option>
                 ))}
               </select>
@@ -170,42 +207,32 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
             <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">
-                Direction{" "}
-                <span className={`pill ${direction}`} style={{ marginLeft: 4 }}>
-                  {direction}
-                </span>
-              </span>
-              <select
-                value={direction}
-                onChange={(e) => setDirection(e.target.value as "inbound" | "outbound")}
-                style={{ width: "auto" }}
-                title="Which side places the call for this dispatch"
-              >
-                <option value="inbound">Inbound — testing agent calls agent under test</option>
-                <option value="outbound">Outbound — agent under test calls testing agent</option>
-              </select>
-            </label>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">{direction === "outbound" ? "Testing agent's number" : "Agent under test's number"}</span>
+              <span className="field-label">Inbound agent&apos;s number</span>
               <NumberPicker
                 accountId={selected}
                 value={phone}
                 onChange={setPhone}
-                placeholder={direction === "outbound" ? "+14155550123 (testing agent)" : "+14155550123 (target)"}
+                placeholder="+14155550123 (inbound agent)"
               />
             </label>
-            <button onClick={dispatch} disabled={busy || !phone.trim() || (direction === "outbound" && !targetAgentId)}>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">Outbound agent&apos;s number (optional)</span>
+              <NumberPicker
+                accountId={selected}
+                value={fromPhone}
+                onChange={setFromPhone}
+                placeholder="+14155550123 (outbound agent)"
+              />
+            </label>
+            <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
           </div>
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-            {direction === "inbound"
-              ? "Inbound: the testing agent dials the number above (the agent under test)."
-              : selectedTarget
-                ? `Outbound: "${selectedTarget.name}" places the call from its own pathway to the number above — its own number, already wired to answer via the testing agent's pathway on the provider.`
-                : "Outbound: the agent under test places the call — pick a saved agent under test above (it needs its own pathway id and key set)."}
-          </p>
+          {invalidPair && (
+            <p className="muted" style={{ fontSize: 12, margin: 0, color: "var(--fail)" }}>
+              Pick one testing agent and one agent under test — one for each side.
+            </p>
+          )}
         </div>
       )}
       {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}

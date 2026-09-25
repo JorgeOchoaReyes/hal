@@ -87,6 +87,14 @@ export interface HostedTestingAgent {
 
 export interface HostedTarget {
   phoneNumber: string;
+  /**
+   * Override the caller id the outbound side dials from, when the provider
+   * accepts a raw number for it. Falls back to the account's own `from`
+   * credential when omitted. Most useful when the outbound side is a saved
+   * agent under test placing its own call — its own number, not the shared
+   * account credential.
+   */
+  fromNumber?: string;
 }
 
 /**
