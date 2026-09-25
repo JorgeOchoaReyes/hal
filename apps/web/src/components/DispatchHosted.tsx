@@ -160,14 +160,17 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
                 </option>
               ))}
             </select>
+            <span className={`pill ${direction}`} title="Which side places the call for this dispatch">
+              {direction}
+            </span>
             <select
               value={direction}
               onChange={(e) => setDirection(e.target.value as "inbound" | "outbound")}
               style={{ width: "auto" }}
               title="Which side places the call for this dispatch"
             >
-              <option value="inbound">Testing agent calls agent under test</option>
-              <option value="outbound">Agent under test calls testing agent</option>
+              <option value="inbound">Direction: Inbound — testing agent calls agent under test</option>
+              <option value="outbound">Direction: Outbound — agent under test calls testing agent</option>
             </select>
             <NumberPicker
               accountId={selected}
@@ -181,10 +184,10 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           </div>
           <p className="muted" style={{ fontSize: 12, margin: 0 }}>
             {direction === "inbound"
-              ? "The testing agent dials the number above (the agent under test)."
+              ? "Inbound: the testing agent dials the number above (the agent under test)."
               : selectedTarget
-                ? `"${selectedTarget.name}" places the call from its own pathway to the number above — its own number, already wired to answer via the testing agent's pathway on the provider.`
-                : "The agent under test places the call — pick a saved agent under test above (it needs its own pathway id and key set)."}
+                ? `Outbound: "${selectedTarget.name}" places the call from its own pathway to the number above — its own number, already wired to answer via the testing agent's pathway on the provider.`
+                : "Outbound: the agent under test places the call — pick a saved agent under test above (it needs its own pathway id and key set)."}
           </p>
         </div>
       )}
