@@ -34,6 +34,11 @@ export async function POST(req: NextRequest) {
     pathwayId?: string;
     /** When set, edit this existing agent in place instead of creating a new one. */
     agentId?: string;
+    /**
+     * Per-agent provider secret used to dispatch an outbound call from this
+     * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
+     */
+    encryptedKey?: string;
   };
 
   const account = getAccountRaw(body.accountId);
@@ -77,6 +82,7 @@ export async function POST(req: NextRequest) {
       name: body.name || existing?.name || "HAL tester",
       createdAt: existing?.createdAt ?? Date.now(),
       spec,
+      encryptedKey: body.encryptedKey?.trim() || existing?.encryptedKey,
     };
     upsertAgent(agent);
     return NextResponse.json({ agent, updated: Boolean(existing) }, { status: existing ? 200 : 201 });

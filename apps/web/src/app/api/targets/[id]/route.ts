@@ -18,6 +18,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     provider?: string;
     direction?: "inbound" | "outbound";
     judgeIds?: string[];
+    /**
+     * Per-agent provider secret used to dispatch an outbound call from this
+     * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
+     */
+    encryptedKey?: string;
   };
   const updated = {
     ...existing,
@@ -27,6 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     provider: body.provider ?? existing.provider,
     direction: body.direction ?? existing.direction,
     judgeIds: body.judgeIds ?? existing.judgeIds,
+    encryptedKey: body.encryptedKey !== undefined ? body.encryptedKey.trim() || undefined : existing.encryptedKey,
   };
   upsertTarget(updated);
   return NextResponse.json({ target: updated });

@@ -62,6 +62,12 @@ const GROUPS: NavGroup[] = [
         match: (p) => p.startsWith("/agents"),
       },
       {
+        href: "/testing-agents",
+        label: "Testing agents",
+        icon: icon("M9 12 11 14 15 10M12 3l8 4v5c0 5-3.5 8-8 10-4.5-2-8-5-8-10V7l8-4Z"),
+        match: (p) => p.startsWith("/testing-agents"),
+      },
+      {
         href: "/judges",
         label: "Judges",
         icon: icon("M12 3v18M6 7h12M7 7l-3 6a3 3 0 0 0 6 0L7 7Zm10 0-3 6a3 3 0 0 0 6 0l-3-6ZM8 21h8"),
