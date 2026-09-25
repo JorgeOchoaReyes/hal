@@ -123,61 +123,78 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           No provider accounts yet — connect one on <a href="/agents">Hosted agents</a>.
         </p>
       ) : (
-        <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select value={selected} onChange={(e) => setAccountId(e.target.value)} style={{ width: "auto" }}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label} ({a.provider})
-                </option>
-              ))}
-            </select>
-            <select
-              value={testingAgentId}
-              onChange={(e) => setTestingAgentId(e.target.value)}
-              style={{ width: "auto" }}
-              title="The testing agent (the caller) — reconfigured to match this simulation before the call"
-            >
-              <option value="">Testing agent: Auto — provision ad-hoc</option>
-              {testingAgents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  Testing agent: {a.name} ({a.provider})
-                </option>
-              ))}
-            </select>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">Provider account</span>
+              <select value={selected} onChange={(e) => setAccountId(e.target.value)} style={{ width: "auto" }}>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label} ({a.provider})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">Testing agent</span>
+              <select
+                value={testingAgentId}
+                onChange={(e) => setTestingAgentId(e.target.value)}
+                style={{ width: "auto" }}
+                title="The testing agent — reconfigured to match this simulation before the call"
+              >
+                <option value="">Auto — provision ad-hoc</option>
+                {testingAgents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.provider})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">Agent under test</span>
+              <select
+                value={targetAgentId}
+                onChange={(e) => setTargetAgentId(e.target.value)}
+                style={{ width: "auto" }}
+                title="Pick a saved agent under test to fill in its number and direction"
+              >
+                <option value="">— manual number —</option>
+                {targets.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select
-              value={targetAgentId}
-              onChange={(e) => setTargetAgentId(e.target.value)}
-              style={{ width: "auto" }}
-              title="Pick a saved agent under test to fill in its number and direction"
-            >
-              <option value="">Agent under test: manual number</option>
-              {targets.map((t) => (
-                <option key={t.id} value={t.id}>
-                  Agent under test: {t.name}
-                </option>
-              ))}
-            </select>
-            <span className={`pill ${direction}`} title="Which side places the call for this dispatch">
-              {direction}
-            </span>
-            <select
-              value={direction}
-              onChange={(e) => setDirection(e.target.value as "inbound" | "outbound")}
-              style={{ width: "auto" }}
-              title="Which side places the call for this dispatch"
-            >
-              <option value="inbound">Direction: Inbound — testing agent calls agent under test</option>
-              <option value="outbound">Direction: Outbound — agent under test calls testing agent</option>
-            </select>
-            <NumberPicker
-              accountId={selected}
-              value={phone}
-              onChange={setPhone}
-              placeholder={direction === "outbound" ? "+14155550123 (testing agent)" : "+14155550123 (target)"}
-            />
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">
+                Direction{" "}
+                <span className={`pill ${direction}`} style={{ marginLeft: 4 }}>
+                  {direction}
+                </span>
+              </span>
+              <select
+                value={direction}
+                onChange={(e) => setDirection(e.target.value as "inbound" | "outbound")}
+                style={{ width: "auto" }}
+                title="Which side places the call for this dispatch"
+              >
+                <option value="inbound">Inbound — testing agent calls agent under test</option>
+                <option value="outbound">Outbound — agent under test calls testing agent</option>
+              </select>
+            </label>
+            <label className="field" style={{ margin: 0, width: "auto" }}>
+              <span className="field-label">{direction === "outbound" ? "Testing agent's number" : "Agent under test's number"}</span>
+              <NumberPicker
+                accountId={selected}
+                value={phone}
+                onChange={setPhone}
+                placeholder={direction === "outbound" ? "+14155550123 (testing agent)" : "+14155550123 (target)"}
+              />
+            </label>
             <button onClick={dispatch} disabled={busy || !phone.trim() || (direction === "outbound" && !targetAgentId)}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
