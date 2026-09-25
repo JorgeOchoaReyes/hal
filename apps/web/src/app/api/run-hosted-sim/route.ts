@@ -13,53 +13,63 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+interface AgentRef {
+  kind: "testing" | "target";
+  id: string;
+}
+
 /**
  * Ad-hoc dispatch: take a saved simulation, compile it into a testing agent on
  * the chosen provider AT DISPATCH TIME (node-based when the platform supports
  * it), place the call, poll to completion, and judge the transcript.
+ *
+ * Either side of the call — the agent that waits ("inbound") and the agent
+ * that places the call ("outbound") — can be any saved agent (a HAL-managed
+ * testing agent, or a saved agent under test). Exactly one of the two must be
+ * a testing agent: HAL always dispatches/judges through one it manages, the
+ * other is the real agent being tested.
  */
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     testCaseId: string;
-    accountId?: string;
+    accountId: string;
+    /** The inbound agent's own number — the one the outbound side dials. */
     phoneNumber: string;
-    /** Optional override of the simulation's chosen testing agent. */
-    testingAgentId?: string;
-    /**
-     * Which side places the call. `"inbound"` (default) is today's flow: the
-     * testing agent (HAL's caller) dials `phoneNumber`, the agent under
-     * test's own number. `"outbound"` flips it: the agent under test's own
-     * pathway is triggered to call `phoneNumber` — the testing agent's own
-     * number, already wired to answer it on the provider.
-     */
-    direction?: "inbound" | "outbound";
+    inboundAgent?: AgentRef;
+    outboundAgent?: AgentRef;
   };
 
   const testCase = getTestCase(body.testCaseId);
   if (!testCase) return NextResponse.json({ error: "Unknown simulation" }, { status: 404 });
   if (!body.phoneNumber) return NextResponse.json({ error: "phoneNumber required" }, { status: 400 });
+  if (!body.inboundAgent || !body.outboundAgent) {
+    return NextResponse.json({ error: "inboundAgent and outboundAgent are required" }, { status: 400 });
+  }
+  if (body.inboundAgent.kind === body.outboundAgent.kind && body.inboundAgent.id === body.outboundAgent.id) {
+    return NextResponse.json({ error: "Inbound and outbound must be different agents" }, { status: 400 });
+  }
 
-  const targetAgent = testCase.targetAgentId ? getTarget(testCase.targetAgentId) : undefined;
-  const direction = body.direction ?? targetAgent?.direction ?? "inbound";
+  const refs = [body.inboundAgent, body.outboundAgent];
+  const testingRef = refs.find((r) => r.kind === "testing");
+  const targetRef = refs.find((r) => r.kind === "target");
+  if (!testingRef || !targetRef) {
+    return NextResponse.json(
+      { error: "One side must be a testing agent and the other a saved agent under test." },
+      { status: 400 },
+    );
+  }
 
-  // A simulation can name the testing agent (caller/receiver) to run with. When
-  // set, that agent's account is used and the agent is reconfigured for this
-  // simulation; otherwise dispatch provisions an ad-hoc agent on the given account.
-  const chosen = getAgent(body.testingAgentId ?? testCase.testingAgentId ?? "");
+  const chosen = getAgent(testingRef.id);
+  const targetAgent = getTarget(targetRef.id);
+  if (!targetAgent) return NextResponse.json({ error: "Unknown agent under test" }, { status: 404 });
+
   const account = getAccountRaw(chosen?.accountId ?? body.accountId ?? "");
   if (!account) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
-  // Outbound requires a saved agent under test with its own pathway id (to
-  // know which pathway to trigger) — validate up front with a clear message.
-  if (direction === "outbound") {
-    if (!targetAgent) {
-      return NextResponse.json(
-        { error: "Outbound dispatch requires a saved agent under test (with its own pathway id and key)." },
-        { status: 400 },
-      );
-    }
+  const outboundIsTarget = body.outboundAgent.kind === "target";
+  if (outboundIsTarget) {
     if (!targetAgent.externalAgentId) {
       return NextResponse.json(
         { error: `"${targetAgent.name}" has no pathway/agent id set — add one on its "My agents" entry.` },
@@ -82,9 +92,8 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    // Reconfigure the chosen agent for this simulation, or create ad-hoc. In
-    // outbound direction this is the WAITING agent (the one the target calls
-    // into), so it still needs to be live with this simulation's content.
+    // The testing agent side is always reconfigured to match this simulation
+    // before the call — whether it's the one waiting or the one dialing.
     const { externalAgentId } = await integration.createTestingAgent(account, spec);
     const agent: HostedTestingAgent = {
       id: chosen?.id ?? id("agent"),
@@ -105,15 +114,14 @@ export async function POST(req: NextRequest) {
       target: { phoneNumber: body.phoneNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
-      place:
-        direction === "outbound" && targetAgent?.externalAgentId
-          ? () =>
-              integration.placeOutboundCall!(
-                account,
-                { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
-                { phoneNumber: body.phoneNumber },
-              )
-          : undefined,
+      place: outboundIsTarget
+        ? () =>
+            integration.placeOutboundCall!(
+              account,
+              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
+              { phoneNumber: body.phoneNumber },
+            )
+        : undefined,
     });
     saveResult(result);
     return NextResponse.json({ result, agentId: agent.id });
