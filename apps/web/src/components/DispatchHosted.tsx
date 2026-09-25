@@ -58,7 +58,13 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [fromPhone, setFromPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [result, setResult] = useState<{ status: string; labels?: Array<{ text: string; tone: string }> } | null>(null);
+  const [result, setResult] = useState<{
+    status: string;
+    error?: string;
+    externalCallId?: string;
+    labels?: Array<{ text: string; tone: string }>;
+    transcript?: Array<{ role: string; text: string }>;
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/provider-accounts")
@@ -237,11 +243,44 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       )}
       {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
       {result && (
-        <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span className={`pill ${result.status}`}>{result.status}</span>
-          {(result.labels ?? []).map((l, i) => (
-            <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
-          ))}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span className={`pill ${result.status}`}>{result.status}</span>
+            {(result.labels ?? []).map((l, i) => (
+              <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+            ))}
+            {result.externalCallId && (
+              <span className="muted mono" style={{ fontSize: 12 }}>
+                call {result.externalCallId}
+              </span>
+            )}
+          </div>
+          {result.error && (
+            <div
+              className="mono"
+              style={{
+                marginTop: 8,
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid var(--fail)",
+                color: "var(--fail)",
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {result.error}
+            </div>
+          )}
+          {(result.transcript?.length ?? 0) > 0 && (
+            <div className="transcript" style={{ marginTop: 8 }}>
+              {result.transcript!.map((u, i) => (
+                <div className={`turn ${u.role}`} key={i}>
+                  <div className="who">{u.role}</div>
+                  <div>{u.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

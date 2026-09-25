@@ -52,17 +52,27 @@ export default async function TestDetailPage({
           <h2>Recent runs</h2>
           <div className="card">
             {results.map((r) => (
-              <div className="card-row" key={r.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  {new Date(r.startedAt).toLocaleString()}
-                  {r.runLabel && <span className="mono" style={{ marginLeft: 8 }}>“{r.runLabel}”</span>}
+              <div key={r.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                <div className="card-row">
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    {new Date(r.startedAt).toLocaleString()}
+                    {r.runLabel && <span className="mono" style={{ marginLeft: 8 }}>“{r.runLabel}”</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    {(r.labels ?? []).map((l, i) => (
+                      <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
+                    ))}
+                    {!r.labels && <span className={`pill ${r.status}`}>{r.status}</span>}
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                  {(r.labels ?? []).map((l, i) => (
-                    <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
-                  ))}
-                  {!r.labels && <span className={`pill ${r.status}`}>{r.status}</span>}
-                </div>
+                {r.error && (
+                  <div
+                    className="mono muted"
+                    style={{ fontSize: 12, marginTop: 4, color: "var(--fail)", whiteSpace: "pre-wrap" }}
+                  >
+                    {r.error}
+                  </div>
+                )}
               </div>
             ))}
           </div>
