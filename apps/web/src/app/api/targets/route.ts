@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
      * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
      */
     encryptedKey?: string;
+    /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
+    externalAgentId?: string;
   };
   if (!body.name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
   if (!body.target?.transport)
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
     provider: body.provider?.trim() || undefined,
     direction: body.direction ?? "inbound",
     encryptedKey: body.encryptedKey?.trim() || undefined,
+    externalAgentId: body.externalAgentId?.trim() || undefined,
     createdAt: Date.now(),
   };
   upsertTarget(agent);

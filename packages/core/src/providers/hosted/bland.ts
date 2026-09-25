@@ -10,6 +10,7 @@ import {
   HostedCallStatus,
   HostedNumber,
   HostedRemoteAgent,
+  OutboundAgentRef,
   FetchLike,
   CredentialCheck,
   safeText,
@@ -243,6 +244,38 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const data = (await res.json()) as { call_id?: string; callId?: string };
     const callId = data.call_id ?? data.callId;
     if (!callId) throw new Error("Bland send-call returned no call id");
+    return { externalCallId: callId };
+  }
+
+  /**
+   * Trigger an outbound call from ANOTHER agent's own Bland Pathway (the
+   * agent under test, when it's the one placing the call) to a target
+   * number — same `/v1/calls` endpoint as {@link placeCall}, but scoped to
+   * that pathway's own `encrypted_key` rather than this account's testing
+   * agent. NOTE: Bland's exact `encrypted_key` dispatch contract could not
+   * be verified against live docs when this was written — double-check the
+   * field name/behavior against your Bland dashboard/docs if calls fail.
+   */
+  async placeOutboundCall(
+    account: ProviderAccount,
+    outbound: OutboundAgentRef,
+    target: HostedTarget,
+  ): Promise<{ externalCallId: string }> {
+    const body: Record<string, unknown> = {
+      phone_number: target.phoneNumber,
+      pathway_id: outbound.externalAgentId,
+      ...(account.credentials.from ? { from: account.credentials.from } : {}),
+      ...(outbound.encryptedKey ? { encrypted_key: outbound.encryptedKey } : {}),
+    };
+    const res = await this.fetchImpl(`${this.base}/v1/calls`, {
+      method: "POST",
+      headers: this.headers(account),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Bland outbound dispatch failed (${res.status}): ${await safeText(res)}`);
+    const data = (await res.json()) as { call_id?: string; callId?: string };
+    const callId = data.call_id ?? data.callId;
+    if (!callId) throw new Error("Bland outbound dispatch returned no call id");
     return { externalCallId: callId };
   }
 

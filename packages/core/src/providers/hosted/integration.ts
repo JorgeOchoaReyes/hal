@@ -89,6 +89,19 @@ export interface HostedTarget {
   phoneNumber: string;
 }
 
+/**
+ * A minimal reference to an agent that places its own outbound call — used
+ * for the "agent under test is outbound" direction, where HAL doesn't dial
+ * the agent under test (it has no persisted {@link HostedTestingAgent}
+ * record) but still needs to trigger its pathway on the provider.
+ */
+export interface OutboundAgentRef {
+  /** The provider's pathway/agent id to trigger (e.g. a Bland Pathway id). */
+  externalAgentId: string;
+  /** Per-agent provider secret required to dispatch its own pathway. */
+  encryptedKey?: string;
+}
+
 /** A phone number owned on a provider account, for the UI's number picker. */
 export interface HostedNumber {
   phoneNumber: string;
@@ -171,6 +184,19 @@ export interface VoiceProviderIntegration {
    * manual id field.
    */
   listRemoteAgents?(account: ProviderAccount): Promise<HostedRemoteAgent[]>;
+  /**
+   * Trigger an outbound call FROM another agent's own pathway (not the
+   * testing agent HAL manages) TO a target number — used when the agent
+   * under test is the one placing the call. Optional — providers without a
+   * documented way to dispatch a call scoped to a single pathway/agent's own
+   * credentials omit it, and callers should reject that direction instead of
+   * silently falling back to the account-level {@link placeCall}.
+   */
+  placeOutboundCall?(
+    account: ProviderAccount,
+    outbound: OutboundAgentRef,
+    target: HostedTarget,
+  ): Promise<{ externalCallId: string }>;
 }
 
 const registry = new Map<string, VoiceProviderIntegration>();

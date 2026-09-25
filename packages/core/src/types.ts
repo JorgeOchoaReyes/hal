@@ -313,6 +313,13 @@ export interface TargetAgent {
    * encrypted, so HAL doesn't encrypt it again.
    */
   encryptedKey?: string;
+  /**
+   * The provider's pathway/agent id for THIS agent (e.g. a Bland Pathway id).
+   * Required to dispatch an outbound call from this agent's own pathway when
+   * {@link direction} is `"outbound"` — HAL needs to know which pathway to
+   * trigger, not just where to dial.
+   */
+  externalAgentId?: string;
   createdAt: number;
 }
 

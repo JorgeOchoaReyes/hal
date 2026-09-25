@@ -25,35 +25,54 @@ export async function POST(req: NextRequest) {
     phoneNumber: string;
     /** Optional override of the simulation's chosen testing agent. */
     testingAgentId?: string;
+    /**
+     * Which side places the call. `"inbound"` (default) is today's flow: the
+     * testing agent (HAL's caller) dials `phoneNumber`, the agent under
+     * test's own number. `"outbound"` flips it: the agent under test's own
+     * pathway is triggered to call `phoneNumber` — the testing agent's own
+     * number, already wired to answer it on the provider.
+     */
+    direction?: "inbound" | "outbound";
   };
 
   const testCase = getTestCase(body.testCaseId);
   if (!testCase) return NextResponse.json({ error: "Unknown simulation" }, { status: 404 });
   if (!body.phoneNumber) return NextResponse.json({ error: "phoneNumber required" }, { status: 400 });
 
-  // This dispatch path dials the agent under test (HAL places the call), which
-  // only fits an INBOUND agent. An OUTBOUND agent places its own calls, so HAL
-  // would have to receive one on a provisioned number — not wired up yet. Reject
-  // it explicitly instead of silently dialing an outbound agent as if inbound.
   const targetAgent = testCase.targetAgentId ? getTarget(testCase.targetAgentId) : undefined;
-  if (targetAgent?.direction === "outbound") {
-    return NextResponse.json(
-      {
-        error:
-          "This agent is marked outbound (it places calls). HAL dialing it isn't supported yet — set it to inbound to run this simulation.",
-      },
-      { status: 400 },
-    );
-  }
+  const direction = body.direction ?? targetAgent?.direction ?? "inbound";
 
-  // A simulation can name the testing agent (caller) to run with. When set, that
-  // agent's account is used and the agent is reconfigured for this simulation;
-  // otherwise dispatch provisions an ad-hoc agent on the given account.
+  // A simulation can name the testing agent (caller/receiver) to run with. When
+  // set, that agent's account is used and the agent is reconfigured for this
+  // simulation; otherwise dispatch provisions an ad-hoc agent on the given account.
   const chosen = getAgent(body.testingAgentId ?? testCase.testingAgentId ?? "");
   const account = getAccountRaw(chosen?.accountId ?? body.accountId ?? "");
   if (!account) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
+
+  // Outbound requires a saved agent under test with its own pathway id (to
+  // know which pathway to trigger) — validate up front with a clear message.
+  if (direction === "outbound") {
+    if (!targetAgent) {
+      return NextResponse.json(
+        { error: "Outbound dispatch requires a saved agent under test (with its own pathway id and key)." },
+        { status: 400 },
+      );
+    }
+    if (!targetAgent.externalAgentId) {
+      return NextResponse.json(
+        { error: `"${targetAgent.name}" has no pathway/agent id set — add one on its "My agents" entry.` },
+        { status: 400 },
+      );
+    }
+    if (!integration.placeOutboundCall) {
+      return NextResponse.json(
+        { error: `${account.provider} doesn't support outbound dispatch yet.` },
+        { status: 400 },
+      );
+    }
+  }
 
   const spec: TestingAgentSpec = {
     name: chosen?.name ?? `${testCase.name} (${account.provider})`,
@@ -63,7 +82,9 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    // Reconfigure the chosen agent for this simulation, or create ad-hoc.
+    // Reconfigure the chosen agent for this simulation, or create ad-hoc. In
+    // outbound direction this is the WAITING agent (the one the target calls
+    // into), so it still needs to be live with this simulation's content.
     const { externalAgentId } = await integration.createTestingAgent(account, spec);
     const agent: HostedTestingAgent = {
       id: chosen?.id ?? id("agent"),
@@ -84,6 +105,15 @@ export async function POST(req: NextRequest) {
       target: { phoneNumber: body.phoneNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
+      place:
+        direction === "outbound" && targetAgent?.externalAgentId
+          ? () =>
+              integration.placeOutboundCall!(
+                account,
+                { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
+                { phoneNumber: body.phoneNumber },
+              )
+          : undefined,
     });
     saveResult(result);
     return NextResponse.json({ result, agentId: agent.id });

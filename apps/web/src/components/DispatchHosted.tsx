@@ -16,6 +16,7 @@ interface TestingAgentLite {
 interface TargetAgentLite {
   id: string;
   name: string;
+  direction?: "inbound" | "outbound";
   target: { transport: string; phoneNumber?: string };
 }
 interface TestCaseLite {
@@ -38,6 +39,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [testingAgentId, setTestingAgentId] = useState("");
   const [targets, setTargets] = useState<TargetAgentLite[]>([]);
   const [targetAgentId, setTargetAgentId] = useState("");
+  const [direction, setDirection] = useState<"inbound" | "outbound">("inbound");
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -68,13 +70,19 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   }, [testCaseId]);
 
   const selected = accountId || accounts[0]?.id || "";
+  const selectedTarget = targets.find((t) => t.id === targetAgentId);
 
   // Picking a saved agent under test (or loading the simulation's own default)
-  // auto-fills its number — still editable afterward.
+  // defaults the direction to that agent's own, and — for inbound — auto-fills
+  // its number. Both stay editable afterward.
   useEffect(() => {
     if (!targetAgentId) return;
     const agent = targets.find((t) => t.id === targetAgentId);
-    if (agent?.target.phoneNumber) setPhone(agent.target.phoneNumber);
+    if (!agent) return;
+    setDirection(agent.direction ?? "inbound");
+    if ((agent.direction ?? "inbound") === "inbound" && agent.target.phoneNumber) {
+      setPhone(agent.target.phoneNumber);
+    }
   }, [targetAgentId, targets]);
 
   async function dispatch() {
@@ -90,6 +98,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           accountId: selected,
           phoneNumber: phone,
           testingAgentId: testingAgentId || undefined,
+          direction,
         }),
       });
       const data = await res.json();
@@ -142,7 +151,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               value={targetAgentId}
               onChange={(e) => setTargetAgentId(e.target.value)}
               style={{ width: "auto" }}
-              title="Pick a saved agent under test to fill in its number"
+              title="Pick a saved agent under test to fill in its number and direction"
             >
               <option value="">Agent under test: manual number</option>
               {targets.map((t) => (
@@ -151,16 +160,32 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
                 </option>
               ))}
             </select>
+            <select
+              value={direction}
+              onChange={(e) => setDirection(e.target.value as "inbound" | "outbound")}
+              style={{ width: "auto" }}
+              title="Which side places the call for this dispatch"
+            >
+              <option value="inbound">Testing agent calls agent under test</option>
+              <option value="outbound">Agent under test calls testing agent</option>
+            </select>
             <NumberPicker
               accountId={selected}
               value={phone}
               onChange={setPhone}
-              placeholder="+14155550123 (target)"
+              placeholder={direction === "outbound" ? "+14155550123 (testing agent)" : "+14155550123 (target)"}
             />
-            <button onClick={dispatch} disabled={busy || !phone.trim()}>
+            <button onClick={dispatch} disabled={busy || !phone.trim() || (direction === "outbound" && !targetAgentId)}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
           </div>
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            {direction === "inbound"
+              ? "The testing agent dials the number above (the agent under test)."
+              : selectedTarget
+                ? `"${selectedTarget.name}" places the call from its own pathway to the number above — its own number, already wired to answer via the testing agent's pathway on the provider.`
+                : "The agent under test places the call — pick a saved agent under test above (it needs its own pathway id and key set)."}
+          </p>
         </div>
       )}
       {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
