@@ -75,6 +75,14 @@ export interface HostedTestingAgent {
    * persisted remote agent.
    */
   spec?: TestingAgentSpec;
+  /**
+   * Per-agent provider secret used to dispatch an outbound call from this
+   * agent's own pathway/assistant (e.g. Bland's encrypted key). Distinct per
+   * agent, so it's stored here rather than on the {@link ProviderAccount}.
+   * The value is stored as given — providers that issue it already return it
+   * encrypted, so HAL doesn't encrypt it again.
+   */
+  encryptedKey?: string;
 }
 
 export interface HostedTarget {

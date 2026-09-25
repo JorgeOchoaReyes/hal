@@ -111,6 +111,7 @@ function ProvisionAgent({
   const [firstMessage, setFirstMessage] = useState("Hi, I'd like to book an appointment.");
   const [useStructured, setUseStructured] = useState(false);
   const [pathwayId, setPathwayId] = useState("");
+  const [encryptedKey, setEncryptedKey] = useState("");
   const [structuredJson, setStructuredJson] = useState(
     JSON.stringify(
       {
@@ -200,6 +201,7 @@ function ProvisionAgent({
           firstMessage,
           structured: structuredPayload(),
           pathwayId: pathwayId.trim() || undefined,
+          encryptedKey: encryptedKey.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -234,6 +236,22 @@ function ProvisionAgent({
         <span className="field-label">Agent name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
+      {selectedAccount?.provider === "bland" && (
+        <label className="field">
+          <span className="field-label">Encrypted key (for outbound dispatch)</span>
+          <input
+            type="password"
+            value={encryptedKey}
+            onChange={(e) => setEncryptedKey(e.target.value)}
+            placeholder="Bland encrypted_key for this agent"
+            className="mono"
+          />
+          <span className="muted" style={{ fontSize: 12 }}>
+            Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
+            call to the other (waiting) agent. Different per agent — stored as given.
+          </span>
+        </label>
+      )}
       <label className="field">
         <span className="field-label">Agent type</span>
         <select

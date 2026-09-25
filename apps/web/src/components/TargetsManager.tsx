@@ -25,6 +25,7 @@ interface TargetAgent {
   provider?: string;
   direction?: Direction;
   judgeIds?: string[];
+  encryptedKey?: string;
   target: {
     transport: Transport;
     name: string;
@@ -162,6 +163,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   const [address, setAddress] = useState("");
   const [room, setRoom] = useState("");
   const [description, setDescription] = useState("");
+  const [encryptedKey, setEncryptedKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -242,6 +244,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           provider,
           direction,
           target: buildTarget(name, transport, address, room),
+          encryptedKey: encryptedKey.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -250,6 +253,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
       setAddress("");
       setRoom("");
       setDescription("");
+      setEncryptedKey("");
       onDone();
     } catch (e) {
       setErr((e as Error).message);
@@ -414,6 +418,22 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           </div>
         )}
       </div>
+      {direction === "outbound" && (
+        <div className="field">
+          <span className="field-label">Encrypted key</span>
+          <input
+            type="password"
+            value={encryptedKey}
+            onChange={(e) => setEncryptedKey(e.target.value)}
+            placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
+            className="mono"
+          />
+          <span className="muted" style={{ fontSize: 12 }}>
+            Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
+            call. Different per agent — stored as given.
+          </span>
+        </div>
+      )}
       <div className="field">
         <span className="field-label">Description (optional)</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
@@ -502,6 +522,7 @@ function EditTargetModal({
   );
   const [room, setRoom] = useState(target.target.transport === "webrtc" ? target.target.room ?? "" : "");
   const [description, setDescription] = useState(target.description ?? "");
+  const [encryptedKey, setEncryptedKey] = useState(target.encryptedKey ?? "");
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
   const [busy, setBusy] = useState(false);
@@ -537,6 +558,7 @@ function EditTargetModal({
           direction,
           target: buildTarget(name, transport, address, room, target.target.mock?.systemPrompt),
           judgeIds: [...judgeIds],
+          encryptedKey: encryptedKey.trim(),
         }),
       });
       const data = await res.json();
@@ -623,6 +645,22 @@ function EditTargetModal({
             </div>
           )}
         </div>
+        {direction === "outbound" && (
+          <div className="field">
+            <span className="field-label">Encrypted key</span>
+            <input
+              type="password"
+              value={encryptedKey}
+              onChange={(e) => setEncryptedKey(e.target.value)}
+              placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
+              className="mono"
+            />
+            <span className="muted" style={{ fontSize: 12 }}>
+              Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
+              call. Different per agent — stored as given.
+            </span>
+          </div>
+        )}
         <div className="field">
           <span className="field-label">Description (optional)</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
