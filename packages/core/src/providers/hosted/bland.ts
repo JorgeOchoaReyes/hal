@@ -49,9 +49,11 @@ export class BlandIntegration implements VoiceProviderIntegration {
 
   private readonly fetchImpl: FetchLike;
   private readonly base: string;
+  private readonly recordingFetch: FetchLike;
 
   constructor(fetchImpl: FetchLike = fetch, baseUrl = "https://api.bland.ai") {
     this.fetchImpl = withTimeout(fetchImpl);
+    this.recordingFetch = fetchImpl;
     this.base = baseUrl.replace(/\/$/, "");
   }
 
@@ -238,11 +240,13 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const from = callerId(account, target);
     const body = agent.spec?.structured || agent.spec?.pathwayId
       ? {
+          record: true,
           phone_number: target.phoneNumber,
           pathway_id: agent.externalAgentId,
           ...(from ? { from } : {}),
         }
       : {
+          record: true,
           phone_number: target.phoneNumber,
           task: resolved.systemPrompt,
           first_sentence: resolved.firstMessage,
@@ -276,6 +280,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
   ): Promise<{ externalCallId: string }> {
     const from = callerId(account, target);
     const body: Record<string, unknown> = {
+      record: true,
       phone_number: target.phoneNumber,
       pathway_id: outbound.externalAgentId,
       ...(from ? { from } : {}),
@@ -348,6 +353,15 @@ export class BlandIntegration implements VoiceProviderIntegration {
       out.push({ id, name, kind: "pathway" });
     }
     return out;
+  }
+
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    // Fixed authenticated API endpoint; never fetch a user-supplied URL.
+    return this.recordingFetch(`${this.base}/v1/recordings/${encodeURIComponent(externalCallId)}`, {
+      headers: { ...this.headers(account), "content-type": "audio/mpeg", accept: "audio/mpeg" },
+      signal: AbortSignal.timeout(60_000),
+      redirect: "error",
+    });
   }
 
   async getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState> {
@@ -462,7 +476,7 @@ async function callError(res: Response, account: ProviderAccount, target: Hosted
   try { message = JSON.parse(raw).message ?? raw; } catch { /* plain provider response */ }
   if (/invalid.*["'`]from["'`]|not own this number/i.test(message)) {
     const source = target.fromNumber === undefined ? "provider account’s From number" : "dispatch’s outbound caller ID";
-    return new Error(`Bland rejected outbound caller ID (from) "${callerId(account, target) ?? "default pool"}" from the ${source} for account "${account.label}" (HTTP ${res.status}). Use a number owned by this Bland account, with + and country code. For a Twilio number, configure its matching BYOT encrypted key. Or select Bland default pool to omit from. The inbound destination is a separate field. No call was placed.`);
+    return new Error(`Bland rejected outbound caller ID (from) "${callerId(account, target) ?? "default pool"}" from the ${source} for account "${account.label}" (HTTP ${res.status}). Use a number owned by this Bland account, with + and country code. For a Twilio number, enter its matching key in dispatch’s Twilio BYOT encrypted key field, or configure it on the outbound agent or account. Or select Bland default pool to omit from. The inbound destination is a separate field. No call was placed.`);
   }
   return new Error(`Bland send-call failed (HTTP ${res.status}) on account "${account.label}". Check the provider dashboard for details.`);
 }

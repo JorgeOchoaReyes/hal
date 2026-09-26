@@ -40,7 +40,10 @@ A custom caller ID must belong to the selected Bland account and include `+`
 and a country code, such as `+14155550123`. HAL removes formatting spaces,
 parentheses, periods and hyphens, but does not guess a country code. For a number
 uploaded from Twilio, configure the matching Bland BYOT encrypted key on the
-provider account or outbound agent. HAL sends that key in the `encrypted_key`
+provider account or outbound agent, or enter it in dispatch’s **Twilio BYOT
+encrypted key** field beside the caller ID. The dispatch value takes precedence
+for this call only and is not saved to the agent, account, or run. Blank uses
+the outbound agent’s key, then the account’s key. HAL sends that key in the `encrypted_key`
 header, never in the call body. A rejected caller ID is not automatically retried
 with a different number.
 
@@ -80,3 +83,24 @@ credentials and Settings API keys are encrypted at rest. Existing plaintext
 Settings keys are migrated when read. Optionally set a stable `HAL_SECRETS_KEY`
 to supply the encryption key yourself; changing it without migrating data makes
 existing encrypted credentials unreadable.
+
+
+## Run details and local recordings
+
+Open a run from **Results** to inspect its transcript, original judge verdict,
+individual checks, typed metrics, and the saved agent/judge configuration. New
+runs capture snapshots before execution; older runs explicitly show when those
+details were not recorded. Applying additional saved judges evaluates the same
+transcript and adds separate, timestamped results without overwriting the original
+verdict or placing another call.
+
+New Bland calls request recording and automatically download the audio using the
+original provider account. Audio is saved under `HAL_DATA_DIR/recordings` (inside
+Electron's persistent user-data directory), then played and sought locally. If
+Bland is still processing the recording, use **Download recording** on the run
+page to retry. For older calls with a saved call ID, select the Bland account that
+placed the call. Calls made with recording disabled may have no audio to retrieve.
+Downloading errors do not discard the run or change its verdict. Downloads are
+limited to 100 MB; partial files are removed on failure. Back up the data directory
+to retain both run history and audio. Recordings are stored as local audio files,
+not encrypted secrets.

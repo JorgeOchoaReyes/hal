@@ -1,3 +1,5 @@
+import { snapshotRun, hostedContext } from "@/lib/runContext";
+import { downloadRunRecording } from "@/lib/runRecordings";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getIntegration,
@@ -7,7 +9,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, getTestCase, getAgent, getTarget, saveResult, upsertAgent } from "@/lib/store";
+import { getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,6 +43,8 @@ export async function POST(req: NextRequest) {
     phoneNumber: string;
     /** The outbound agent's own number — its caller id for this call. */
     fromNumber?: string;
+    /** Optional Bland BYOT override for this call only; never persisted. */
+    encryptedKey?: string;
     configureInbound?: boolean;
     inboundAgent?: AgentRef;
     outboundAgent?: AgentRef;
@@ -76,6 +80,13 @@ export async function POST(req: NextRequest) {
   }
   const account = getAccountRaw(body.accountId ?? "");
   if (!account) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
+  if (body.encryptedKey !== undefined && typeof body.encryptedKey !== "string") {
+    return NextResponse.json({ error: "encryptedKey must be a string" }, { status: 400 });
+  }
+  const dispatchKey = body.encryptedKey?.trim() || undefined;
+  if (dispatchKey && account.provider !== "bland") {
+    return NextResponse.json({ error: "The dispatch BYOT encrypted key is only supported for Bland." }, { status: 400 });
+  }
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
@@ -111,6 +122,8 @@ export async function POST(req: NextRequest) {
     structured: testCase.scenario.structured,
   };
 
+  const initialContext = snapshotRun(testCase);
+
   // Prevent a second dispatch from replacing the receiving pathway mid-call.
   const inboundRuns = globalThis.__halInboundRuns ??= new Set<string>();
   const inboundKey = outboundIsTarget ? `${account.id}:${body.phoneNumber.replace(/[\s().-]/g, "")}` : undefined;
@@ -136,6 +149,8 @@ export async function POST(req: NextRequest) {
 
     if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 
+    const context = hostedContext(initialContext, account, agent, body.phoneNumber, targetAgent, outboundIsTarget,
+      body.fromNumber === undefined ? account.credentials.from : body.fromNumber);
     const result = await runHostedCall({
       testCaseId: testCase.id,
       integration,
@@ -143,7 +158,7 @@ export async function POST(req: NextRequest) {
       // Leave time for provisioning, final evaluation, and saving within the route budget.
       timeoutMs: 180_000,
       account,
-      agent,
+      agent: dispatchKey ? { ...agent, encryptedKey: dispatchKey } : agent,
       target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
@@ -151,13 +166,16 @@ export async function POST(req: NextRequest) {
         ? () =>
             integration.placeOutboundCall!(
               account,
-              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
+              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: dispatchKey ?? targetAgent.encryptedKey },
               { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
             )
         : undefined,
     });
+    result.context = context;
+    result.recordingSource = { provider: account.provider, accountId: account.id };
     saveResult(result);
-    return NextResponse.json({ result, agentId: agent.id });
+    if (result.externalCallId && integration.getRecording) await downloadRunRecording(result.id);
+    return NextResponse.json({ result: getResult(result.id), agentId: agent.id });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   } finally {

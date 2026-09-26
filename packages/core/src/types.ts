@@ -353,6 +353,46 @@ export interface ProdCall {
 
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "errored" | "aborted";
 
+export interface RunAgentSnapshot {
+  id?: string;
+  name: string;
+  provider?: string;
+  externalAgentId?: string;
+  direction?: CallDirection;
+  phoneNumber?: string;
+  persona?: Persona;
+  configuration?: { model?: string; voice?: string; structured?: import("./simulation/structured.js").StructuredTest };
+}
+
+export interface RunContext {
+  simulationName?: string;
+  transport: string;
+  testingAgent: RunAgentSnapshot;
+  targetAgent: RunAgentSnapshot;
+  account?: { id: string; label: string; provider: string };
+  /** Exact merged configuration used for the original verdict. */
+  judge: JudgeSpec;
+  judges: SavedJudge[];
+}
+
+export interface RunEvaluation {
+  id: string;
+  createdAt: number;
+  judge: SavedJudge;
+  provider: string;
+  model: string;
+  verdict?: JudgeVerdict;
+  error?: string;
+}
+
+export interface RunRecording {
+  status: "available" | "unavailable";
+  contentType?: string;
+  bytes?: number;
+  downloadedAt?: number;
+  error?: string;
+}
+
 export interface TestResult {
   id: string;
   testCaseId: string;
@@ -376,6 +416,10 @@ export interface TestResult {
    * {@link labels}, which are derived pass/fail tags computed from the metrics.
    */
   runLabel?: string;
+  context?: RunContext;
+  evaluations?: RunEvaluation[];
+  recordingSource?: { provider: string; accountId: string };
+  recording?: RunRecording;
 }
 
 // ---------------------------------------------------------------------------

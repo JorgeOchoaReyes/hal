@@ -383,6 +383,10 @@ test("Bland validates caller ID and explains ownership errors without leaking cr
   assert.equal(requests[2].headers.encrypted_key, "agent-byot");
   assert.equal(requests[2].body.encrypted_key, undefined);
   assert.equal(requests[2].body.from, "+14155550333");
+  await assert.rejects(bland.placeCall(acc, { ...agent, encryptedKey: "dispatch-byot" }, { phoneNumber: "+14155550222", fromNumber: "+14155550333" }));
+  assert.equal(requests[3].headers.encrypted_key, "dispatch-byot", "testing outbound call must prefer the per-call key over the account key");
+  assert.equal(requests[3].body.encrypted_key, undefined);
+  assert.equal(acc.credentials.encryptedKey, "secret-byot", "call overrides must not mutate stored credentials");
 });
 
 test("Bland binds a structured tester to its inbound number and stops on rejection", async () => {
@@ -447,4 +451,18 @@ test("poll failures preserve transcript and provider failure reasons", async () 
   assert.equal(failed.error, "number busy");
   const empty = await runHostedCall(runnerOptions(async () => ({ externalCallId: "c", status: "ended" })));
   assert.equal(empty.status, "errored");
+});
+
+test("Bland requests call recordings through the authenticated audio endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const bland = new BlandIntegration((async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(new Uint8Array([1, 2]), { headers: { "content-type": "audio/mpeg" } });
+  }) as typeof fetch);
+  const response = await bland.getRecording(account, "call/id");
+  assert.equal(requests[0].url, "https://api.bland.ai/v1/recordings/call%2Fid");
+  assert.equal((requests[0].init?.headers as Record<string, string>).authorization, "Bearer sk-test");
+  assert.equal((requests[0].init?.headers as Record<string, string>)["content-type"], "audio/mpeg");
+  assert.equal(requests[0].init?.redirect, "error");
+  assert.equal(response.headers.get("content-type"), "audio/mpeg");
 });

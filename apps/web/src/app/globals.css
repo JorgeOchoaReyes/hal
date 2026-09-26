@@ -572,3 +572,13 @@ table.data tbody tr:hover { background: var(--hover); }
   border-radius: 6px;
 }
 .modal-close:hover { background: var(--panel-2); color: var(--text); filter: none; }
+
+/* Run history keeps its own immutable configuration and local audio. */
+.run-detail { display: grid; gap: 18px; padding-bottom: 40px; }
+.run-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.run-facts { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr); gap: 10px 18px; }
+.run-facts dt { color: var(--muted); }
+.run-facts dd { margin: 0; overflow-wrap: anywhere; }
+.run-json { background: var(--panel-2); padding: 12px; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; }
+.run-detail summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+@media (max-width: 900px) { .run-agents { grid-template-columns: 1fr; } }

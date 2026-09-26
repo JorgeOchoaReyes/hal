@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import NumberPicker from "./NumberPicker";
 
@@ -58,10 +59,12 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [phone, setPhone] = useState("");
   const [fromPhone, setFromPhone] = useState("");
   const [callerIdMode, setCallerIdMode] = useState("account");
+  const [encryptedKey, setEncryptedKey] = useState("");
   const [configureInbound, setConfigureInbound] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{
+    id: string;
     status: string;
     error?: string;
     externalCallId?: string;
@@ -120,6 +123,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   }, [inboundTarget]);
   useEffect(() => {
     setFromPhone("");
+    setEncryptedKey("");
     setCallerIdMode("account");
     setConfigureInbound(false);
   }, [selected, outbound]);
@@ -146,6 +150,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           accountId: selected,
           phoneNumber: phone,
           fromNumber: isBland && callerIdMode === "pool" ? "" : callerIdMode === "custom" ? fromPhone.trim() : undefined,
+          encryptedKey: isBland && callerIdMode !== "pool" ? encryptedKey.trim() || undefined : undefined,
           configureInbound,
           inboundAgent: parse(inbound),
           outboundAgent: parse(outbound),
@@ -154,6 +159,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setResult(data.result);
+      setEncryptedKey("");
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -252,6 +258,20 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               )}
               <small className="muted">{isBland ? "Must belong to the selected Bland account. Include + and country code. Twilio numbers also need a matching BYOT encrypted key." : "Raw caller ID overrides apply to Retell. Vapi and ElevenLabs use the phone number ID configured on the account."}</small>
             </label>
+            {isBland && callerIdMode !== "pool" && (
+              <label className="field" style={{ margin: 0, width: "auto" }}>
+                <span className="field-label">Twilio BYOT encrypted key (optional)</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={encryptedKey}
+                  onChange={(e) => setEncryptedKey(e.target.value)}
+                  placeholder="Bland encrypted_key for this caller ID"
+                />
+                <small className="muted">For a Twilio caller ID, paste its matching encrypted key from Bland, not your Twilio auth token. Applies to this call only. Leave blank to use the outbound agent’s key, then the account’s key.</small>
+              </label>
+            )}
             <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
@@ -283,6 +303,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               </span>
             )}
           </div>
+          <p><Link href={`/results/${encodeURIComponent(result.id)}`}>View full run details →</Link></p>
           {result.error && (
             <div
               className="mono"
