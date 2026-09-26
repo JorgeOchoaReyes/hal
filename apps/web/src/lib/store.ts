@@ -15,7 +15,7 @@ import {
 } from "@hal/core";
 import { MediaServer, MediaGateway } from "@hal/media";
 import { createPersistence, type Persistence } from "./persistence";
-import { encryptCredentials, decryptCredentials } from "./secretbox";
+import { encryptCredentials, decryptCredentials, encryptString, decryptString, isEncrypted } from "./secretbox";
 
 /**
  * Process-wide state, persisted via the {@link Persistence} layer (SQLite by
@@ -376,7 +376,12 @@ const TRANSCRIPTION_DEFAULT: TranscriptionSettings = {
 
 export function getTranscriptionSettingsRaw(): TranscriptionSettings {
   const rows = halState().db.loadAll<TranscriptionSettings>("settings");
-  return rows.find((r) => r.id === "transcription") ?? { ...TRANSCRIPTION_DEFAULT };
+  const stored = rows.find((r) => r.id === "transcription");
+  if (!stored) return { ...TRANSCRIPTION_DEFAULT };
+  if (stored.apiKey && !isEncrypted(stored.apiKey)) {
+    halState().db.put("settings", "transcription", { ...stored, apiKey: encryptString(stored.apiKey) }, stored.updatedAt);
+  }
+  return { ...stored, apiKey: stored.apiKey ? decryptString(stored.apiKey) : undefined };
 }
 
 export function getTranscriptionSettings(): TranscriptionSettingsPublic {
@@ -398,7 +403,7 @@ export function setTranscriptionSettings(patch: {
     model: patch.model ?? cur.model,
     updatedAt: Date.now(),
   };
-  halState().db.put("settings", "transcription", next, next.updatedAt);
+  halState().db.put("settings", "transcription", { ...next, apiKey: next.apiKey ? encryptString(next.apiKey) : undefined }, next.updatedAt);
   return getTranscriptionSettings();
 }
 
@@ -428,7 +433,12 @@ export interface SecretStatus {
 
 function loadSecretsDoc(db: Persistence): SecretsDoc {
   const rows = db.loadAll<SecretsDoc>("settings");
-  return rows.find((r) => r.id === "secrets") ?? { id: "secrets", values: {}, updatedAt: 0 };
+  const doc = rows.find((r) => r.id === "secrets") ?? { id: "secrets", values: {}, updatedAt: 0 };
+  if (Object.values(doc.values).some((v) => v && !isEncrypted(v))) {
+    db.put("settings", "secrets", { ...doc, values: encryptCredentials(doc.values as Record<string, string>) }, doc.updatedAt);
+  }
+  // Fail closed if the encryption key is missing or incorrect.
+  return { ...doc, values: Object.fromEntries(Object.entries(doc.values).map(([k, v]) => [k, decryptString(v!)])) };
 }
 
 /**
@@ -479,7 +489,7 @@ export function setSecrets(patch: Partial<Record<SecretKey, string | null>>): Se
     else doc.values[key] = v;
   }
   doc.updatedAt = Date.now();
-  s.db.put("settings", "secrets", doc, doc.updatedAt);
+  s.db.put("settings", "secrets", { ...doc, values: encryptCredentials(doc.values as Record<string, string>) }, doc.updatedAt);
   applySecrets(doc);
   return getSecretsStatus();
 }

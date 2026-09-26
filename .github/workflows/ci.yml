@@ -56,3 +56,10 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Stage web + boot smoke test
         run: pnpm --filter @hal/desktop smoke:server
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build self-hosted image
+        run: docker build -t hal-ci .

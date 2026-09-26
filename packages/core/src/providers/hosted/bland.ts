@@ -42,8 +42,9 @@ export class BlandIntegration implements VoiceProviderIntegration {
     {
       key: "from",
       label: "From number (optional)",
-      help: "A Bland number to call from. Leave blank to use Bland's default pool.",
+      help: "Caller ID owned by this Bland account, with country code (e.g. +14155550123). Leave blank for Bland’s default pool.",
     },
+    { key: "encryptedKey", label: "Twilio encrypted key (optional)", help: "For your own Twilio caller ID: use the matching BYOT encrypted key from Bland." },
   ];
 
   private readonly fetchImpl: FetchLike;
@@ -211,6 +212,19 @@ export class BlandIntegration implements VoiceProviderIntegration {
     return { externalAgentId: agentId };
   }
 
+  async configureInbound(account: ProviderAccount, agent: HostedTestingAgent, phoneNumber: string): Promise<void> {
+    if (!agent.spec?.structured && !agent.spec?.pathwayId) {
+      throw new Error("Inbound Bland testing requires a structured simulation/pathway. Select a structured simulation so HAL can assign its pathway to the dedicated test number.");
+    }
+    const res = await this.post(account, `/v1/inbound/${encodeURIComponent(phoneNumber)}`, {
+      pathway_id: agent.externalAgentId,
+    });
+    const detail = await safeText(res);
+    let failed = !res.ok;
+    try { failed ||= JSON.parse(detail).status === "error"; } catch { /* HTTP status remains authoritative */ }
+    if (failed) throw new Error(`Bland could not configure inbound test number ${phoneNumber} on account "${account.label}" (${res.status}). Confirm this account owns the number. No call was placed.`);
+  }
+
   async placeCall(
     account: ProviderAccount,
     agent: HostedTestingAgent,
@@ -221,7 +235,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
       : { systemPrompt: "You are a QA tester calling to evaluate a voice AI.", firstMessage: undefined };
     // Pathway call when the agent is pathway-based (a supplied pathway id or a
     // compiled structured test). The pathway id lives on externalAgentId.
-    const from = target.fromNumber || account.credentials.from;
+    const from = callerId(account, target);
     const body = agent.spec?.structured || agent.spec?.pathwayId
       ? {
           phone_number: target.phoneNumber,
@@ -238,10 +252,10 @@ export class BlandIntegration implements VoiceProviderIntegration {
         };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
-      headers: this.headers(account),
+      headers: { ...this.headers(account), ...byotHeaders(agent.encryptedKey || account.credentials.encryptedKey) },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`Bland send-call failed (${res.status}): ${await safeText(res)}`);
+    if (!res.ok) throw await callError(res, account, target);
     const data = (await res.json()) as { call_id?: string; callId?: string };
     const callId = data.call_id ?? data.callId;
     if (!callId) throw new Error("Bland send-call returned no call id");
@@ -252,29 +266,27 @@ export class BlandIntegration implements VoiceProviderIntegration {
    * Trigger an outbound call from ANOTHER agent's own Bland Pathway (the
    * agent under test, when it's the one placing the call) to a target
    * number — same `/v1/calls` endpoint as {@link placeCall}, but scoped to
-   * that pathway's own `encrypted_key` rather than this account's testing
-   * agent. NOTE: Bland's exact `encrypted_key` dispatch contract could not
-   * be verified against live docs when this was written — double-check the
-   * field name/behavior against your Bland dashboard/docs if calls fail.
+   * that pathway. BYOT encrypted keys are sent in the encrypted_key header.
+   * See https://docs.bland.ai/api-v1/post/calls.
    */
   async placeOutboundCall(
     account: ProviderAccount,
     outbound: OutboundAgentRef,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }> {
-    const from = target.fromNumber || account.credentials.from;
+    const from = callerId(account, target);
     const body: Record<string, unknown> = {
       phone_number: target.phoneNumber,
       pathway_id: outbound.externalAgentId,
       ...(from ? { from } : {}),
-      ...(outbound.encryptedKey ? { encrypted_key: outbound.encryptedKey } : {}),
+
     };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
-      headers: this.headers(account),
+      headers: { ...this.headers(account), ...byotHeaders(outbound.encryptedKey || account.credentials.encryptedKey) },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`Bland outbound dispatch failed (${res.status}): ${await safeText(res)}`);
+    if (!res.ok) throw await callError(res, account, target);
     const data = (await res.json()) as { call_id?: string; callId?: string };
     const callId = data.call_id ?? data.callId;
     if (!callId) throw new Error("Bland outbound dispatch returned no call id");
@@ -427,4 +439,30 @@ function parseTranscript(call: BlandCall): Transcript | undefined {
     out.push({ role: isHuman ? "target" : "agent", text, startedAt: base });
   }
   return out.length ? out : undefined;
+}
+
+function byotHeaders(key?: string): Record<string, string> {
+  return key?.trim() ? { encrypted_key: key.trim() } : {};
+}
+
+function callerId(account: ProviderAccount, target: HostedTarget): string | undefined {
+  // Explicit empty string disables the account default; undefined retains it.
+  const raw = target.fromNumber === undefined ? account.credentials.from : target.fromNumber;
+  const from = raw?.trim().replace(/[\s().-]/g, "");
+  if (!from) return undefined;
+  if (!/^\+[1-9]\d{7,14}$/.test(from)) {
+    throw new Error(`Invalid outbound caller ID (from) "${raw}" for Bland account "${account.label}". Include + and the country code, e.g. +14155550123. ${target.fromNumber === undefined ? "Correct the account’s From number or choose Bland default pool in dispatch." : "Correct the outbound caller ID field or choose Bland default pool."}`);
+  }
+  return from;
+}
+
+async function callError(res: Response, account: ProviderAccount, target: HostedTarget): Promise<Error> {
+  const raw = await safeText(res);
+  let message = raw;
+  try { message = JSON.parse(raw).message ?? raw; } catch { /* plain provider response */ }
+  if (/invalid.*["'`]from["'`]|not own this number/i.test(message)) {
+    const source = target.fromNumber === undefined ? "provider account’s From number" : "dispatch’s outbound caller ID";
+    return new Error(`Bland rejected outbound caller ID (from) "${callerId(account, target) ?? "default pool"}" from the ${source} for account "${account.label}" (HTTP ${res.status}). Use a number owned by this Bland account, with + and country code. For a Twilio number, configure its matching BYOT encrypted key. Or select Bland default pool to omit from. The inbound destination is a separate field. No call was placed.`);
+  }
+  return new Error(`Bland send-call failed (HTTP ${res.status}) on account "${account.label}". Check the provider dashboard for details.`);
 }

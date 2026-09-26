@@ -13,6 +13,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+declare global {
+  var __halInboundRuns: Set<string> | undefined;
+}
+
 interface AgentRef {
   kind: "testing" | "target";
   id: string;
@@ -37,6 +41,7 @@ export async function POST(req: NextRequest) {
     phoneNumber: string;
     /** The outbound agent's own number — its caller id for this call. */
     fromNumber?: string;
+    configureInbound?: boolean;
     inboundAgent?: AgentRef;
     outboundAgent?: AgentRef;
   };
@@ -65,13 +70,26 @@ export async function POST(req: NextRequest) {
   const targetAgent = getTarget(targetRef.id);
   if (!targetAgent) return NextResponse.json({ error: "Unknown agent under test" }, { status: 404 });
 
-  const account = getAccountRaw(chosen?.accountId ?? body.accountId ?? "");
+  if (testingRef.id && !chosen) return NextResponse.json({ error: "Unknown testing agent" }, { status: 404 });
+  if (chosen && chosen.accountId !== body.accountId) {
+    return NextResponse.json({ error: "The testing agent belongs to a different provider account. Select its account or use Auto." }, { status: 400 });
+  }
+  const account = getAccountRaw(body.accountId ?? "");
   if (!account) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
   const outboundIsTarget = body.outboundAgent.kind === "target";
   if (outboundIsTarget) {
+    if (targetAgent.provider && targetAgent.provider !== account.provider) {
+      return NextResponse.json({ error: "The outbound agent and selected account must use the same provider." }, { status: 400 });
+    }
+    if (!body.configureInbound || !integration.configureInbound) {
+      return NextResponse.json({ error: "Confirm that HAL may configure the dedicated inbound test number. This provider must support inbound configuration." }, { status: 400 });
+    }
+    if (account.provider === "bland" && !testCase.scenario.structured) {
+      return NextResponse.json({ error: "Inbound Bland testing requires a structured simulation so HAL can assign its pathway to the test number." }, { status: 400 });
+    }
     if (!targetAgent.externalAgentId) {
       return NextResponse.json(
         { error: `"${targetAgent.name}" has no pathway/agent id set — add one on its "My agents" entry.` },
@@ -93,6 +111,13 @@ export async function POST(req: NextRequest) {
     structured: testCase.scenario.structured,
   };
 
+  // Prevent a second dispatch from replacing the receiving pathway mid-call.
+  const inboundRuns = globalThis.__halInboundRuns ??= new Set<string>();
+  const inboundKey = outboundIsTarget ? `${account.id}:${body.phoneNumber.replace(/[\s().-]/g, "")}` : undefined;
+  if (inboundKey && inboundRuns.has(inboundKey)) {
+    return NextResponse.json({ error: "This inbound test number already has a run in progress." }, { status: 409 });
+  }
+  if (inboundKey) inboundRuns.add(inboundKey);
   try {
     // The testing agent side is always reconfigured to match this simulation
     // before the call — whether it's the one waiting or the one dialing.
@@ -105,12 +130,18 @@ export async function POST(req: NextRequest) {
       name: spec.name,
       createdAt: chosen?.createdAt ?? Date.now(),
       spec,
+      encryptedKey: chosen?.encryptedKey,
     };
     upsertAgent(agent);
+
+    if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 
     const result = await runHostedCall({
       testCaseId: testCase.id,
       integration,
+      providerAgentRole: outboundIsTarget ? "target" : "agent",
+      // Leave time for provisioning, final evaluation, and saving within the route budget.
+      timeoutMs: 180_000,
       account,
       agent,
       target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
@@ -129,5 +160,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result, agentId: agent.id });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+  } finally {
+    if (inboundKey) inboundRuns.delete(inboundKey);
   }
 }

@@ -356,3 +356,95 @@ test("runHostedCall polls to completion then judges the transcript", async () =>
   assert.ok(result.metrics, "metrics computed");
   assert.equal(result.externalCallId, "c1");
 });
+
+test("Bland validates caller ID and explains ownership errors without leaking credentials", async () => {
+  const requests: Array<{ body: any; headers: any }> = [];
+  const bland = new BlandIntegration((async (_url, init) => {
+    requests.push({ body: JSON.parse(String(init?.body)), headers: init?.headers });
+    return new Response(JSON.stringify({ message: "Invalid 'from' - you might not own this number. Did you specify a country code?" }), { status: 400 });
+  }) as typeof fetch);
+  const acc = { ...account, provider: "bland", label: "QA account", credentials: { apiKey: "secret-api", from: "+14155550111", encryptedKey: "secret-byot" } };
+  const agent = { id: "a", accountId: acc.id, provider: "bland", externalAgentId: "pw", name: "T", createdAt: 0 };
+  await assert.rejects(bland.placeCall(acc, agent, { phoneNumber: "+14155550222" }), (err: Error) => {
+    assert.match(err.message, /outbound caller ID.*14155550111/);
+    assert.match(err.message, /provider account’s From number/);
+    assert.match(err.message, /QA account/);
+    assert.match(err.message, /BYOT/);
+    assert.ok(!err.message.includes("secret-api") && !err.message.includes("secret-byot"));
+    return true;
+  });
+  assert.equal(requests[0].headers.encrypted_key, "secret-byot");
+  assert.equal(requests[0].body.encrypted_key, undefined);
+  await assert.rejects(bland.placeCall(acc, agent, { phoneNumber: "+14155550222", fromNumber: "4155550111" }), /country code/);
+  assert.equal(requests.length, 1, "invalid format must not place a call");
+  await assert.rejects(bland.placeCall(acc, agent, { phoneNumber: "+14155550222", fromNumber: "" }));
+  assert.equal(requests[1].body.from, undefined, "explicit pool must override account default");
+  await assert.rejects(bland.placeOutboundCall(acc, { externalAgentId: "pw", encryptedKey: "agent-byot" }, { phoneNumber: "+14155550222", fromNumber: "+1 (415) 555-0333" }));
+  assert.equal(requests[2].headers.encrypted_key, "agent-byot");
+  assert.equal(requests[2].body.encrypted_key, undefined);
+  assert.equal(requests[2].body.from, "+14155550333");
+});
+
+test("Bland binds a structured tester to its inbound number and stops on rejection", async () => {
+  const requests: Array<{ url: string; body: any }> = [];
+  const bland = new BlandIntegration((async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ status: requests.length === 1 ? "success" : "error" }), { status: 200 });
+  }) as typeof fetch);
+  const agent = { id: "a", accountId: account.id, provider: "bland", externalAgentId: "new-pathway", name: "T", createdAt: 0,
+    spec: { name: "T", persona: { name: "T", systemPrompt: "test" }, pathwayId: "new-pathway" } };
+  await bland.configureInbound(account, agent, "+14155550123");
+  assert.equal(requests[0].url, "https://api.bland.ai/v1/inbound/%2B14155550123");
+  assert.equal(requests[0].body.pathway_id, "new-pathway");
+  await assert.rejects(bland.configureInbound(account, agent, "+14155550123"), /No call was placed/);
+});
+
+function runnerOptions(getCall: () => Promise<HostedCallState>) {
+  return {
+    testCaseId: "tc", account,
+    agent: { id: "a", accountId: account.id, provider: "fake", externalAgentId: "x", name: "T", createdAt: 0 },
+    target: { phoneNumber: "+14155550123" },
+    judge: { mode: "rules-only" as const, rules: [{ kind: "regex" as const, pattern: "booked", role: "target" as const }] },
+    llm: new MockLLMClient(), pollIntervalMs: 1,
+    integration: { id: "fake", label: "Fake", credentialFields: [],
+      buildAgentConfig: () => ({}), buildFlowConfig: () => null,
+      verifyCredentials: async () => ({ ok: true }),
+      createTestingAgent: async () => ({ externalAgentId: "x" }),
+      placeCall: async () => ({ externalCallId: "c" }), getCall },
+  };
+}
+
+test("outbound target roles are normalized before role-scoped judging", async () => {
+  const opts = runnerOptions(async () => ({ externalCallId: "c", status: "ended", transcript: [
+    { role: "agent", text: "booked", startedAt: 0 },
+    { role: "target", text: "thanks", startedAt: 1 },
+    { role: "system", text: "ended", startedAt: 2 },
+  ] }));
+  const result = await runHostedCall({ ...opts, providerAgentRole: "target" });
+  assert.equal(result.status, "passed");
+  assert.deepEqual(result.transcript.map((t) => t.role), ["target", "agent", "system"]);
+  assert.equal((await runHostedCall(opts)).status, "failed");
+});
+
+test("timeouts never judge partial transcripts as passed", async () => {
+  const result = await runHostedCall({ ...runnerOptions(async () => ({ externalCallId: "c", status: "in-progress", transcript: [{ role: "target", text: "booked", startedAt: 0 }] })), timeoutMs: 10 });
+  assert.equal(result.status, "errored");
+  assert.match(result.error!, /Timed out/);
+  assert.equal(result.verdict, undefined);
+  assert.equal(result.externalCallId, "c");
+  assert.equal(result.transcript.length, 1);
+});
+
+test("poll failures preserve transcript and provider failure reasons", async () => {
+  let calls = 0;
+  const result = await runHostedCall(runnerOptions(async () => {
+    if (++calls > 1) throw new Error("provider unavailable");
+    return { externalCallId: "c", status: "in-progress", transcript: [{ role: "target", text: "hello", startedAt: 0 }] };
+  }));
+  assert.equal(result.transcript.length, 1);
+  assert.match(result.error!, /provider unavailable/);
+  const failed = await runHostedCall(runnerOptions(async () => ({ externalCallId: "c", status: "failed", endedReason: "number busy" })));
+  assert.equal(failed.error, "number busy");
+  const empty = await runHostedCall(runnerOptions(async () => ({ externalCallId: "c", status: "ended" })));
+  assert.equal(empty.status, "errored");
+});

@@ -170,6 +170,8 @@ export interface VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }>;
+  /** Assign the testing configuration to a dedicated inbound test number. */
+  configureInbound?(account: ProviderAccount, agent: HostedTestingAgent, phoneNumber: string): Promise<void>;
   /** Place an outbound call from the hosted agent to the target. */
   placeCall(
     account: ProviderAccount,

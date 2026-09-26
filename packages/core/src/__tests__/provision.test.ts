@@ -40,7 +40,7 @@ function capturing(routes: Record<string, unknown>): { fetch: typeof fetch; call
   return { fetch: f, calls };
 }
 
-const account: ProviderAccount = { id: "a", provider: "x", label: "L", credentials: { apiKey: "k", phoneNumberId: "pn", from: "+1" }, createdAt: 0 };
+const account: ProviderAccount = { id: "a", provider: "x", label: "L", credentials: { apiKey: "k", phoneNumberId: "pn", from: "+14155550111" }, createdAt: 0 };
 const agentFrom = (id: string): HostedTestingAgent => ({
   id: "h", accountId: "a", provider: "x", externalAgentId: id, name: "n", createdAt: 0, spec,
 });
