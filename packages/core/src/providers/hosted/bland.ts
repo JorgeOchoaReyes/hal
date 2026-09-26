@@ -49,9 +49,11 @@ export class BlandIntegration implements VoiceProviderIntegration {
 
   private readonly fetchImpl: FetchLike;
   private readonly base: string;
+  private readonly recordingFetch: FetchLike;
 
   constructor(fetchImpl: FetchLike = fetch, baseUrl = "https://api.bland.ai") {
     this.fetchImpl = withTimeout(fetchImpl);
+    this.recordingFetch = fetchImpl;
     this.base = baseUrl.replace(/\/$/, "");
   }
 
@@ -238,11 +240,13 @@ export class BlandIntegration implements VoiceProviderIntegration {
     const from = callerId(account, target);
     const body = agent.spec?.structured || agent.spec?.pathwayId
       ? {
+          record: true,
           phone_number: target.phoneNumber,
           pathway_id: agent.externalAgentId,
           ...(from ? { from } : {}),
         }
       : {
+          record: true,
           phone_number: target.phoneNumber,
           task: resolved.systemPrompt,
           first_sentence: resolved.firstMessage,
@@ -276,6 +280,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
   ): Promise<{ externalCallId: string }> {
     const from = callerId(account, target);
     const body: Record<string, unknown> = {
+      record: true,
       phone_number: target.phoneNumber,
       pathway_id: outbound.externalAgentId,
       ...(from ? { from } : {}),
@@ -348,6 +353,15 @@ export class BlandIntegration implements VoiceProviderIntegration {
       out.push({ id, name, kind: "pathway" });
     }
     return out;
+  }
+
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    // Fixed authenticated API endpoint; never fetch a user-supplied URL.
+    return this.recordingFetch(`${this.base}/v1/recordings/${encodeURIComponent(externalCallId)}`, {
+      headers: { ...this.headers(account), "content-type": "audio/mpeg", accept: "audio/mpeg" },
+      signal: AbortSignal.timeout(60_000),
+      redirect: "error",
+    });
   }
 
   async getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState> {

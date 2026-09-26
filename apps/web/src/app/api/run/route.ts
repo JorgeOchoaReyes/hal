@@ -1,3 +1,4 @@
+import { snapshotRun } from "@/lib/runContext";
 import { NextRequest } from "next/server";
 import { halState, saveResult } from "@/lib/store";
 import { resolveOverriddenTestCase } from "@/lib/runOverrides";
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     return new Response(error ?? "Unknown test case", { status: status ?? 404 });
   }
 
+  const context = snapshotRun(testCase);
   const encoder = new TextEncoder();
   const { engine } = halState();
 
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
       const handle = engine.run(testCase);
       const unsub = handle.events.on((event) => {
         if (event.type === "done") {
-          const result: TestResult = label ? { ...event.result, runLabel: label } : event.result;
+          const result: TestResult = { ...event.result, runLabel: label, context };
           saveResult(result);
           send({ ...event, result });
           unsub();

@@ -1,3 +1,5 @@
+import { snapshotRun, hostedContext } from "@/lib/runContext";
+import { downloadRunRecording } from "@/lib/runRecordings";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getIntegration,
@@ -7,7 +9,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, getTestCase, getAgent, getTarget, saveResult, upsertAgent } from "@/lib/store";
+import { getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -111,6 +113,8 @@ export async function POST(req: NextRequest) {
     structured: testCase.scenario.structured,
   };
 
+  const initialContext = snapshotRun(testCase);
+
   // Prevent a second dispatch from replacing the receiving pathway mid-call.
   const inboundRuns = globalThis.__halInboundRuns ??= new Set<string>();
   const inboundKey = outboundIsTarget ? `${account.id}:${body.phoneNumber.replace(/[\s().-]/g, "")}` : undefined;
@@ -136,6 +140,8 @@ export async function POST(req: NextRequest) {
 
     if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 
+    const context = hostedContext(initialContext, account, agent, body.phoneNumber, targetAgent, outboundIsTarget,
+      body.fromNumber === undefined ? account.credentials.from : body.fromNumber);
     const result = await runHostedCall({
       testCaseId: testCase.id,
       integration,
@@ -156,8 +162,11 @@ export async function POST(req: NextRequest) {
             )
         : undefined,
     });
+    result.context = context;
+    result.recordingSource = { provider: account.provider, accountId: account.id };
     saveResult(result);
-    return NextResponse.json({ result, agentId: agent.id });
+    if (result.externalCallId && integration.getRecording) await downloadRunRecording(result.id);
+    return NextResponse.json({ result: getResult(result.id), agentId: agent.id });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   } finally {

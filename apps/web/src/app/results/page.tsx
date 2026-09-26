@@ -11,8 +11,8 @@ export default function ResultsPage() {
     return {
       id: r.id,
       testCaseId: r.testCaseId,
-      simName: tc?.name ?? r.testCaseId,
-      transport: tc?.target.transport ?? "mock",
+      simName: r.context?.simulationName ?? tc?.name ?? r.testCaseId,
+      transport: r.context?.transport ?? tc?.target.transport ?? "unknown",
       status: r.status,
       startedAt: r.startedAt,
       durationMs: r.endedAt ? r.endedAt - r.startedAt : undefined,
@@ -31,7 +31,7 @@ export default function ResultsPage() {
           <p className="sub" style={{ margin: "4px 0 0" }}>
             Every run across all simulations, newest first — status, verdict score, and the
             labels the judge assigned. Give a run a label when you start it (or a batch of them)
-            to find it again here. Click a simulation to open its detail and full transcript.
+            to find it again here. Open a run to review its audio, transcript, agents, and judge evaluations.
           </p>
         </div>
       </div>

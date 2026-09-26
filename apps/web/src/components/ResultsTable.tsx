@@ -102,9 +102,10 @@ export default function ResultsTable({ rows }: { rows: ResultRow[] }) {
                   {new Date(r.startedAt).toLocaleString()}
                 </td>
                 <td>
-                  <Link href={`/simulations/${r.testCaseId}`} style={{ fontWeight: 600 }}>
+                  <Link href={`/results/${encodeURIComponent(r.id)}`} style={{ fontWeight: 600 }}>
                     {r.simName}
                   </Link>
+                  <div className="muted mono" style={{ fontSize: 11 }}>{r.id}</div>
                 </td>
                 <td className="muted mono" style={{ fontSize: 12 }}>
                   {r.runLabel ?? "—"}

@@ -56,6 +56,8 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Stage web + boot smoke test
         run: pnpm --filter @hal/desktop smoke:server
+      - name: Run details and local audio smoke test
+        run: pnpm --filter @hal/web smoke:results
 
   docker:
     runs-on: ubuntu-latest

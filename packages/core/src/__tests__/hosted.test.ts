@@ -448,3 +448,17 @@ test("poll failures preserve transcript and provider failure reasons", async () 
   const empty = await runHostedCall(runnerOptions(async () => ({ externalCallId: "c", status: "ended" })));
   assert.equal(empty.status, "errored");
 });
+
+test("Bland requests call recordings through the authenticated audio endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const bland = new BlandIntegration((async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(new Uint8Array([1, 2]), { headers: { "content-type": "audio/mpeg" } });
+  }) as typeof fetch);
+  const response = await bland.getRecording(account, "call/id");
+  assert.equal(requests[0].url, "https://api.bland.ai/v1/recordings/call%2Fid");
+  assert.equal((requests[0].init?.headers as Record<string, string>).authorization, "Bearer sk-test");
+  assert.equal((requests[0].init?.headers as Record<string, string>)["content-type"], "audio/mpeg");
+  assert.equal(requests[0].init?.redirect, "error");
+  assert.equal(response.headers.get("content-type"), "audio/mpeg");
+});

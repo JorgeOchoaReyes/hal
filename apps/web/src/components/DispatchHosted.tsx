@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import NumberPicker from "./NumberPicker";
 
@@ -62,6 +63,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{
+    id: string;
     status: string;
     error?: string;
     externalCallId?: string;
@@ -283,6 +285,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               </span>
             )}
           </div>
+          <p><Link href={`/results/${encodeURIComponent(result.id)}`}>View full run details →</Link></p>
           {result.error && (
             <div
               className="mono"

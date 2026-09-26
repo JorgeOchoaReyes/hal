@@ -178,6 +178,8 @@ export interface VoiceProviderIntegration {
     agent: HostedTestingAgent,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }>;
+  /** Authenticated recording stream. Hosts persist it locally, not in the browser. */
+  getRecording?(account: ProviderAccount, externalCallId: string): Promise<Response>;
   /** Fetch the current state (and transcript, once ended) of a call. */
   getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState>;
   /**
