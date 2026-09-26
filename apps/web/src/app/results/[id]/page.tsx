@@ -32,11 +32,13 @@ function JudgeConfiguration({ spec }: { spec: JudgeSpec }) {
 }
 
 function Agent({ title, agent }: { title: string; agent: RunAgentSnapshot }) {
+  const pathwayId = agent.pathwayId ?? (agent.provider === "bland" && agent.configuration?.structured ? agent.externalAgentId : undefined);
   return <section className="card"><p className="field-label">{title}</p><h3 style={{ margin: "8px 0" }}>{agent.name}</h3>
     <dl className="run-facts">
       {agent.id && <><dt>HAL ID</dt><dd className="mono">{agent.id}</dd></>}
       {agent.provider && <><dt>Provider</dt><dd>{agent.provider}</dd></>}
       {agent.externalAgentId && <><dt>Provider agent ID</dt><dd className="mono">{agent.externalAgentId}</dd></>}
+      {agent.provider === "bland" && <><dt>Bland pathway ID</dt><dd>{pathwayId ? <><span className="mono">{pathwayId}</span><br /><small className="muted">{agent.pathwaySource === "dispatch" ? "Sent in this run’s dispatch" : agent.pathwaySource === "inbound-number" ? "Read from the inbound number before dispatch" : agent.pathwaySource === "saved-agent" ? "Saved target configuration; inbound assignment not verified" : "Captured from this run’s structured agent"}</small></> : agent.executionMode === "prompt" ? "None — task prompt call" : "Not captured / not verified for this run"}</dd></>}
       {agent.direction && <><dt>Direction</dt><dd>{agent.direction === "inbound" ? "Inbound · receives call" : "Outbound · places call"}</dd></>}
       {agent.phoneNumber && <><dt>Number</dt><dd>{agent.phoneNumber}</dd></>}
     </dl>

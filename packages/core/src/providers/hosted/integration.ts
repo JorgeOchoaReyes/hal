@@ -1,4 +1,4 @@
-import { Persona, Transcript } from "../../types.js";
+import { Persona, Transcript, ScenarioStep } from "../../types.js";
 import { ProviderField } from "../templates.js";
 import { StructuredTest, compileStructuredToPrompt, firstMessageOf } from "../../simulation/structured.js";
 
@@ -52,6 +52,8 @@ export interface TestingAgentSpec {
    * step-by-step reproduction) instead of using the plain persona prompt.
    */
   structured?: StructuredTest;
+  /** Authored linear script, used when structured is absent. */
+  steps?: ScenarioStep[];
   /**
    * An existing provider pathway/flow id to run the call against directly,
    * instead of provisioning one. For Bland this is a Pathway built in the
@@ -152,6 +154,8 @@ export interface VoiceProviderIntegration {
    * so the UI can preview the deterministic, step-by-step reproduction before
    * provisioning.
    */
+  getInboundPathway?(account: ProviderAccount, phoneNumber: string): Promise<string | undefined>;
+
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown>;
   /**
    * Pre-flight: make a cheap authenticated request to confirm the credentials

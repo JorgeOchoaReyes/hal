@@ -20,16 +20,17 @@ const judge = { id: "j1", name: "Booking checker", kind: "code", createdAt: 0, s
 const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [] };
 const fixture = { id: "run1", testCaseId: "tc1", status: "passed", startedAt: 0, endedAt: 1000, transcript: [{ role: "target", text: "Your appointment is booked.", startedAt: 1 }], liveChecks: [], verdict: originalVerdict,
   recording: { status: "available", contentType: "audio/wav", bytes: 76, downloadedAt: 1 },
-  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester" }, targetAgent: { name: "Historical target" }, judge: judge.spec, judges: [judge] } };
+  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: judge.spec, judges: [judge] } };
 const tc = { id: "tc1", name: "Current simulation", target: { name: "Mock target", transport: "mock", mock: { systemPrompt: "Say hello", greeting: "Hello" } }, scenario: { id: "s1", name: "Test", persona: { name: "New tester", systemPrompt: "Say hello" }, steps: [{ kind: "say", text: "Hello" }], maxTurns: 2 }, judge: { mode: "rules-only", rules: [{ kind: "min-turns", count: 1 }] } };
 await writeFile(join(data, "results.json"), JSON.stringify([fixture]));
 await writeFile(join(data, "judges.json"), JSON.stringify([judge]));
-await writeFile(join(data, "testcases.json"), JSON.stringify([tc]));
+await writeFile(join(data, "testcases.json"), JSON.stringify([tc, { ...tc, id: "tc-unsupported", scenario: { ...tc.scenario, steps: [{ kind: "wait", timeoutMs: 1000 }] } }]));
+await writeFile(join(data, "targets.json"), JSON.stringify([{ id: "t1", name: "Target", provider: "bland", target: tc.target }]));
 await mkdir(join(data, "recordings"));
 // Valid mono PCM WAV: one short silent clip.
 const wav = Buffer.alloc(76); wav.write("RIFF"); wav.writeUInt32LE(68, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(32, 40);
 await writeFile(join(data, "recordings", createHash("sha256").update("run1").digest("hex") + ".audio"), wav);
-const child = spawn(process.execPath, [server], { cwd: dirname(server), env, stdio: ["ignore", "pipe", "pipe"] });
+let child = spawn(process.execPath, [server], { cwd: dirname(server), env, stdio: ["ignore", "pipe", "pipe"] });
 let logs = "";
 child.stdout.on("data", (d) => logs += d); child.stderr.on("data", (d) => logs += d);
 const base = `http://127.0.0.1:${port}`;
@@ -40,8 +41,41 @@ try {
     if (Date.now() > deadline || child.exitCode !== null) throw new Error("Embedded server failed to start: " + logs);
     await new Promise((r) => setTimeout(r, 100));
   }
+  // Saved BYOT keys must survive restarts without exposing their values.
+  const post = (path, body) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const account = await (await post("/api/provider-accounts", { provider: "bland", label: "Saved key test", credentials: { apiKey: "fixture-api" } })).json();
+  const account2 = await (await post("/api/provider-accounts", { provider: "bland", label: "Other account", credentials: { apiKey: "fixture-api2" } })).json();
+  const secret = "fixture-byot-secret";
+  const saved = await post("/api/byot-keys", { accountId: account.account.id, name: "Main Twilio", encryptedKey: secret });
+  assert.equal(saved.status, 201);
+  const savedText = await saved.text(); assert(!savedText.includes(secret));
+  const key = JSON.parse(savedText).key;
+  const onDisk = await readFile(join(data, "byotkeys.json"), "utf8");
+  assert(!onDisk.includes(secret)); assert(onDisk.includes("enc:v1:"));
+  assert.equal((await post("/api/byot-keys", { accountId: account.account.id, name: "Main Twilio", encryptedKey: secret })).status, 409);
+  assert.deepEqual((await (await fetch(base + `/api/byot-keys?accountId=${account2.account.id}`)).json()).keys, []);
+  assert.equal((await fetch(base + `/api/byot-keys?accountId=${account2.account.id}&id=${key.id}`, { method: "DELETE" })).status, 404);
+  child.kill(); await once(child, "exit");
+  child = spawn(process.execPath, [server], { cwd: dirname(server), env, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", (d) => logs += d); child.stderr.on("data", (d) => logs += d);
+  const restartDeadline = Date.now() + 30_000;
+  while (true) {
+    try { if ((await fetch(base + "/api/results")).ok) break; } catch {}
+    if (Date.now() > restartDeadline || child.exitCode !== null) throw new Error("Restart failed: " + logs);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const afterRestart = await (await fetch(base + `/api/byot-keys?accountId=${account.account.id}`)).text();
+  assert(!afterRestart.includes(secret)); assert.equal(JSON.parse(afterRestart).keys[0].id, key.id);
+  const dispatch = { testCaseId: "tc-unsupported", accountId: account.account.id, phoneNumber: "+14155550123", byotKeyId: key.id, inboundAgent: { kind: "target", id: "t1" }, outboundAgent: { kind: "testing", id: "" } };
+  const validKey = await post("/api/run-hosted-sim", dispatch);
+  assert.equal(validKey.status, 400); assert.match((await validKey.json()).error, /cannot be reproduced exactly/);
+  const wrongAccount = await post("/api/run-hosted-sim", { ...dispatch, accountId: account2.account.id });
+  assert.equal(wrongAccount.status, 400); assert.match((await wrongAccount.json()).error, /Saved BYOT key not found/);
+  assert.equal((await fetch(base + `/api/byot-keys?accountId=${account.account.id}&id=${key.id}`, { method: "DELETE" })).status, 200);
+  assert.deepEqual((await (await fetch(base + `/api/byot-keys?accountId=${account.account.id}`)).json()).keys, []);
+  console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();
-  for (const value of ["Historical tester", "Historical target", "Booking checker", "Original verdict", "Apply additional judges", "/api/results/run1/recording"]) assert(html.includes(value), value);
+  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Original verdict", "Apply additional judges", "/api/results/run1/recording"]) assert(html.includes(value), value);
   assert.equal((await fetch(base + "/results/missing")).status, 404);
   const range = await fetch(base + "/api/results/run1/recording", { headers: { range: "bytes=0-3" } });
   assert.equal(range.status, 206); assert.equal(range.headers.get("content-range"), "bytes 0-3/76"); assert.equal(await range.text(), "RIFF");

@@ -16,6 +16,7 @@
  * becoming conditional transitions and `action_followup` becoming unconditional
  * next-turn transitions. `<endcall>` routes to a terminal End node.
  */
+import type { ScenarioStep } from "../types.js";
 import { StructuredTest, renderFixedMessage } from "./structured.js";
 
 export type FlowNodeType = "start" | "say" | "instruction" | "end";
@@ -85,6 +86,27 @@ export function structuredToFlow(test: StructuredTest): ConversationFlow {
   return { role: test.role, start: "start", nodes, edges };
 }
 
+/** Compile supported linear speech steps without falling back to a persona. */
+export function stepsToFlow(steps: ScenarioStep[], role: string): ConversationFlow {
+  const nodes: FlowNode[] = [];
+  const edges: FlowEdge[] = [];
+  let pending: string[] = [];
+  function flush(end: boolean) {
+    const id = `step${nodes.length}`;
+    if (nodes.length) edges.push({ from: nodes[nodes.length - 1]!.id, to: id, when: "The other party has responded" });
+    nodes.push({ id, type: end ? "end" : "say", text: pending.join(" ") });
+    pending = [];
+  }
+  for (const [i, step] of steps.entries()) {
+    if (step.kind === "say" && !step.delayMs) pending.push(step.text);
+    else if (step.kind === "wait" && step.timeoutMs === undefined && !step.until && pending.length) flush(false);
+    else if (step.kind === "hangup") { flush(true); return { role, start: nodes[0]!.id, nodes, edges }; }
+    else throw new Error(`Hosted Bland script step ${i + 1} (${step.kind}) cannot be reproduced exactly. Use say, untimed wait after speech, and hangup steps, or use a structured simulation. No call was placed.`);
+  }
+  flush(true);
+  return { role, start: nodes[0]!.id, nodes, edges };
+}
+
 // --- Per-platform serializers ------------------------------------------------
 
 /** Bland AI Pathway: nodes (Default / End Call) + edges with condition labels. */
@@ -96,9 +118,10 @@ export function toBlandPathway(flow: ConversationFlow, name = "HAL test"): Recor
       type: n.type === "end" ? "End Call" : "Default",
       data: {
         name: n.id,
-        isStart: n.type === "start",
+        isStart: n.id === flow.start,
         ...(n.type === "instruction" ? { prompt: n.instruction } : {}),
-        ...(n.text ? { text: n.text } : {}),
+        globalPrompt: flow.role,
+        ...(n.text !== undefined ? { text: n.text } : {}),
       },
     })),
     edges: flow.edges.map((e, i) => ({
@@ -106,6 +129,7 @@ export function toBlandPathway(flow: ConversationFlow, name = "HAL test"): Recor
       source: e.from,
       target: e.to,
       label: e.when ?? "proceed",
+      data: { name: e.when ?? "proceed", prompt: e.when ?? "Proceed to the next step" },
     })),
   };
 }

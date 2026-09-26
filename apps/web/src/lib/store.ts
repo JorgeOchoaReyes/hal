@@ -493,3 +493,22 @@ export function setSecrets(patch: Partial<Record<SecretKey, string | null>>): Se
   applySecrets(doc);
   return getSecretsStatus();
 }
+
+// Named BYOT keys are account-scoped and encrypted using the local secrets key.
+interface SavedByotKey { id: string; accountId: string; name: string; encryptedKey: string; createdAt: number }
+export function listByotKeys(accountId: string) {
+  return halState().db.loadAll<SavedByotKey>("byotkeys")
+    .filter((k) => k.accountId === accountId)
+    .map(({ encryptedKey: _secret, ...metadata }) => metadata);
+}
+export function saveByotKey(key: SavedByotKey): void {
+  halState().db.put("byotkeys", key.id, { ...key, encryptedKey: encryptString(key.encryptedKey) }, key.createdAt);
+}
+export function resolveByotKey(accountId: string, keyId: string): string | undefined {
+  const key = halState().db.loadAll<SavedByotKey>("byotkeys").find((k) => k.id === keyId && k.accountId === accountId);
+  return key ? decryptString(key.encryptedKey) : undefined;
+}
+export function deleteByotKey(accountId: string, keyId: string): boolean {
+  if (!listByotKeys(accountId).some((k) => k.id === keyId)) return false;
+  return halState().db.remove("byotkeys", keyId);
+}

@@ -18,7 +18,7 @@ import {
   withTimeout,
 } from "./integration.js";
 import { structuredToSteps } from "../../simulation/structured.js";
-import { structuredToFlow, toBlandPathway } from "../../simulation/flow.js";
+import { stepsToFlow, structuredToFlow, toBlandPathway } from "../../simulation/flow.js";
 
 /**
  * Bland AI integration.
@@ -84,7 +84,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
   buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
     return spec.structured
       ? toBlandPathway(structuredToFlow(spec.structured), spec.name)
-      : null;
+      : spec.steps?.length ? toBlandPathway(stepsToFlow(spec.steps, spec.persona.systemPrompt), spec.name) : null;
   }
 
   /** Native Bland agent body. Steps are also attached for traceability. */
@@ -150,9 +150,12 @@ export class BlandIntegration implements VoiceProviderIntegration {
     // 2) Set the node/edge graph (POST /v1/pathway/{id}).
     const graphBody = { name, description, nodes: graph.nodes, edges: graph.edges };
     const updateRes = await this.post(account, `/v1/pathway/${pathwayId}`, graphBody);
-    if (!updateRes.ok) {
+    const updateText = await safeText(updateRes);
+    let updateFailed = !updateRes.ok;
+    try { updateFailed ||= JSON.parse(updateText).status === "error"; } catch { /* HTTP status remains authoritative */ }
+    if (updateFailed) {
       throw new Error(
-        `Bland pathway ${pathwayId} created but setting nodes/edges failed (${updateRes.status}): ${(await safeText(updateRes)).slice(0, 200)}`,
+        `Bland pathway ${pathwayId} created but setting nodes/edges failed (${updateRes.status}): ${updateText.slice(0, 200)}`,
       );
     }
 
@@ -197,7 +200,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
 
     // Compile a structured test into a Bland Pathway via the documented V1
     // pathway lifecycle. The returned pathway id is used to place the call.
-    if (spec.structured) {
+    if (spec.structured || spec.steps?.length) {
       return { externalAgentId: await this.provisionPathway(account, spec) };
     }
 
@@ -214,8 +217,15 @@ export class BlandIntegration implements VoiceProviderIntegration {
     return { externalAgentId: agentId };
   }
 
+  async getInboundPathway(account: ProviderAccount, phoneNumber: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/v1/inbound/${encodeURIComponent(phoneNumber)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { pathway_id?: unknown };
+    return typeof data.pathway_id === "string" && data.pathway_id.trim() ? data.pathway_id.trim() : undefined;
+  }
+
   async configureInbound(account: ProviderAccount, agent: HostedTestingAgent, phoneNumber: string): Promise<void> {
-    if (!agent.spec?.structured && !agent.spec?.pathwayId) {
+    if (!agent.spec?.structured && !agent.spec?.steps?.length && !agent.spec?.pathwayId) {
       throw new Error("Inbound Bland testing requires a structured simulation/pathway. Select a structured simulation so HAL can assign its pathway to the dedicated test number.");
     }
     const res = await this.post(account, `/v1/inbound/${encodeURIComponent(phoneNumber)}`, {
@@ -238,7 +248,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
     // Pathway call when the agent is pathway-based (a supplied pathway id or a
     // compiled structured test). The pathway id lives on externalAgentId.
     const from = callerId(account, target);
-    const body = agent.spec?.structured || agent.spec?.pathwayId
+    const body = agent.spec?.structured || agent.spec?.steps?.length || agent.spec?.pathwayId
       ? {
           record: true,
           phone_number: target.phoneNumber,
