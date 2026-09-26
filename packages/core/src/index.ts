@@ -138,3 +138,5 @@ export { parseTranscript, transcriptToSayScript } from "./transcript.js";
 
 // Sample fixtures
 export * from "./fixtures.js";
+
+export { BlandChatTransport } from "./transport/bland-chat.js";

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import BlandChatRun from "./BlandChatRun";
 import NumberPicker from "./NumberPicker";
 
 interface Account {
@@ -50,6 +51,7 @@ function parse(value: string): { kind: AgentKind; id: string } {
  * saved agent under test.
  */
 export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
+  const [mode, setMode] = useState<"call" | "chat">("call");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
   const [testingAgents, setTestingAgents] = useState<TestingAgentLite[]>([]);
@@ -208,141 +210,54 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   }
 
   return (
-    <div className="card">
-      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-        Dispatch this simulation to a hosted platform. Pick which agent waits (inbound) and which
-        one places the call (outbound) — one side must be a testing agent, HAL reconfigures it to
-        match this simulation&apos;s current persona/scenario before the call and judges the result.
-      </p>
-      {accounts.length === 0 ? (
-        <p className="muted">
-          No provider accounts yet — connect one on <a href="/agents">Hosted agents</a>.
-        </p>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Provider account</span>
-              <select disabled={busy || keyBusy || keysLoading} value={selected} onChange={(e) => {
-                setAccountId(e.target.value);
-                if (inboundParsed.kind === "testing") { setInbound(AUTO); setPhone(""); }
-                if (outboundParsed.kind === "testing") setOutbound(AUTO);
-              }} style={{ width: "auto" }}>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label} ({a.provider})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">
-                Inbound <span className="pill inbound" style={{ marginLeft: 4 }}>waits</span>
-              </span>
-              <select
-                value={inbound}
-                onChange={(e) => setInbound(e.target.value as AgentValue)}
-                style={{ width: "auto" }}
-                title="The agent that waits and answers the call"
-              >
-                {options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">
-                Outbound <span className="pill outbound" style={{ marginLeft: 4 }}>calls</span>
-              </span>
-              <select
-                value={outbound}
-                onChange={(e) => setOutbound(e.target.value as AgentValue)}
-                style={{ width: "auto" }}
-                title="The agent that places the call"
-              >
-                {options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Inbound agent&apos;s number</span>
-              <NumberPicker
-                accountId={selected}
-                value={phone}
-                onChange={setPhone}
-                placeholder="+14155550123 (inbound agent)"
-              />
-            </label>
-            <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Outbound caller ID (from)</span>
-              <select aria-label="Caller ID source" value={callerIdMode} onChange={(e) => setCallerIdMode(e.target.value)}>
-                <option value="account">Use provider account default</option>
-                {isBland && <option value="pool">Use Bland default pool</option>}
-                <option value="custom">Choose a caller ID owned by this account</option>
-              </select>
-              {callerIdMode === "custom" && (
-              <NumberPicker
-                accountId={selected}
-                value={fromPhone}
-                onChange={setFromPhone}
-                ariaLabel="Custom outbound caller ID"
-                placeholder="+14155550123 (owned caller ID)"
-              />
-              )}
-              <small className="muted">{isBland ? "Must belong to the selected Bland account. Include + and country code. Twilio numbers also need a matching BYOT encrypted key." : "Raw caller ID overrides apply to Retell. Vapi and ElevenLabs use the phone number ID configured on the account."}</small>
-            </label>
-            {isBland && callerIdMode !== "pool" && (
-              <div className="field" style={{ margin: 0, width: "auto" }}>
-                <label>
-                  <span className="field-label">Twilio BYOT encrypted key (optional)</span>
-                  <select disabled={busy || keyBusy || keysLoading} value={byotKeyId} onChange={(e) => { setByotKeyId(e.target.value); setEncryptedKey(""); }}>
-                    <option value="">Use agent/account key or enter a new key</option>
-                    {savedKeys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}
-                  </select>
-                </label>
-                {byotKeyId ? (
-                  <button type="button" disabled={busy || keyBusy || keysLoading} onClick={removeKey}>Remove saved key</button>
-                ) : (
-                  <>
-                    <input aria-label="New BYOT encrypted key" type="password" autoComplete="off" spellCheck={false} disabled={busy || keyBusy || keysLoading} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Bland encrypted_key for this caller ID" />
-                    <input aria-label="Saved key name" maxLength={120} disabled={busy || keyBusy || keysLoading} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="Key name, e.g. Main Twilio" />
-                    <button type="button" onClick={saveKey} disabled={busy || keyBusy || keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key for reuse"}</button>
-                  </>
-                )}
-                <small className="muted">Saved keys stay on this device for this Bland account. Use the matching encrypted key from Bland, not your Twilio auth token. Save it to select it on future calls. An unsaved key applies to this call only; blank uses the outbound agent’s key, then the account’s key.</small>
-                {keyError && <small role="alert" style={{ color: "var(--fail)" }}>{keyError}</small>}
-              </div>
-            )}
-            <button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>
-              {busy ? "Dispatching…" : "Dispatch to provider"}
-            </button>
-          </div>
-          {outboundIsTarget && (
-            <label>
-              <input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} />
-              Configure this dedicated inbound test number with the simulation’s pathway before calling. This replaces its current pathway and remains set after the run. Bland supports structured simulations and supported linear scripts.
-            </label>
-          )}
-          {invalidPair && (
-            <p className="muted" style={{ fontSize: 12, margin: 0, color: "var(--fail)" }}>
-              Pick one testing agent from the selected provider account and one agent under test.
-            </p>
-          )}
+    <div className="card hosted-panel">
+      <div className="section-heading"><div><h3>Hosted testing</h3><p className="muted">Run the saved scenario against your provider.</p></div>
+        <div className="mode-switch" aria-label="Test channel">
+          <button className={mode === "call" ? "active" : "secondary"} aria-pressed={mode === "call"} disabled={busy} onClick={() => setMode("call")}>Phone call</button>
+          <button className={mode === "chat" ? "active" : "secondary"} aria-pressed={mode === "chat"} disabled={busy} onClick={() => setMode("chat")}>Bland chat</button>
         </div>
-      )}
-      {err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
-      {result && (
+      </div>
+      {mode === "chat" ? <BlandChatRun testCaseId={testCaseId} /> : accounts.length === 0 ? <p className="muted">Connect an account on <Link href="/agents">Providers</Link> to place a call.</p> : <>
+        <label className="field account-picker"><span className="field-label">Provider account</span>
+          <select disabled={busy || keyBusy || keysLoading} value={selected} onChange={(e) => { setAccountId(e.target.value); if (inboundParsed.kind === "testing") { setInbound(AUTO); setPhone(""); } if (outboundParsed.kind === "testing") setOutbound(AUTO); }}>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.label} ({a.provider})</option>)}
+          </select>
+        </label>
+        <fieldset disabled={busy || keyBusy} className="scenario-fields">
+          <div className="call-participants">
+            <section className="participant-panel"><div className="section-heading"><h4>Caller</h4><span className="pill outbound">Outbound</span></div>
+              <label className="field"><span className="field-label">Agent placing the call</span><select value={outbound} onChange={(e) => setOutbound(e.target.value as AgentValue)}>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
+              <label className="field"><span className="field-label">Caller ID</span><select value={callerIdMode} onChange={(e) => setCallerIdMode(e.target.value)}><option value="account">Account default</option>{isBland && <option value="pool">Bland default pool</option>}<option value="custom">Choose a number</option></select></label>
+              {callerIdMode === "custom" && <NumberPicker accountId={selected} value={fromPhone} onChange={setFromPhone} ariaLabel="Outbound caller ID" placeholder="+14155550123" />}
+              <p className="field-help">{isBland ? "Use a number owned by this account, including + and country code." : "Vapi and ElevenLabs use the number ID saved on the account."}</p>
+            </section>
+            <section className="participant-panel"><div className="section-heading"><h4>Receiver</h4><span className="pill inbound">Inbound</span></div>
+              <label className="field"><span className="field-label">Agent answering the call</span><select value={inbound} onChange={(e) => setInbound(e.target.value as AgentValue)}>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
+              <div className="field"><span className="field-label">Destination number</span><NumberPicker accountId={selected} value={phone} onChange={setPhone} ariaLabel="Inbound destination number" placeholder="+14155550123" /></div>
+              <p className="field-help">The number the caller will dial.</p>
+            </section>
+          </div>
+          {isBland && callerIdMode !== "pool" && <details className="outbound-settings"><summary>Twilio caller credentials <span className="muted">· optional, outbound only</span></summary>
+            <p className="field-help">Leave blank to use the caller agent’s saved key, then the account default. The receiving agent’s key is not used.</p>
+            <label className="field"><span className="field-label">Saved BYOT key</span><select disabled={keysLoading} value={byotKeyId} onChange={(e) => { setByotKeyId(e.target.value); setEncryptedKey(""); }}><option value="">Use caller default or enter a key</option>{savedKeys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}</select></label>
+            {byotKeyId ? <button type="button" className="secondary" onClick={removeKey}>Remove saved key</button> : <div className="settings-grid">
+              <label className="field"><span className="field-label">Bland encrypted key</span><input type="password" autoComplete="off" spellCheck={false} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Paste the BYOT encrypted key" /></label>
+              <label className="field"><span className="field-label">Name for reuse</span><input maxLength={120} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="e.g. Main Twilio" /></label>
+              <button type="button" className="secondary" onClick={saveKey} disabled={keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key"}</button>
+            </div>}
+            {keyError && <p role="alert" className="error-text">{keyError}</p>}
+          </details>}
+          {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with this scenario. This replaces its current pathway and stays set after the run.</span></label>}
+          {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
+        </fieldset>
+        <div className="action-bar"><span className="field-help">Uses the saved scenario below. This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
+      </>}
+      {mode === "call" && err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
+      {mode === "call" && result && (
         <div style={{ marginTop: 10 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span className={`pill ${result.status}`}>{result.status}</span>
-            {(result.labels ?? []).map((l, i) => (
+            {(result.labels ?? []).filter((l) => l.text.toLowerCase() !== result.status.toLowerCase()).map((l, i) => (
               <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
             ))}
             {result.externalCallId && (
@@ -369,14 +284,14 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
             </div>
           )}
           {(result.transcript?.length ?? 0) > 0 && (
-            <div className="transcript" style={{ marginTop: 8 }}>
+            <details style={{ marginTop: 12 }}><summary>View transcript</summary><div className="transcript">
               {result.transcript!.map((u, i) => (
                 <div className={`turn ${u.role}`} key={i}>
                   <div className="who">{u.role}</div>
                   <div>{u.text}</div>
                 </div>
               ))}
-            </div>
+            </div></details>
           )}
         </div>
       )}

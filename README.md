@@ -122,3 +122,24 @@ Run details capture the script and the tester pathway ID submitted with the call
 For inbound Bland targets, HAL attempts to read the number’s assigned pathway
 before dispatch. The page distinguishes this from a saved, unverified target
 pathway ID. Older runs without this information remain explicitly unverified.
+
+### Editing and text-based Bland tests
+
+On a simulation page, use **Edit scenario** to change persona instructions,
+script steps or structured conditions, then **Save scenario**. Changes apply to
+future runs; past run snapshots are preserved. Concurrent edits are rejected so
+an older editor cannot silently overwrite a newer scenario.
+
+Hosted testing has **Phone call** and **Bland chat** modes. Chat executes the saved
+scenario as text against a selected Bland pathway, uses the simulation’s judges,
+and saves the transcript in Results. It requires a Bland account and pathway,
+but no phone number or Twilio key. Dynamic persona steps and AI judges also need
+a configured LLM provider. Chat does not test audio or telephony behavior.
+
+Testing agents now have **Edit agent**. Main agents can also be edited. Both offer
+an optional **Outbound Twilio credentials** section: select a named saved BYOT
+key or store a key on the agent. HAL encrypts per-agent keys locally and does not
+return them in agent lists. Only the agent placing a phone call supplies its key;
+an inbound agent’s key is ignored. Dispatch overrides take precedence, followed
+by the outbound agent’s setting and the provider account default. A removed saved
+key produces an actionable error when its assigned agent next calls outbound.

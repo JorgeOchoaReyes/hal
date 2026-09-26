@@ -64,7 +64,7 @@ function seed(): HalState {
   for (const a of db.loadAll<ProviderAccount>("accounts"))
     accounts.set(a.id, { ...a, credentials: decryptCredentials(a.credentials) });
   const agents = new Map<string, HostedTestingAgent>();
-  for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, a);
+  for (const a of db.loadAll<HostedTestingAgent>("agents")) agents.set(a.id, { ...a, encryptedKey: a.encryptedKey ? decryptString(a.encryptedKey) : undefined });
   const judges = new Map<string, SavedJudge>();
   for (const j of db.loadAll<SavedJudge>("judges")) judges.set(j.id, j);
   const prodCalls = new Map<string, ProdCall>();
@@ -72,7 +72,7 @@ function seed(): HalState {
 
   // "My agents" — the real targets under test.
   const targets = new Map<string, TargetAgent>();
-  for (const t of db.loadAll<TargetAgent>("targets")) targets.set(t.id, t);
+  for (const t of db.loadAll<TargetAgent>("targets")) targets.set(t.id, { ...t, encryptedKey: t.encryptedKey ? decryptString(t.encryptedKey) : undefined });
 
   // Start a media server for real telephony audio when Twilio is configured.
   let mediaServer: MediaServer | undefined;
@@ -253,7 +253,7 @@ export function upsertAccount(a: ProviderAccount): void {
 }
 
 export function listAgents(): HostedTestingAgent[] {
-  return [...halState().agents.values()].sort((a, b) => b.createdAt - a.createdAt);
+  return [...halState().agents.values()].map(publicAgent).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function getAgent(id: string): HostedTestingAgent | undefined {
@@ -263,13 +263,13 @@ export function getAgent(id: string): HostedTestingAgent | undefined {
 export function upsertAgent(a: HostedTestingAgent): void {
   const s = halState();
   s.agents.set(a.id, a);
-  s.db.put("agents", a.id, a, a.createdAt);
+  s.db.put("agents", a.id, { ...a, encryptedKey: a.encryptedKey ? encryptString(a.encryptedKey) : undefined }, a.createdAt);
 }
 
 // --- Target agents ("My agents" — the real agents under test) ---------------
 
 export function listTargets(): TargetAgent[] {
-  return [...halState().targets.values()].sort((a, b) => b.createdAt - a.createdAt);
+  return [...halState().targets.values()].map(publicAgent).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function getTarget(id: string): TargetAgent | undefined {
@@ -279,7 +279,7 @@ export function getTarget(id: string): TargetAgent | undefined {
 export function upsertTarget(t: TargetAgent): void {
   const s = halState();
   s.targets.set(t.id, t);
-  s.db.put("targets", t.id, t, t.createdAt);
+  s.db.put("targets", t.id, { ...t, encryptedKey: t.encryptedKey ? encryptString(t.encryptedKey) : undefined }, t.createdAt);
 }
 
 export function deleteTarget(id: string): boolean {
@@ -511,4 +511,15 @@ export function resolveByotKey(accountId: string, keyId: string): string | undef
 export function deleteByotKey(accountId: string, keyId: string): boolean {
   if (!listByotKeys(accountId).some((k) => k.id === keyId)) return false;
   return halState().db.remove("byotkeys", keyId);
+}
+
+export function publicAgent<T extends { encryptedKey?: string }>(agent: T) {
+  return { ...agent, encryptedKey: undefined, hasEncryptedKey: Boolean(agent.encryptedKey) };
+}
+export function outboundAgentKey(accountId: string, agent: { byotKeyId?: string; byotAccountId?: string; encryptedKey?: string }): string | undefined {
+  if (!agent.byotKeyId) return agent.encryptedKey;
+  if (agent.byotAccountId && agent.byotAccountId !== accountId) throw new Error("The outbound agent’s saved BYOT key belongs to a different Bland account.");
+  const key = resolveByotKey(accountId, agent.byotKeyId);
+  if (!key) throw new Error("The outbound agent’s saved BYOT key was removed. Edit the agent and select another key.");
+  return key;
 }

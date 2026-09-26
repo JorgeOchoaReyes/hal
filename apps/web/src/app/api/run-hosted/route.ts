@@ -2,7 +2,7 @@ import { hostedContext } from "@/lib/runContext";
 import { downloadRunRecording } from "@/lib/runRecordings";
 import { NextRequest, NextResponse } from "next/server";
 import { getIntegration, createLLM, runHostedCall, type JudgeSpec } from "@hal/core";
-import { getAccountRaw, getAgent, getResult, saveResult } from "@/lib/store";
+import { outboundAgentKey, getAccountRaw, getAgent, getResult, saveResult } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   if (!body.phoneNumber) return NextResponse.json({ error: "phoneNumber required" }, { status: 400 });
 
+  let callerKey: string | undefined;
+  try { callerKey = outboundAgentKey(account.id, agent); }
+  catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
   const judge = body.judge ?? { mode: "llm-only" as const, criteria: ["The call completed successfully."] };
   const context = hostedContext({ transport: account.provider, testingAgent: { name: agent.name },
     targetAgent: { name: "Agent under test" }, judge, judges: [] }, account, agent, body.phoneNumber, undefined, false, account.credentials.from);
@@ -35,7 +38,7 @@ export async function POST(req: NextRequest) {
     testCaseId: body.testCaseId ?? `hosted:${agent.id}`,
     integration,
     account,
-    agent,
+    agent: { ...agent, encryptedKey: callerKey },
     target: { phoneNumber: body.phoneNumber },
     judge,
     llm: createLLM(body.judge?.provider ?? "auto", body.judge?.model),
