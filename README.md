@@ -41,8 +41,12 @@ and a country code, such as `+14155550123`. HAL removes formatting spaces,
 parentheses, periods and hyphens, but does not guess a country code. For a number
 uploaded from Twilio, configure the matching Bland BYOT encrypted key on the
 provider account or outbound agent, or enter it in dispatch’s **Twilio BYOT
-encrypted key** field beside the caller ID. The dispatch value takes precedence
-for this call only and is not saved to the agent, account, or run. Blank uses
+encrypted key** field beside the caller ID. Give the key a name and choose **Save key for reuse**, then select it on future
+calls for that Bland account. Saved keys persist across app restarts, encrypted
+at rest in the local data directory; only names and IDs are returned to the UI.
+Use **Remove saved key** to delete one. A selected key takes precedence over
+the outbound agent/account key. Unsaved input applies to this call only.
+Keys are never included in run snapshots. Blank uses
 the outbound agent’s key, then the account’s key. HAL sends that key in the `encrypted_key`
 header, never in the call body. A rejected caller ID is not automatically retried
 with a different number.
@@ -104,3 +108,17 @@ Downloading errors do not discard the run or change its verdict. Downloads are
 limited to 100 MB; partial files are removed on failure. Back up the data directory
 to retain both run history and audio. Recordings are stored as local audio files,
 not encrypted secrets.
+
+### Hosted script execution and pathway IDs
+
+Bland dispatch now passes the simulation’s linear steps into a newly provisioned
+pathway. A `say` followed by `hangup` becomes an End Call node with the exact text.
+Untimed `wait` steps after speech separate turns; unsupported steps (including
+timed waits, delayed speech, prompts, branches and live assertions) are rejected
+before provisioning rather than silently replaced by the persona. Use structured
+simulations for other hosted providers or more complex hosted conversations.
+
+Run details capture the script and the tester pathway ID submitted with the call.
+For inbound Bland targets, HAL attempts to read the number’s assigned pathway
+before dispatch. The page distinguishes this from a saved, unverified target
+pathway ID. Older runs without this information remain explicitly unverified.

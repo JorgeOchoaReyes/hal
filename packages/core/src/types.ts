@@ -354,6 +354,9 @@ export interface ProdCall {
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "errored" | "aborted";
 
 export interface RunAgentSnapshot {
+  pathwayId?: string;
+  pathwaySource?: "dispatch" | "inbound-number" | "saved-agent";
+  executionMode?: "pathway" | "prompt";
   id?: string;
   name: string;
   provider?: string;
@@ -361,7 +364,7 @@ export interface RunAgentSnapshot {
   direction?: CallDirection;
   phoneNumber?: string;
   persona?: Persona;
-  configuration?: { model?: string; voice?: string; structured?: import("./simulation/structured.js").StructuredTest };
+  configuration?: { model?: string; voice?: string; steps?: ScenarioStep[]; structured?: import("./simulation/structured.js").StructuredTest };
 }
 
 export interface RunContext {

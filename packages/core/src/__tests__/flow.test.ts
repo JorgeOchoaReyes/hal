@@ -87,3 +87,14 @@ test("Retell buildFlowConfig emits a conversation flow; structured create binds 
   assert.ok(calls.some((c) => c.endsWith("/create-conversation-flow")));
   assert.ok(calls.some((c) => c.endsWith("/create-agent")));
 });
+
+test("linear scripts preserve speech, wait boundaries and terminal hangup", async () => {
+  const { stepsToFlow } = await import("../simulation/flow.js");
+  const flow = stepsToFlow([{ kind: "say", text: "Hello." }, { kind: "wait" }, { kind: "say", text: "Thank you." }, { kind: "hangup" }, { kind: "say", text: "Unreachable" }], "Tester");
+  assert.equal(flow.nodes.length, 2);
+  assert.equal(flow.nodes[0]!.text, "Hello.");
+  assert.equal(flow.nodes[1]!.type, "end");
+  assert.equal(flow.nodes[1]!.text, "Thank you.");
+  assert.equal(flow.edges[0]!.when, "The other party has responded");
+  assert.throws(() => stepsToFlow([{ kind: "expect", assertion: { kind: "contains", text: "hello" } } as any], "Tester"), /cannot be reproduced exactly/);
+});

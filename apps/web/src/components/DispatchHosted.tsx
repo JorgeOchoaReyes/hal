@@ -60,6 +60,12 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [fromPhone, setFromPhone] = useState("");
   const [callerIdMode, setCallerIdMode] = useState("account");
   const [encryptedKey, setEncryptedKey] = useState("");
+  const [savedKeys, setSavedKeys] = useState<Array<{ id: string; name: string }>>([]);
+  const [byotKeyId, setByotKeyId] = useState("");
+  const [keyName, setKeyName] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [configureInbound, setConfigureInbound] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -137,6 +143,39 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const isBland = accounts.find((a) => a.id === selected)?.provider === "bland";
   const outboundIsTarget = outboundParsed.kind === "target";
 
+  useEffect(() => {
+    let cancelled = false;
+    setSavedKeys([]); setByotKeyId(""); setKeyName(""); setKeyError(null);
+    setKeysLoading(isBland);
+    if (isBland) fetch(`/api/byot-keys?accountId=${encodeURIComponent(selected)}`)
+      .then(async (r) => { if (!r.ok) throw new Error("Could not load saved keys"); return r.json(); })
+      .then((d) => { if (!cancelled) setSavedKeys(d.keys); })
+      .catch((e) => { if (!cancelled) setKeyError(e.message); })
+      .finally(() => { if (!cancelled) setKeysLoading(false); });
+    return () => { cancelled = true; };
+  }, [selected, isBland]);
+
+  async function saveKey() {
+    setKeyBusy(true); setKeyError(null);
+    try {
+      const res = await fetch("/api/byot-keys", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId: selected, name: keyName, encryptedKey }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not save key");
+      setSavedKeys((keys) => [...keys, data.key]); setByotKeyId(data.key.id); setEncryptedKey(""); setKeyName("");
+    } catch (e) { setKeyError((e as Error).message); }
+    finally { setKeyBusy(false); }
+  }
+
+  async function removeKey() {
+    setKeyBusy(true); setKeyError(null);
+    try {
+      const res = await fetch(`/api/byot-keys?accountId=${encodeURIComponent(selected)}&id=${encodeURIComponent(byotKeyId)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Could not remove saved key");
+      setSavedKeys((keys) => keys.filter((key) => key.id !== byotKeyId)); setByotKeyId("");
+    } catch (e) { setKeyError((e as Error).message); }
+    finally { setKeyBusy(false); }
+  }
+
   async function dispatch() {
     setBusy(true);
     setErr(null);
@@ -150,7 +189,8 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           accountId: selected,
           phoneNumber: phone,
           fromNumber: isBland && callerIdMode === "pool" ? "" : callerIdMode === "custom" ? fromPhone.trim() : undefined,
-          encryptedKey: isBland && callerIdMode !== "pool" ? encryptedKey.trim() || undefined : undefined,
+          byotKeyId: isBland && callerIdMode !== "pool" ? byotKeyId || undefined : undefined,
+          encryptedKey: isBland && callerIdMode !== "pool" && !byotKeyId ? encryptedKey.trim() || undefined : undefined,
           configureInbound,
           inboundAgent: parse(inbound),
           outboundAgent: parse(outbound),
@@ -183,7 +223,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <label className="field" style={{ margin: 0, width: "auto" }}>
               <span className="field-label">Provider account</span>
-              <select value={selected} onChange={(e) => {
+              <select disabled={busy || keyBusy || keysLoading} value={selected} onChange={(e) => {
                 setAccountId(e.target.value);
                 if (inboundParsed.kind === "testing") { setInbound(AUTO); setPhone(""); }
                 if (outboundParsed.kind === "testing") setOutbound(AUTO);
@@ -259,27 +299,35 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               <small className="muted">{isBland ? "Must belong to the selected Bland account. Include + and country code. Twilio numbers also need a matching BYOT encrypted key." : "Raw caller ID overrides apply to Retell. Vapi and ElevenLabs use the phone number ID configured on the account."}</small>
             </label>
             {isBland && callerIdMode !== "pool" && (
-              <label className="field" style={{ margin: 0, width: "auto" }}>
-                <span className="field-label">Twilio BYOT encrypted key (optional)</span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={encryptedKey}
-                  onChange={(e) => setEncryptedKey(e.target.value)}
-                  placeholder="Bland encrypted_key for this caller ID"
-                />
-                <small className="muted">For a Twilio caller ID, paste its matching encrypted key from Bland, not your Twilio auth token. Applies to this call only. Leave blank to use the outbound agent’s key, then the account’s key.</small>
-              </label>
+              <div className="field" style={{ margin: 0, width: "auto" }}>
+                <label>
+                  <span className="field-label">Twilio BYOT encrypted key (optional)</span>
+                  <select disabled={busy || keyBusy || keysLoading} value={byotKeyId} onChange={(e) => { setByotKeyId(e.target.value); setEncryptedKey(""); }}>
+                    <option value="">Use agent/account key or enter a new key</option>
+                    {savedKeys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}
+                  </select>
+                </label>
+                {byotKeyId ? (
+                  <button type="button" disabled={busy || keyBusy || keysLoading} onClick={removeKey}>Remove saved key</button>
+                ) : (
+                  <>
+                    <input aria-label="New BYOT encrypted key" type="password" autoComplete="off" spellCheck={false} disabled={busy || keyBusy || keysLoading} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Bland encrypted_key for this caller ID" />
+                    <input aria-label="Saved key name" maxLength={120} disabled={busy || keyBusy || keysLoading} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="Key name, e.g. Main Twilio" />
+                    <button type="button" onClick={saveKey} disabled={busy || keyBusy || keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key for reuse"}</button>
+                  </>
+                )}
+                <small className="muted">Saved keys stay on this device for this Bland account. Use the matching encrypted key from Bland, not your Twilio auth token. Save it to select it on future calls. An unsaved key applies to this call only; blank uses the outbound agent’s key, then the account’s key.</small>
+                {keyError && <small role="alert" style={{ color: "var(--fail)" }}>{keyError}</small>}
+              </div>
             )}
-            <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>
+            <button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
           </div>
           {outboundIsTarget && (
             <label>
               <input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} />
-              Configure this dedicated inbound test number with the simulation’s pathway before calling. This replaces its current pathway and remains set after the run. Bland requires a structured simulation.
+              Configure this dedicated inbound test number with the simulation’s pathway before calling. This replaces its current pathway and remains set after the run. Bland supports structured simulations and supported linear scripts.
             </label>
           )}
           {invalidPair && (

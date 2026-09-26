@@ -466,3 +466,38 @@ test("Bland requests call recordings through the authenticated audio endpoint", 
   assert.equal(requests[0].init?.redirect, "error");
   assert.equal(response.headers.get("content-type"), "audio/mpeg");
 });
+
+test("Bland dispatch attaches the newly provisioned say-then-hangup pathway", async () => {
+  const requests: Array<{ url: string; body: any }> = [];
+  const bland = new BlandIntegration((async (url, init) => {
+    const u = String(url); requests.push({ url: u, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (u.endsWith("/pathway/create")) return Response.json({ pathway_id: "script-pathway" });
+    if (u.endsWith("/calls")) return Response.json({ call_id: "script-call" });
+    return Response.json({ status: "success" });
+  }) as typeof fetch);
+  const spec = { name: "HAL tester", persona: { name: "Tester", systemPrompt: "Start a service request" }, steps: [{ kind: "say" as const, text: "Hi, I'd like some help please." }, { kind: "hangup" as const }] };
+  const created = await bland.createTestingAgent(account, spec);
+  const graph = requests.find((r) => r.url.endsWith("/pathway/script-pathway"))!.body;
+  assert.equal(graph.nodes.length, 1);
+  assert.equal(graph.nodes[0].type, "End Call");
+  assert.equal(graph.nodes[0].data.isStart, true);
+  assert.equal(graph.nodes[0].data.text, "Hi, I'd like some help please.");
+  assert.equal(graph.nodes[0].data.prompt, undefined);
+  await bland.placeCall(account, { id: "tester", accountId: account.id, provider: "bland", name: spec.name, createdAt: 0, externalAgentId: created.externalAgentId, spec }, { phoneNumber: "+14155550123" });
+  const call = requests.at(-1)!.body;
+  assert.equal(call.pathway_id, "script-pathway");
+  assert.equal(call.task, undefined);
+  assert.equal(call.agent_id, undefined);
+  const before = requests.length;
+  await assert.rejects(bland.createTestingAgent(account, { ...spec, steps: [{ kind: "say", text: "Hi", delayMs: 1000 }] }), /cannot be reproduced exactly/);
+  assert.equal(requests.length, before, "unsupported scripts must fail before provider mutations");
+});
+
+test("Bland reads the inbound pathway without changing the number", async () => {
+  const bland = new BlandIntegration((async (url, init) => {
+    assert.equal(String(url), "https://api.bland.ai/v1/inbound/%2B14155550123");
+    assert.equal(init?.method, undefined);
+    return Response.json({ pathway_id: "actual-inbound-pathway" });
+  }) as typeof fetch);
+  assert.equal(await bland.getInboundPathway(account, "+14155550123"), "actual-inbound-pathway");
+});

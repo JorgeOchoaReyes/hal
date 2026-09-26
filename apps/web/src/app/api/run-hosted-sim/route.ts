@@ -9,7 +9,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
+import { resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     fromNumber?: string;
     /** Optional Bland BYOT override for this call only; never persisted. */
     encryptedKey?: string;
+    byotKeyId?: string;
     configureInbound?: boolean;
     inboundAgent?: AgentRef;
     outboundAgent?: AgentRef;
@@ -83,7 +84,10 @@ export async function POST(req: NextRequest) {
   if (body.encryptedKey !== undefined && typeof body.encryptedKey !== "string") {
     return NextResponse.json({ error: "encryptedKey must be a string" }, { status: 400 });
   }
-  const dispatchKey = body.encryptedKey?.trim() || undefined;
+  if (body.byotKeyId !== undefined && typeof body.byotKeyId !== "string") return NextResponse.json({ error: "byotKeyId must be a string" }, { status: 400 });
+  if (body.byotKeyId && body.encryptedKey?.trim()) return NextResponse.json({ error: "Select a saved key or enter a key, not both" }, { status: 400 });
+  const dispatchKey = body.byotKeyId ? resolveByotKey(account.id, body.byotKeyId) : body.encryptedKey?.trim() || undefined;
+  if (body.byotKeyId && !dispatchKey) return NextResponse.json({ error: "Saved BYOT key not found for this account. Select it again." }, { status: 400 });
   if (dispatchKey && account.provider !== "bland") {
     return NextResponse.json({ error: "The dispatch BYOT encrypted key is only supported for Bland." }, { status: 400 });
   }
@@ -98,7 +102,7 @@ export async function POST(req: NextRequest) {
     if (!body.configureInbound || !integration.configureInbound) {
       return NextResponse.json({ error: "Confirm that HAL may configure the dedicated inbound test number. This provider must support inbound configuration." }, { status: 400 });
     }
-    if (account.provider === "bland" && !testCase.scenario.structured) {
+    if (account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
       return NextResponse.json({ error: "Inbound Bland testing requires a structured simulation so HAL can assign its pathway to the test number." }, { status: 400 });
     }
     if (!targetAgent.externalAgentId) {
@@ -119,9 +123,18 @@ export async function POST(req: NextRequest) {
     name: chosen?.name ?? `${testCase.name} (${account.provider})`,
     persona: testCase.scenario.persona,
     firstMessage: undefined,
+    voice: chosen?.spec?.voice,
+    model: chosen?.spec?.model,
     structured: testCase.scenario.structured,
+    steps: testCase.scenario.structured ? undefined : testCase.scenario.steps,
   };
 
+  // Validate before provisioning so unsupported steps cannot become a persona-only call.
+  if (spec.steps?.length) {
+    if (account.provider !== "bland") return NextResponse.json({ error: "Hosted linear scripts currently require Bland. Use a structured simulation for this provider. No call was placed." }, { status: 400 });
+    try { integration.buildFlowConfig(spec); }
+    catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
+  }
   const initialContext = snapshotRun(testCase);
 
   // Prevent a second dispatch from replacing the receiving pathway mid-call.
@@ -151,6 +164,12 @@ export async function POST(req: NextRequest) {
 
     const context = hostedContext(initialContext, account, agent, body.phoneNumber, targetAgent, outboundIsTarget,
       body.fromNumber === undefined ? account.credentials.from : body.fromNumber);
+    if (!outboundIsTarget && targetAgent.provider === "bland" && integration.getInboundPathway) {
+      try {
+        const pathwayId = await integration.getInboundPathway(account, body.phoneNumber);
+        if (pathwayId) { context.targetAgent.pathwayId = pathwayId; context.targetAgent.pathwaySource = "inbound-number"; }
+      } catch { /* A target on another account may not be visible. Preserve the unverified marker. */ }
+    }
     const result = await runHostedCall({
       testCaseId: testCase.id,
       integration,

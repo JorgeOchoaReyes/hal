@@ -35,6 +35,7 @@ export {
 } from "./simulation/tags.js";
 export {
   structuredToFlow,
+  stepsToFlow,
   toBlandPathway,
   toVapiWorkflow,
   toRetellConversationFlow,
