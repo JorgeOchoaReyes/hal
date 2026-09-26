@@ -20,6 +20,8 @@ export interface HostedRunOptions {
   target: HostedTarget;
   judge: JudgeSpec;
   llm: LLMClient;
+  /** Provider AI is the target when the target places the outbound call. */
+  providerAgentRole?: "agent" | "target";
   pollIntervalMs?: number;
   timeoutMs?: number;
   /**
@@ -44,6 +46,7 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
   const runId = id("run");
   const startedAt = now();
   let externalCallId: string | undefined;
+  let transcript: Transcript = [];
 
   try {
     const place = opts.place ?? (() => opts.integration.placeCall(opts.account, opts.agent, opts.target));
@@ -52,19 +55,33 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
 
     const interval = opts.pollIntervalMs ?? 3000;
     const deadline = startedAt + (opts.timeoutMs ?? 300_000);
-    let transcript: Transcript = [];
+    let endedReason: string | undefined;
     let status: HostedCallStatus = "queued";
 
     while (now() < deadline) {
       const state = await opts.integration.getCall(opts.account, externalCallId);
       status = state.status;
-      if (state.transcript) transcript = state.transcript;
+      endedReason = state.endedReason;
+      if (state.transcript) transcript = state.transcript.map((turn) => ({
+        ...turn,
+        role: opts.providerAgentRole === "target"
+          ? turn.role === "agent" ? "target" : turn.role === "target" ? "agent" : turn.role
+          : turn.role,
+      }));
       if (status === "ended" || status === "failed") break;
       await sleep(interval);
     }
 
     if (status === "failed") {
-      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, "hosted call failed");
+      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, endedReason || "hosted call failed");
+    }
+
+    if (status !== "ended") {
+      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId,
+        "Timed out waiting for the hosted call to finish. The call may still be active; check it in the provider dashboard.");
+    }
+    if (!transcript.length) {
+      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, "The provider returned no transcript for the completed call.");
     }
 
     const verdict = await new Judge(opts.llm).evaluate(opts.judge, transcript);
@@ -84,7 +101,7 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
     result.labels = deriveLabels(result.metrics);
     return result;
   } catch (err) {
-    return errored(runId, opts.testCaseId, startedAt, [], externalCallId, (err as Error).message);
+    return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, (err as Error).message);
   }
 }
 

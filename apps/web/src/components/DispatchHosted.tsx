@@ -9,6 +9,7 @@ interface Account {
   label: string;
 }
 interface TestingAgentLite {
+  accountId: string;
   id: string;
   name: string;
   provider: string;
@@ -56,6 +57,8 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [outbound, setOutbound] = useState<AgentValue>(AUTO);
   const [phone, setPhone] = useState("");
   const [fromPhone, setFromPhone] = useState("");
+  const [callerIdMode, setCallerIdMode] = useState("account");
+  const [configureInbound, setConfigureInbound] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -94,7 +97,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
 
   const options: { value: AgentValue; label: string }[] = [
     { value: AUTO, label: "Testing agent: Auto — provision ad-hoc" },
-    ...testingAgents.map((a): { value: AgentValue; label: string } => ({
+    ...testingAgents.filter((a) => a.accountId === selected).map((a): { value: AgentValue; label: string } => ({
       value: `testing:${a.id}`,
       label: `Testing agent: ${a.name} (${a.provider})`,
     })),
@@ -107,23 +110,28 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const inboundParsed = parse(inbound);
   const outboundParsed = parse(outbound);
   const inboundTarget = inboundParsed.kind === "target" ? targets.find((t) => t.id === inboundParsed.id) : undefined;
-  const outboundTarget = outboundParsed.kind === "target" ? targets.find((t) => t.id === outboundParsed.id) : undefined;
+
 
   // The phone field is always the INBOUND agent's own number — the one the
-  // outbound side dials. The from-number field is the OUTBOUND agent's own
-  // number — its caller id for the call. Picking a saved agent under test
-  // for either side auto-fills its stored number; both stay editable.
+  // outbound side dials. Caller ID must be selected explicitly: a saved
+  // target number does not prove ownership on the selected provider account.
   useEffect(() => {
     if (inboundTarget?.target.phoneNumber) setPhone(inboundTarget.target.phoneNumber);
   }, [inboundTarget]);
   useEffect(() => {
-    setFromPhone(outboundTarget?.target.phoneNumber ?? "");
-  }, [outboundTarget]);
+    setFromPhone("");
+    setCallerIdMode("account");
+    setConfigureInbound(false);
+  }, [selected, outbound]);
 
   const sameAgent = inbound === outbound;
   const bothTesting = inboundParsed.kind === "testing" && parse(outbound).kind === "testing";
   const bothTarget = inboundParsed.kind === "target" && parse(outbound).kind === "target";
-  const invalidPair = sameAgent || bothTesting || bothTarget;
+  const chosenTesting = testingAgents.find((a) => a.id === (inboundParsed.kind === "testing" ? inboundParsed.id : outboundParsed.id));
+  const accountMismatch = Boolean(chosenTesting && chosenTesting.accountId !== selected);
+  const invalidPair = sameAgent || bothTesting || bothTarget || accountMismatch;
+  const isBland = accounts.find((a) => a.id === selected)?.provider === "bland";
+  const outboundIsTarget = outboundParsed.kind === "target";
 
   async function dispatch() {
     setBusy(true);
@@ -137,7 +145,8 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           testCaseId,
           accountId: selected,
           phoneNumber: phone,
-          fromNumber: fromPhone.trim() || undefined,
+          fromNumber: isBland && callerIdMode === "pool" ? "" : callerIdMode === "custom" ? fromPhone.trim() : undefined,
+          configureInbound,
           inboundAgent: parse(inbound),
           outboundAgent: parse(outbound),
         }),
@@ -168,7 +177,11 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <label className="field" style={{ margin: 0, width: "auto" }}>
               <span className="field-label">Provider account</span>
-              <select value={selected} onChange={(e) => setAccountId(e.target.value)} style={{ width: "auto" }}>
+              <select value={selected} onChange={(e) => {
+                setAccountId(e.target.value);
+                if (inboundParsed.kind === "testing") { setInbound(AUTO); setPhone(""); }
+                if (outboundParsed.kind === "testing") setOutbound(AUTO);
+              }} style={{ width: "auto" }}>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.label} ({a.provider})
@@ -222,21 +235,36 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               />
             </label>
             <label className="field" style={{ margin: 0, width: "auto" }}>
-              <span className="field-label">Outbound agent&apos;s number (optional)</span>
+              <span className="field-label">Outbound caller ID (from)</span>
+              <select aria-label="Caller ID source" value={callerIdMode} onChange={(e) => setCallerIdMode(e.target.value)}>
+                <option value="account">Use provider account default</option>
+                {isBland && <option value="pool">Use Bland default pool</option>}
+                <option value="custom">Choose a caller ID owned by this account</option>
+              </select>
+              {callerIdMode === "custom" && (
               <NumberPicker
                 accountId={selected}
                 value={fromPhone}
                 onChange={setFromPhone}
-                placeholder="+14155550123 (outbound agent)"
+                ariaLabel="Custom outbound caller ID"
+                placeholder="+14155550123 (owned caller ID)"
               />
+              )}
+              <small className="muted">{isBland ? "Must belong to the selected Bland account. Include + and country code. Twilio numbers also need a matching BYOT encrypted key." : "Raw caller ID overrides apply to Retell. Vapi and ElevenLabs use the phone number ID configured on the account."}</small>
             </label>
-            <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair}>
+            <button onClick={dispatch} disabled={busy || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>
               {busy ? "Dispatching…" : "Dispatch to provider"}
             </button>
           </div>
+          {outboundIsTarget && (
+            <label>
+              <input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} />
+              Configure this dedicated inbound test number with the simulation’s pathway before calling. This replaces its current pathway and remains set after the run. Bland requires a structured simulation.
+            </label>
+          )}
           {invalidPair && (
             <p className="muted" style={{ fontSize: 12, margin: 0, color: "var(--fail)" }}>
-              Pick one testing agent and one agent under test — one for each side.
+              Pick one testing agent from the selected provider account and one agent under test.
             </p>
           )}
         </div>

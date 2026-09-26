@@ -20,11 +20,13 @@ interface HostedNumber {
  */
 export default function NumberPicker({
   accountId,
+  ariaLabel,
   value,
   onChange,
   placeholder = "+14155550123 (target number)",
 }: {
   accountId?: string;
+  ariaLabel?: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
@@ -41,6 +43,8 @@ export default function NumberPicker({
       return;
     }
     let cancelled = false;
+    setNumbers([]);
+    setSupported(false);
     setLoading(true);
     fetch(`/api/hosted-integrations/numbers?accountId=${encodeURIComponent(accountId)}`)
       .then((r) => r.json())
@@ -70,6 +74,7 @@ export default function NumberPicker({
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1, minWidth: 200 }}>
         <input
+          aria-label={ariaLabel}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={loading ? "Loading numbers…" : placeholder}
@@ -92,6 +97,7 @@ export default function NumberPicker({
   // Dropdown of pulled numbers + a manual-entry escape hatch.
   return (
     <select
+      aria-label={ariaLabel}
       value={value}
       onChange={(e) => {
         if (e.target.value === "__manual__") {
@@ -104,6 +110,9 @@ export default function NumberPicker({
       style={{ width: "auto", flex: 1, minWidth: 200 }}
     >
       <option value="">Select a number…</option>
+      {value && !numbers.some((n) => n.phoneNumber === value) && (
+        <option value={value}>{value} — manually entered</option>
+      )}
       {numbers.map((n) => (
         <option key={n.phoneNumber} value={n.phoneNumber}>
           {n.phoneNumber}
