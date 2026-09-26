@@ -9,7 +9,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
+import { outboundAgentKey, resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -119,6 +119,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let callerKey: string | undefined;
+  try { callerKey = account.provider === "bland" && body.fromNumber === "" ? undefined : dispatchKey ?? outboundAgentKey(account.id, outboundIsTarget ? targetAgent : chosen ?? {}); }
+  catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
   const spec: TestingAgentSpec = {
     name: chosen?.name ?? `${testCase.name} (${account.provider})`,
     persona: testCase.scenario.persona,
@@ -157,6 +160,8 @@ export async function POST(req: NextRequest) {
       createdAt: chosen?.createdAt ?? Date.now(),
       spec,
       encryptedKey: chosen?.encryptedKey,
+      byotKeyId: chosen?.byotKeyId,
+      byotAccountId: chosen?.byotAccountId,
     };
     upsertAgent(agent);
 
@@ -177,7 +182,7 @@ export async function POST(req: NextRequest) {
       // Leave time for provisioning, final evaluation, and saving within the route budget.
       timeoutMs: 180_000,
       account,
-      agent: dispatchKey ? { ...agent, encryptedKey: dispatchKey } : agent,
+      agent: { ...agent, encryptedKey: outboundIsTarget ? undefined : callerKey },
       target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
@@ -185,7 +190,7 @@ export async function POST(req: NextRequest) {
         ? () =>
             integration.placeOutboundCall!(
               account,
-              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: dispatchKey ?? targetAgent.encryptedKey },
+              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: callerKey },
               { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
             )
         : undefined,

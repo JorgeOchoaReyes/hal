@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { TestingAgentSpec } from "@hal/core";
+import AgentOutboundKey, { type OutboundKeyValue } from "./AgentOutboundKey";
 import NumberPicker from "./NumberPicker";
 import Modal from "./Modal";
 
@@ -11,6 +13,10 @@ interface Account {
   createdAt: number;
 }
 interface Agent {
+  spec?: TestingAgentSpec;
+  hasEncryptedKey?: boolean;
+  byotKeyId?: string;
+  byotAccountId?: string;
   id: string;
   accountId: string;
   provider: string;
@@ -23,6 +29,7 @@ export default function TestingAgentsManager() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [provisionOpen, setProvisionOpen] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -70,11 +77,12 @@ export default function TestingAgentsManager() {
       ) : (
         <div className="grid stagger" style={{ gap: 10 }}>
           {agents.map((a) => (
-            <AgentRow key={a.id} agent={a} account={accounts.find((x) => x.id === a.accountId)} />
+            <AgentRow key={a.id} agent={a} onEdit={() => setEditingAgent(a)} account={accounts.find((x) => x.id === a.accountId)} />
           ))}
         </div>
       )}
 
+      {editingAgent && <Modal open onClose={() => setEditingAgent(null)} title="Edit testing agent" wide><ProvisionAgent key={editingAgent.id} existing={editingAgent} accounts={accounts} onCancel={() => setEditingAgent(null)} onDone={() => { setEditingAgent(null); refresh(); }} /></Modal>}
       <Modal
         open={provisionOpen}
         onClose={() => setProvisionOpen(false)}
@@ -95,26 +103,30 @@ export default function TestingAgentsManager() {
 }
 
 function ProvisionAgent({
+  existing,
   accounts,
   onDone,
   onCancel,
 }: {
+  existing?: Agent;
   accounts: Account[];
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [accountId, setAccountId] = useState("");
-  const [name, setName] = useState("HAL tester");
+  const [accountId, setAccountId] = useState(existing?.accountId ?? "");
+  const [name, setName] = useState(existing?.name ?? "HAL tester");
   const [systemPrompt, setSystemPrompt] = useState(
-    "You are a QA tester calling a business's voice AI. Try to book an appointment and confirm the details.",
+    existing?.spec?.persona.systemPrompt ?? "You are a QA tester calling a business's voice AI. Try to book an appointment and confirm the details.",
   );
-  const [firstMessage, setFirstMessage] = useState("Hi, I'd like to book an appointment.");
-  const [useStructured, setUseStructured] = useState(false);
-  const [pathwayId, setPathwayId] = useState("");
-  const [encryptedKey, setEncryptedKey] = useState("");
+  const [firstMessage, setFirstMessage] = useState(existing?.spec?.firstMessage ?? "Hi, I'd like to book an appointment.");
+  const [useStructured, setUseStructured] = useState(Boolean(existing?.spec?.structured || existing?.spec?.pathwayId));
+  const [pathwayId, setPathwayId] = useState(existing?.spec?.pathwayId ?? "");
+  const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
+  const [voice, setVoice] = useState(existing?.spec?.voice ?? "");
+  const [model, setModel] = useState(existing?.spec?.model ?? "");
   const [structuredJson, setStructuredJson] = useState(
     JSON.stringify(
-      {
+      existing?.spec?.structured ?? {
         role: "You are a patient booking an appointment",
         conditions: [
           { id: 0, condition: "FIRST_MESSAGE", action: "Hi, I'd like to book an appointment.", type: "standard", fixed_message: true },
@@ -201,7 +213,11 @@ function ProvisionAgent({
           firstMessage,
           structured: structuredPayload(),
           pathwayId: pathwayId.trim() || undefined,
-          encryptedKey: encryptedKey.trim() || undefined,
+          agentId: existing?.id,
+          voice: voice.trim() || undefined,
+          model: model.trim() || undefined,
+          steps: !useStructured ? existing?.spec?.steps : undefined,
+          ...outboundKey,
         }),
       });
       const data = await res.json();
@@ -224,7 +240,7 @@ function ProvisionAgent({
       )}
       <label className="field">
         <span className="field-label">Account</span>
-        <select value={selected} onChange={(e) => setAccountId(e.target.value)}>
+        <select disabled={Boolean(existing)} value={selected} onChange={(e) => { setAccountId(e.target.value); setOutboundKey({}); }}>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.label} ({a.provider})
@@ -236,22 +252,9 @@ function ProvisionAgent({
         <span className="field-label">Agent name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      {selectedAccount?.provider === "bland" && (
-        <label className="field">
-          <span className="field-label">Encrypted key (for outbound dispatch)</span>
-          <input
-            type="password"
-            value={encryptedKey}
-            onChange={(e) => setEncryptedKey(e.target.value)}
-            placeholder="Bland encrypted_key for this agent"
-            className="mono"
-          />
-          <span className="muted" style={{ fontSize: 12 }}>
-            Per-agent secret used to trigger this agent&apos;s own pathway and place the outbound
-            call to the other (waiting) agent. Different per agent — stored as given.
-          </span>
-        </label>
-      )}
+      {selectedAccount?.provider === "bland" && <AgentOutboundKey key={selected} accountId={selected} initial={existing} hasKey={existing?.hasEncryptedKey} onChange={setOutboundKey} />}
+      <div className="settings-grid"><label className="field"><span className="field-label">Voice (optional)</span><input value={voice} onChange={(e) => setVoice(e.target.value)} /></label><label className="field"><span className="field-label">Model (optional)</span><input value={model} onChange={(e) => setModel(e.target.value)} /></label></div>
+      {existing && <p className="field-help">These settings apply to direct test calls. Simulation dispatch uses the simulation’s saved persona and script, while keeping this agent’s voice and outbound credentials.</p>}
       <label className="field">
         <span className="field-label">Agent type</span>
         <select
@@ -354,14 +357,14 @@ function ProvisionAgent({
           Preview {selectedAccount?.provider ?? "platform"} config
         </button>
         <button onClick={submit} disabled={busy || accounts.length === 0}>
-          {busy ? "Creating on provider…" : "Create testing agent"}
+          {busy ? "Saving…" : existing ? "Save testing agent" : "Create testing agent"}
         </button>
       </div>
     </>
   );
 }
 
-function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
+function AgentRow({ agent, account, onEdit }: { agent: Agent; account?: Account; onEdit: () => void }) {
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ status: string; labels?: Array<{ text: string; tone: string }> } | null>(null);
@@ -397,6 +400,7 @@ function AgentRow({ agent, account }: { agent: Agent; account?: Account }) {
           </div>
         </div>
       </div>
+      <button className="secondary" onClick={onEdit} disabled={busy}>Edit agent</button>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <NumberPicker accountId={agent.accountId} value={phone} onChange={setPhone} />
         <button onClick={call} disabled={busy || !phone.trim()}>

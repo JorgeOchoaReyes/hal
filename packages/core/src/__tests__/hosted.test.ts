@@ -379,6 +379,7 @@ test("Bland validates caller ID and explains ownership errors without leaking cr
   assert.equal(requests.length, 1, "invalid format must not place a call");
   await assert.rejects(bland.placeCall(acc, agent, { phoneNumber: "+14155550222", fromNumber: "" }));
   assert.equal(requests[1].body.from, undefined, "explicit pool must override account default");
+  assert.equal(requests[1].headers.encrypted_key, undefined, "Bland pool must not send a Twilio key");
   await assert.rejects(bland.placeOutboundCall(acc, { externalAgentId: "pw", encryptedKey: "agent-byot" }, { phoneNumber: "+14155550222", fromNumber: "+1 (415) 555-0333" }));
   assert.equal(requests[2].headers.encrypted_key, "agent-byot");
   assert.equal(requests[2].body.encrypted_key, undefined);

@@ -52,13 +52,13 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
   const run = getResult(id);
   if (!run) notFound();
   const context = run.context;
-  const canDownload = Boolean(run.externalCallId && (!run.recordingSource || run.recordingSource.provider === "bland"));
+  const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId && (!run.recordingSource || run.recordingSource.provider === "bland"));
   return <div className="run-detail">
     <nav style={{ marginTop: 24 }}><Link href="/results">← All results</Link></nav>
     <header className="card-row" style={{ margin: "20px 0" }}><div><p className="field-label">Run details</p><h1 style={{ margin: "6px 0" }}>{run.runLabel ?? context?.simulationName ?? "Saved run"}</h1><span className="muted mono">{run.id}</span></div><span className={`pill ${run.status}`}>{run.status}</span></header>
     <section className="card">
       <dl className="run-facts"><dt>Started</dt><dd>{new Date(run.startedAt).toLocaleString()}</dd><dt>Duration</dt><dd>{run.endedAt ? `${((run.endedAt - run.startedAt) / 1000).toFixed(1)} seconds` : "Not recorded"}</dd><dt>Transcript</dt><dd>{run.transcript.length} turns</dd><dt>Channel</dt><dd>{context?.transport ?? "Not captured on this older run"}</dd>
-        {run.externalCallId && <><dt>Provider call ID</dt><dd className="mono">{run.externalCallId}</dd></>}
+        {run.externalCallId && <><dt>{context?.transport === "bland-chat" ? "Bland chat ID" : "Provider call ID"}</dt><dd className="mono">{run.externalCallId}</dd></>}
         {context?.account && <><dt>Provider account</dt><dd>{context.account.label} ({context.account.provider})</dd></>}
       </dl>
       {!run.testCaseId.startsWith("hosted:") && <Link href={`/simulations/${encodeURIComponent(run.testCaseId)}`}>Open simulation →</Link>}
@@ -68,7 +68,7 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
       <dt>Testing agent turns</dt><dd>{run.metrics.agentTurns}</dd><dt>Target turns</dt><dd>{run.metrics.targetTurns}</dd>
       <dt>Average target words</dt><dd>{run.metrics.avgTargetWords}</dd><dt>Target latency</dt><dd>{run.metrics.targetLatency ? `${run.metrics.targetLatency.avg} ms average · ${run.metrics.targetLatency.p95} ms p95` : "Not measured"}</dd>
     </dl><div>{(run.labels ?? []).map((l, i) => <span key={i} className={`label label-${l.tone}`}>{l.text}</span>)}</div></section>}
-    <RunAudio runId={id} recording={run.recording} canDownload={canDownload} needsAccount={!context?.account && run.recording?.status !== "available"} accounts={listAccounts().filter((a) => a.provider === "bland").map((a) => ({ id: a.id, label: a.label }))} />
+    {context?.transport !== "bland-chat" && <RunAudio runId={id} recording={run.recording} canDownload={canDownload} needsAccount={!context?.account && run.recording?.status !== "available"} accounts={listAccounts().filter((a) => a.provider === "bland").map((a) => ({ id: a.id, label: a.label }))} />}
     <section><h2>Agents used for this run</h2>{context ? <div className="run-agents"><Agent title="Testing agent" agent={context.testingAgent} /><Agent title="Agent under test" agent={context.targetAgent} /></div> : <p className="card muted">Agent snapshots were not captured for this older run. Current agent settings may differ from those used at the time.</p>}</section>
     <section className="card"><h2 style={{ marginTop: 0 }}>Original judge results</h2>{run.verdict ? <Verdict verdict={run.verdict} /> : <p className="muted">No original judge verdict was saved.</p>}
       {context ? <><JudgeConfiguration spec={context.judge} />{context.judges.length > 0 && <><h3>Saved judges included</h3><p className="muted">These configurations contributed to the combined verdict above.</p>{context.judges.map((j, i) => <div key={`${j.id}-${i}`}><h4>{j.name}</h4>{j.description && <p>{j.description}</p>}<JudgeConfiguration spec={j.spec} /></div>)}</>}</> : <p className="muted">The original judge configuration was not captured on this older run.</p>}
