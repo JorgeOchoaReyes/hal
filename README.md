@@ -40,7 +40,10 @@ A custom caller ID must belong to the selected Bland account and include `+`
 and a country code, such as `+14155550123`. HAL removes formatting spaces,
 parentheses, periods and hyphens, but does not guess a country code. For a number
 uploaded from Twilio, configure the matching Bland BYOT encrypted key on the
-provider account or outbound agent. HAL sends that key in the `encrypted_key`
+provider account or outbound agent, or enter it in dispatch’s **Twilio BYOT
+encrypted key** field beside the caller ID. The dispatch value takes precedence
+for this call only and is not saved to the agent, account, or run. Blank uses
+the outbound agent’s key, then the account’s key. HAL sends that key in the `encrypted_key`
 header, never in the call body. A rejected caller ID is not automatically retried
 with a different number.
 

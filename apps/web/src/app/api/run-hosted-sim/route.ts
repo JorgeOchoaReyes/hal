@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
     phoneNumber: string;
     /** The outbound agent's own number — its caller id for this call. */
     fromNumber?: string;
+    /** Optional Bland BYOT override for this call only; never persisted. */
+    encryptedKey?: string;
     configureInbound?: boolean;
     inboundAgent?: AgentRef;
     outboundAgent?: AgentRef;
@@ -78,6 +80,13 @@ export async function POST(req: NextRequest) {
   }
   const account = getAccountRaw(body.accountId ?? "");
   if (!account) return NextResponse.json({ error: "Unknown account" }, { status: 404 });
+  if (body.encryptedKey !== undefined && typeof body.encryptedKey !== "string") {
+    return NextResponse.json({ error: "encryptedKey must be a string" }, { status: 400 });
+  }
+  const dispatchKey = body.encryptedKey?.trim() || undefined;
+  if (dispatchKey && account.provider !== "bland") {
+    return NextResponse.json({ error: "The dispatch BYOT encrypted key is only supported for Bland." }, { status: 400 });
+  }
   const integration = getIntegration(account.provider);
   if (!integration) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
@@ -149,7 +158,7 @@ export async function POST(req: NextRequest) {
       // Leave time for provisioning, final evaluation, and saving within the route budget.
       timeoutMs: 180_000,
       account,
-      agent,
+      agent: dispatchKey ? { ...agent, encryptedKey: dispatchKey } : agent,
       target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
@@ -157,7 +166,7 @@ export async function POST(req: NextRequest) {
         ? () =>
             integration.placeOutboundCall!(
               account,
-              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: targetAgent.encryptedKey },
+              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: dispatchKey ?? targetAgent.encryptedKey },
               { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
             )
         : undefined,

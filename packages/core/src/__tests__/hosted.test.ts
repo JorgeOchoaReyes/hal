@@ -383,6 +383,10 @@ test("Bland validates caller ID and explains ownership errors without leaking cr
   assert.equal(requests[2].headers.encrypted_key, "agent-byot");
   assert.equal(requests[2].body.encrypted_key, undefined);
   assert.equal(requests[2].body.from, "+14155550333");
+  await assert.rejects(bland.placeCall(acc, { ...agent, encryptedKey: "dispatch-byot" }, { phoneNumber: "+14155550222", fromNumber: "+14155550333" }));
+  assert.equal(requests[3].headers.encrypted_key, "dispatch-byot", "testing outbound call must prefer the per-call key over the account key");
+  assert.equal(requests[3].body.encrypted_key, undefined);
+  assert.equal(acc.credentials.encryptedKey, "secret-byot", "call overrides must not mutate stored credentials");
 });
 
 test("Bland binds a structured tester to its inbound number and stops on rejection", async () => {
