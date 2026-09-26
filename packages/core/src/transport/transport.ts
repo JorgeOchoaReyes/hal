@@ -10,6 +10,9 @@ export interface CallSession {
   /** Provider call id (Twilio Call SID, WebRTC room id, …), if any. */
   readonly externalId?: string;
 
+  /** True when the peer has ended the session. A final reply may still be queued. */
+  readonly completed?: boolean;
+
   /** Speak the agent's line. Resolves once it has been delivered to the target. */
   speak(text: string): Promise<void>;
 

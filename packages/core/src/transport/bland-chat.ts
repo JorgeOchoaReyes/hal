@@ -31,6 +31,7 @@ export class BlandChatTransport implements CallTransport {
     await send(); // Trigger the pathway's opening node without inventing a user line.
     return {
       externalId: chatId,
+      get completed() { return completed; },
       speak: async (text) => { if (completed) throw new Error("Bland ended the chat before the scenario finished"); await send(text); },
       listen: async () => { const reply = queued; queued = null; return reply; },
       hangup: async () => { completed = true; queued = null; },

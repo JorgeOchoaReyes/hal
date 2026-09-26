@@ -16,9 +16,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 /** Update editable scenario fields or attached judges without replacing other settings. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const body = await req.json().catch(() => null);
+  // Read after all awaits: the version check and write must use the latest
+  // state in one synchronous turn, including updates to attached judges.
   const existing = getTestCaseRaw(id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const body = await req.json().catch(() => null);
   if (!body || (!body.scenario && !Array.isArray(body.judgeIds))) return NextResponse.json({ error: "Provide scenario or judgeIds" }, { status: 400 });
   if (body.judgeIds !== undefined && (!Array.isArray(body.judgeIds) || body.judgeIds.some((id: unknown) => typeof id !== "string"))) return NextResponse.json({ error: "judgeIds must be an array of IDs" }, { status: 400 });
   if (body.scenario) {
