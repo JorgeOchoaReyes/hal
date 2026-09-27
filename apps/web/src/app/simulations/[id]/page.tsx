@@ -144,6 +144,7 @@ function renderRule(r: JudgeRule): string {
 function targetDetail(target: Target): string {
   switch (target.transport) {
     case "bland-chat": return `Bland chat · pathway ${target.pathwayId}`;
+    case "hosted-chat": return `${target.provider} chat · agent ${target.externalAgentId}`;
     case "mock":
       return `simulated agent · greeting: ${target.mock.greeting ?? "(none)"}`;
     case "telephony":

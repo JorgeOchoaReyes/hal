@@ -54,6 +54,8 @@ export interface TestingAgentSpec {
   structured?: StructuredTest;
   /** Authored linear script, used when structured is absent. */
   steps?: ScenarioStep[];
+  /** Provider resource backing the saved testing agent. */
+  graphKind?: "squad";
   /**
    * An existing provider pathway/flow id to run the call against directly,
    * instead of provisioning one. For Bland this is a Pathway built in the
@@ -141,6 +143,8 @@ export interface HostedCallState {
   status: HostedCallStatus;
   transcript?: Transcript;
   endedReason?: string;
+  /** Provider-reported completion time, when available. */
+  endedAt?: number;
 }
 
 /**
@@ -158,6 +162,12 @@ export interface VoiceProviderIntegration {
    * provisioning.
    */
   getInboundPathway?(account: ProviderAccount, phoneNumber: string): Promise<string | undefined>;
+  /** Resolve the voice of the agent under test, when its provider id is known. */
+  getAgentVoice?(account: ProviderAccount, externalAgentId: string): Promise<string | undefined>;
+  /** Resolve an inbound number's voice when the target has no provider agent id. */
+  getInboundVoice?(account: ProviderAccount, phoneNumber: string): Promise<string | undefined>;
+  /** Voice IDs this account can assign to HAL's testing agent. */
+  listAvailableVoices?(account: ProviderAccount): Promise<string[]>;
 
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown>;
   /**
@@ -177,6 +187,8 @@ export interface VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }>;
+  /** Apply a simulation graph to an existing testing agent before dispatch. */
+  updateTestingAgent?(account: ProviderAccount, agent: HostedTestingAgent, spec: TestingAgentSpec): Promise<{ externalAgentId?: string } | void>;
   /** Assign the testing configuration to a dedicated inbound test number. */
   configureInbound?(account: ProviderAccount, agent: HostedTestingAgent, phoneNumber: string): Promise<void>;
   /** Place an outbound call from the hosted agent to the target. */

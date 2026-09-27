@@ -15,7 +15,7 @@ import {
   resolveSpecPrompt,
   withTimeout,
 } from "./integration.js";
-import { structuredToFlow, toRetellConversationFlow } from "../../simulation/flow.js";
+import { structuredToFlow, stepsToFlow, toRetellConversationFlow } from "../../simulation/flow.js";
 
 /**
  * Retell AI integration. Creates a Retell LLM (carrying the compiled prompt) and
@@ -61,9 +61,8 @@ export class RetellIntegration implements VoiceProviderIntegration {
   }
 
   buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
-    return spec.structured
-      ? toRetellConversationFlow(structuredToFlow(spec.structured), spec.name)
-      : null;
+    const flow = spec.structured ? structuredToFlow(spec.structured) : spec.steps?.length ? stepsToFlow(spec.steps, spec.persona.systemPrompt) : null;
+    return flow ? toRetellConversationFlow(flow, spec.name) : null;
   }
 
   /** The Retell LLM body (prompt-based); carries the compiled deterministic script. */
@@ -76,10 +75,9 @@ export class RetellIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
-    // Node-native: a structured test becomes a Retell Conversation Flow; the
-    // agent is bound to it. Otherwise a Retell LLM carries the compiled prompt.
+    // A scripted test uses a Retell Conversation Flow bound to the agent.
     let responseEngine: Record<string, unknown>;
-    if (spec.structured) {
+    if (this.buildFlowConfig(spec)) {
       const cfRes = await this.fetchImpl(`${this.base}/create-conversation-flow`, {
         method: "POST",
         headers: this.headers(account),
@@ -113,6 +111,54 @@ export class RetellIntegration implements VoiceProviderIntegration {
     return { externalAgentId: agent.agent_id };
   }
 
+  async getAgentVoice(account: ProviderAccount, externalAgentId: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/get-agent/${encodeURIComponent(externalAgentId)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { voice_id?: string };
+    return data.voice_id;
+  }
+
+  async listAvailableVoices(account: ProviderAccount): Promise<string[]> {
+    const res = await this.fetchImpl(`${this.base}/list-voices`, { headers: this.headers(account) });
+    if (!res.ok) throw new Error(`Retell could not list voices (${res.status}): ${await safeText(res)}`);
+    const data = await res.json() as Array<{ voice_id?: string }> | { voices?: Array<{ voice_id?: string }> };
+    return (Array.isArray(data) ? data : data.voices ?? []).map((voice) => voice.voice_id).filter((id): id is string => !!id);
+  }
+
+  async updateTestingAgent(account: ProviderAccount, agent: HostedTestingAgent, spec: TestingAgentSpec): Promise<void> {
+    const graph = this.buildFlowConfig(spec);
+    if (!graph) throw new Error("Retell needs scripted steps or a structured simulation to mold the selected tester. No call was placed.");
+    const flowRes = await this.fetchImpl(`${this.base}/create-conversation-flow`, {
+      method: "POST", headers: this.headers(account), body: JSON.stringify(graph),
+    });
+    if (!flowRes.ok) throw new Error(`Retell create-conversation-flow failed (${flowRes.status}): ${await safeText(flowRes)}`);
+    const flow = (await flowRes.json()) as { conversation_flow_id?: string };
+    if (!flow.conversation_flow_id) throw new Error("Retell returned no conversation_flow_id. No call was placed.");
+    const getRes = await this.fetchImpl(`${this.base}/get-agent/${agent.externalAgentId}`, { headers: this.headers(account) });
+    if (!getRes.ok) throw new Error(`Retell get-agent failed (${getRes.status}): ${await safeText(getRes)}`);
+    const current = (await getRes.json()) as { version?: number; is_published?: boolean };
+    if (current.version === undefined) throw new Error("Retell returned no agent version. No call was placed.");
+    let version = current.version;
+    if (current.is_published) {
+      const draftRes = await this.fetchImpl(`${this.base}/create-agent-version/${agent.externalAgentId}`, {
+        method: "POST", headers: this.headers(account), body: JSON.stringify({ base_version: version }),
+      });
+      if (!draftRes.ok) throw new Error(`Retell create-agent-version failed (${draftRes.status}): ${await safeText(draftRes)}`);
+      const draft = (await draftRes.json()) as { version?: number };
+      if (draft.version === undefined) throw new Error("Retell returned no draft version. No call was placed.");
+      version = draft.version;
+    }
+    const updateRes = await this.fetchImpl(`${this.base}/update-agent/${agent.externalAgentId}?version=${version}`, {
+      method: "PATCH", headers: this.headers(account),
+      body: JSON.stringify({ response_engine: { type: "conversation-flow", conversation_flow_id: flow.conversation_flow_id }, ...(spec.voice ? { voice_id: spec.voice } : {}) }),
+    });
+    if (!updateRes.ok) throw new Error(`Retell update-agent failed (${updateRes.status}): ${await safeText(updateRes)}`);
+    const publishRes = await this.fetchImpl(`${this.base}/publish-agent-version/${agent.externalAgentId}`, {
+      method: "POST", headers: this.headers(account), body: JSON.stringify({ version }),
+    });
+    if (!publishRes.ok) throw new Error(`Retell publish-agent-version failed (${publishRes.status}): ${await safeText(publishRes)}`);
+  }
+
   async placeCall(
     account: ProviderAccount,
     agent: HostedTestingAgent,
@@ -125,6 +171,7 @@ export class RetellIntegration implements VoiceProviderIntegration {
         from_number: target.fromNumber || account.credentials.from,
         to_number: target.phoneNumber,
         override_agent_id: agent.externalAgentId,
+        override_agent_version: "latest_published",
       }),
     });
     if (!res.ok) throw new Error(`Retell create-phone-call failed (${res.status}): ${await safeText(res)}`);

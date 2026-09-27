@@ -5,6 +5,30 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { RunRecording, SavedJudge } from "@hal/core";
 
+export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: string; retryEvaluation?: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  async function check() {
+    setBusy(true); setMessage(undefined); setError(undefined);
+    try {
+      const res = await fetch(`/api/results/${encodeURIComponent(runId)}/refresh`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not check the call.");
+      if (data.state === "in-progress") setMessage("The provider still reports this call as active. Check again later.");
+      else if (data.state === "waiting-transcript") setMessage("The call ended, but its transcript is not ready yet. Check again later.");
+      else router.refresh();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <div style={{ marginTop: 16 }}>
+    <button className="secondary" onClick={check} disabled={busy}>{busy ? "Checking provider…" : retryEvaluation ? "Retry original evaluation" : "Check call status and finish run"}</button>
+    {message && <p role="status" className="muted">{message}</p>}
+    {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
+  </div>;
+}
+
 export function RunAudio({ runId, recording, canDownload, needsAccount, accounts }: {
   runId: string; recording?: RunRecording; canDownload: boolean; needsAccount: boolean;
   accounts: Array<{ id: string; label: string }>;

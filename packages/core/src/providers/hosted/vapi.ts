@@ -1,6 +1,6 @@
 import { Transcript } from "../../types.js";
 import { ProviderField } from "../templates.js";
-import { structuredToFlow, toVapiWorkflow } from "../../simulation/flow.js";
+import { structuredToFlow, stepsToFlow, toVapiSquad } from "../../simulation/flow.js";
 import {
   VoiceProviderIntegration,
   ProviderAccount,
@@ -63,9 +63,8 @@ export class VapiIntegration implements VoiceProviderIntegration {
   }
 
   buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
-    return spec.structured
-      ? toVapiWorkflow(structuredToFlow(spec.structured), spec.name)
-      : null;
+    const flow = spec.structured ? structuredToFlow(spec.structured) : spec.steps?.length ? stepsToFlow(spec.steps, spec.persona.systemPrompt) : null;
+    return flow ? toVapiSquad(flow, spec.name, spec.model, spec.voice) : null;
   }
 
   /** Native Vapi assistant body — the deterministic reproduction of the spec. */
@@ -87,16 +86,14 @@ export class VapiIntegration implements VoiceProviderIntegration {
     account: ProviderAccount,
     spec: TestingAgentSpec,
   ): Promise<{ externalAgentId: string }> {
-    // Node-native: a structured test becomes a Vapi Workflow; its id is used as
-    // workflowId when placing the call.
-    if (spec.structured) {
-      const wf = this.buildFlowConfig(spec)!;
-      const res = await this.fetchImpl(`${this.base}/workflow`, {
+    const squad = this.buildFlowConfig(spec);
+    if (squad) {
+      const res = await this.fetchImpl(`${this.base}/squad`, {
         method: "POST",
         headers: this.headers(account),
-        body: JSON.stringify(wf),
+        body: JSON.stringify(squad),
       });
-      if (!res.ok) throw new Error(`Vapi createWorkflow failed (${res.status}): ${await safeText(res)}`);
+      if (!res.ok) throw new Error(`Vapi createSquad failed (${res.status}): ${await safeText(res)}`);
       const data = (await res.json()) as { id: string };
       return { externalAgentId: data.id };
     }
@@ -111,15 +108,38 @@ export class VapiIntegration implements VoiceProviderIntegration {
     return { externalAgentId: data.id };
   }
 
+  async getAgentVoice(account: ProviderAccount, externalAgentId: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/assistant/${encodeURIComponent(externalAgentId)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { voice?: { voiceId?: string } };
+    return data.voice?.voiceId;
+  }
+
+  async listAvailableVoices(): Promise<string[]> {
+    return ["Elliot", "Emma", "Clara"];
+  }
+
+  async updateTestingAgent(account: ProviderAccount, agent: HostedTestingAgent, spec: TestingAgentSpec): Promise<{ externalAgentId?: string }> {
+    const squad = this.buildFlowConfig(spec);
+    if (!squad) throw new Error("Vapi needs scripted steps or a structured simulation to mold the selected tester. No call was placed.");
+    // Imported assistants have no squad graph to patch. Convert the saved HAL
+    // tester reference once, then patch the same squad for later simulations.
+    const patch = agent.spec?.graphKind === "squad";
+    const res = await this.fetchImpl(patch ? `${this.base}/squad/${agent.externalAgentId}` : `${this.base}/squad`, {
+      method: patch ? "PATCH" : "POST", headers: this.headers(account), body: JSON.stringify(squad),
+    });
+    if (!res.ok) throw new Error(`Vapi ${patch ? "updateSquad" : "createSquad"} failed (${res.status}): ${await safeText(res)}`);
+    const data = (await res.json()) as { id?: string };
+    if (!patch && !data.id) throw new Error("Vapi createSquad returned no id. No call was placed.");
+    return { externalAgentId: data.id ?? agent.externalAgentId };
+  }
+
   async placeCall(
     account: ProviderAccount,
     agent: HostedTestingAgent,
     target: HostedTarget,
   ): Promise<{ externalCallId: string }> {
-    // Node-native workflow call vs assistant call.
-    const ref = agent.spec?.structured
-      ? { workflowId: agent.externalAgentId }
-      : { assistantId: agent.externalAgentId };
+    const ref = agent.spec?.graphKind === "squad" ? { squadId: agent.externalAgentId } : { assistantId: agent.externalAgentId };
     const res = await this.fetchImpl(`${this.base}/call`, {
       method: "POST",
       headers: this.headers(account),

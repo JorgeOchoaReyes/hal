@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     if (!body.configureInbound || !integration.configureInbound) {
       return NextResponse.json({ error: "Confirm that HAL may configure the dedicated inbound test number. This provider must support inbound configuration." }, { status: 400 });
     }
-    if (!chosen?.imported && account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
+    if (!chosen && account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
       return NextResponse.json({ error: "Inbound Bland testing requires a structured simulation so HAL can assign its pathway to the test number." }, { status: 400 });
     }
     if (!targetAgent.externalAgentId) {
@@ -132,9 +132,30 @@ export async function POST(req: NextRequest) {
     steps: testCase.scenario.structured ? undefined : testCase.scenario.steps,
   };
 
+  // Resolve both voices before changing the tester or placing a call. The
+  // saved voice ID covers targets whose provider config is on another account.
+  try {
+    const mainVoice = targetAgent.voiceId?.trim()
+      || (targetAgent.provider === account.provider && targetAgent.externalAgentId && integration.getAgentVoice
+        ? await integration.getAgentVoice(account, targetAgent.externalAgentId) : undefined)
+      || (!outboundIsTarget && targetAgent.provider === account.provider && integration.getInboundVoice
+        ? await integration.getInboundVoice(account, body.phoneNumber) : undefined);
+    if (!mainVoice) {
+      return NextResponse.json({ error: `Set the voice ID for "${targetAgent.name}" in My agents so HAL can choose a different tester voice. No call was placed.` }, { status: 400 });
+    }
+    if (!integration.listAvailableVoices) throw new Error(`${account.provider} cannot list tester voices. No call was placed.`);
+    const voices = await integration.listAvailableVoices(account);
+    const preferred = spec.voice?.trim();
+    const testerVoice = (preferred && preferred !== mainVoice && voices.includes(preferred) ? preferred : undefined)
+      ?? voices.find((voice) => voice !== mainVoice);
+    if (!testerVoice) throw new Error(`No tester voice distinct from ${mainVoice} is available on this ${account.provider} account. No call was placed.`);
+    spec.voice = testerVoice;
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+  }
+
   // Validate before provisioning so unsupported steps cannot become a persona-only call.
-  if (!chosen?.imported && spec.steps?.length) {
-    if (account.provider !== "bland") return NextResponse.json({ error: "Hosted linear scripts currently require Bland. Use a structured simulation for this provider. No call was placed." }, { status: 400 });
+  if (spec.steps?.length) {
     try { integration.buildFlowConfig(spec); }
     catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
   }
@@ -143,26 +164,38 @@ export async function POST(req: NextRequest) {
   // Prevent a second dispatch from replacing the receiving pathway mid-call.
   const inboundRuns = globalThis.__halInboundRuns ??= new Set<string>();
   const inboundKey = outboundIsTarget ? `${account.id}:${body.phoneNumber.replace(/[\s().-]/g, "")}` : undefined;
+  const pathwayKey = chosen ? `${account.id}:tester:${chosen.id}` : undefined;
   if (inboundKey && inboundRuns.has(inboundKey)) {
     return NextResponse.json({ error: "This inbound test number already has a run in progress." }, { status: 409 });
   }
+  if (pathwayKey && inboundRuns.has(pathwayKey)) {
+    return NextResponse.json({ error: "This testing pathway already has a run in progress." }, { status: 409 });
+  }
   if (inboundKey) inboundRuns.add(inboundKey);
+  if (pathwayKey) inboundRuns.add(pathwayKey);
   try {
-    // Linked testers retain their provider configuration. Only HAL-managed
-    // testers are provisioned from the simulation's saved script.
-    const agent: HostedTestingAgent = chosen?.imported ? chosen : {
-      id: chosen?.id ?? id("agent"),
+    // The selected tester is moldable: apply this simulation's speech graph
+    // and personality before dispatch, regardless of the provider.
+    let updatedId: string | undefined;
+    if (chosen) {
+      if (!integration.updateTestingAgent) throw new Error(`${account.provider} cannot apply the simulation to this tester. No call was placed.`);
+      const updated = await integration.updateTestingAgent(account, chosen, spec);
+      updatedId = updated?.externalAgentId;
+    }
+    const agent: HostedTestingAgent = chosen ? {
+      ...chosen,
+      externalAgentId: updatedId ?? chosen.externalAgentId,
+      spec: { ...spec, ...(account.provider === "bland" ? { pathwayId: chosen.externalAgentId } : {}), ...(account.provider === "vapi" ? { graphKind: "squad" as const } : {}) },
+    } : {
+      id: id("agent"),
       accountId: account.id,
       provider: account.provider,
       externalAgentId: (await integration.createTestingAgent(account, spec)).externalAgentId,
       name: spec.name,
-      createdAt: chosen?.createdAt ?? Date.now(),
-      spec,
-      encryptedKey: chosen?.encryptedKey,
-      byotKeyId: chosen?.byotKeyId,
-      byotAccountId: chosen?.byotAccountId,
+      createdAt: Date.now(),
+      spec: account.provider === "vapi" && integration.buildFlowConfig(spec) ? { ...spec, graphKind: "squad" } : spec,
     };
-    if (!chosen?.imported) upsertAgent(agent);
+    upsertAgent(agent);
 
     if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 
@@ -203,5 +236,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   } finally {
     if (inboundKey) inboundRuns.delete(inboundKey);
+    if (pathwayKey) inboundRuns.delete(pathwayKey);
   }
 }

@@ -22,6 +22,7 @@ const spec: TestingAgentSpec = { name: "Booker", persona: { name: "Booker", syst
 
 interface Captured {
   url: string;
+  method: string;
   body: unknown;
 }
 
@@ -30,7 +31,7 @@ function capturing(routes: Record<string, unknown>): { fetch: typeof fetch; call
   const calls: Captured[] = [];
   const f = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = url.toString();
-    calls.push({ url: u, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    calls.push({ url: u, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
     const key = Object.keys(routes).find((k) => u.endsWith(k));
     return new Response(JSON.stringify(key ? routes[key] : {}), {
       status: 200,
@@ -79,16 +80,16 @@ test("Bland versions and publishes the pathway when the version endpoint returns
   assert.equal((publish!.body as { environment: string }).environment, "production");
 });
 
-test("Vapi provisions a Workflow and calls with workflowId", async () => {
-  const { fetch, calls } = capturing({ "/workflow": { id: "wf1" }, "/call": { id: "c1" } });
+test("Vapi provisions a Squad and calls with squadId", async () => {
+  const { fetch, calls } = capturing({ "/squad": { id: "sq1" }, "/call": { id: "c1" } });
   const vapi = new VapiIntegration(fetch);
   const { externalAgentId } = await vapi.createTestingAgent(account, spec);
-  assert.equal(externalAgentId, "wf1");
-  assert.ok(calls.some((c) => c.url.endsWith("/workflow")));
+  assert.equal(externalAgentId, "sq1");
+  assert.ok(calls.some((c) => c.url.endsWith("/squad")));
 
-  await vapi.placeCall(account, agentFrom("wf1"), { phoneNumber: "+14155550123" });
+  await vapi.placeCall(account, { ...agentFrom("sq1"), spec: { ...spec, graphKind: "squad" } }, { phoneNumber: "+14155550123" });
   const call = calls.find((c) => c.url.endsWith("/call"))!;
-  assert.equal((call.body as { workflowId: string }).workflowId, "wf1");
+  assert.equal((call.body as { squadId: string }).squadId, "sq1");
 });
 
 test("Retell provisions a Conversation Flow and binds the agent to it", async () => {
@@ -108,8 +109,51 @@ test("Retell provisions a Conversation Flow and binds the agent to it", async ()
 
 test("ElevenLabs embeds the workflow graph in the agent config", () => {
   const cfg = new ElevenLabsIntegration().buildAgentConfig(spec) as {
-    conversation_config: { agent: { workflow?: { nodes: unknown[] } } };
+    workflow: { nodes: Record<string, unknown> };
+    conversation_config: { agent: { workflow?: unknown } };
   };
-  assert.ok(cfg.conversation_config.agent.workflow, "workflow embedded");
-  assert.ok((cfg.conversation_config.agent.workflow!.nodes as unknown[]).length >= 2);
+  assert.ok(cfg.workflow, "workflow at the API's top level");
+  assert.ok(Object.keys(cfg.workflow.nodes).length >= 2);
+  assert.equal(cfg.conversation_config.agent.workflow, undefined);
+});
+
+test("Vapi converts an imported tester to a reusable squad, then patches that squad", async () => {
+  const { fetch, calls } = capturing({ "/squad": { id: "sq1" }, "/squad/sq1": { id: "sq1" }, "/call": { id: "c1" } });
+  const vapi = new VapiIntegration(fetch);
+  const scripted = { ...spec, structured: undefined, steps: [{ kind: "say" as const, text: "Hello" }, { kind: "hangup" as const }] };
+  const first = await vapi.updateTestingAgent(account, { ...agentFrom("assistant1"), imported: true, spec: undefined }, scripted);
+  assert.equal(first.externalAgentId, "sq1");
+  const saved = { ...agentFrom("sq1"), spec: { ...scripted, graphKind: "squad" as const } };
+  const second = await vapi.updateTestingAgent(account, saved, scripted);
+  assert.equal(second.externalAgentId, "sq1");
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(calls[1]!.method, "PATCH");
+  await vapi.placeCall(account, saved, { phoneNumber: "+14155550123" });
+  assert.equal((calls[2]!.body as { squadId: string }).squadId, "sq1");
+});
+
+test("Retell creates a flow, versions the selected agent, binds and publishes it", async () => {
+  const { fetch, calls } = capturing({
+    "/create-conversation-flow": { conversation_flow_id: "flow1" },
+    "/get-agent/agent1": { version: 2, is_published: true },
+    "/create-agent-version/agent1": { version: 3 },
+  });
+  const retell = new RetellIntegration(fetch);
+  const scripted = { ...spec, structured: undefined, steps: [{ kind: "say" as const, text: "Hello" }, { kind: "hangup" as const }] };
+  await retell.updateTestingAgent(account, agentFrom("agent1"), scripted);
+  assert.deepEqual(calls.map((c) => c.method), ["POST", "GET", "POST", "PATCH", "POST"]);
+  assert.ok(calls[3]!.url.includes("/update-agent/agent1?version=3"));
+  assert.equal((calls[3]!.body as { response_engine: { conversation_flow_id: string } }).response_engine.conversation_flow_id, "flow1");
+  assert.equal((calls[4]!.body as { version: number }).version, 3);
+});
+
+test("ElevenLabs patches the selected agent with top-level workflow and updated personality", async () => {
+  const { fetch, calls } = capturing({ "/v1/convai/agents/agent1": {} });
+  const eleven = new ElevenLabsIntegration(fetch);
+  const scripted = { ...spec, structured: undefined, persona: { name: "Busy", systemPrompt: "You are a busy customer" }, steps: [{ kind: "say" as const, text: "Hello" }, { kind: "hangup" as const }] };
+  await eleven.updateTestingAgent(account, agentFrom("agent1"), scripted);
+  assert.equal(calls[0]!.method, "PATCH");
+  const body = calls[0]!.body as { workflow: { nodes: Record<string, unknown> }; conversation_config: { agent: { prompt: { prompt: string } } } };
+  assert.ok(body.workflow.nodes.start_node);
+  assert.equal(body.conversation_config.agent.prompt.prompt, "You are a busy customer");
 });

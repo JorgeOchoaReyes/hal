@@ -17,7 +17,7 @@ function capturing(text: string): { fetch: typeof fetch; last: () => { url: stri
 
 test("GeminiClient maps roles, system instruction, and JSON mode", async () => {
   const { fetch, last } = capturing('{"ok":true}');
-  const client = new GeminiClient({ apiKey: "k", defaultModel: "gemini-1.5-flash" });
+  const client = new GeminiClient({ apiKey: "k", defaultModel: "gemini-3.5-flash-lite" });
   // The client uses global fetch; swap it for the capturing stub.
   const realFetch = globalThis.fetch;
   globalThis.fetch = fetch;
@@ -42,7 +42,7 @@ test("GeminiClient maps roles, system instruction, and JSON mode", async () => {
       ["user", "model"],
     );
     assert.equal(body.generationConfig.responseMimeType, "application/json");
-    assert.match(last().url, /models\/gemini-1\.5-flash:generateContent/);
+    assert.match(last().url, /models\/gemini-3\.5-flash-lite:generateContent/);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -51,4 +51,5 @@ test("GeminiClient maps roles, system instruction, and JSON mode", async () => {
 test("createLLM('gemini') returns a Gemini client", () => {
   const c = createLLM("gemini");
   assert.equal(c.name, "gemini");
+  assert.equal(c.defaultModel, "gemini-3.5-flash-lite");
 });

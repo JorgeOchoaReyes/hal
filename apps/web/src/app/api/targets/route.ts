@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     byotAccountId?: string;
     /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
     externalAgentId?: string;
+    voiceId?: string;
   };
   if (!body.name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
   if (!body.target?.transport)
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
     direction: body.direction ?? "inbound",
     encryptedKey: body.encryptedKey?.trim() || undefined,
     externalAgentId: body.externalAgentId?.trim() || undefined,
+    voiceId: body.voiceId?.trim() || undefined,
     createdAt: Date.now(),
   };
   upsertTarget(agent);

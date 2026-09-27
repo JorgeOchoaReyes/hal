@@ -105,23 +105,13 @@ export class Judge {
       `"checks": [{"description": string, "passed": boolean, "detail": string}]}\n` +
       `Include one check per criterion. Be strict but fair.`;
 
-    let raw: string;
-    try {
-      raw = await this.llm.complete({
-        model: spec.model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0,
-        maxTokens: 700,
-        json: true,
-      });
-    } catch (err) {
-      return {
-        passed: false,
-        score: 0,
-        summary: `Judge LLM error: ${(err as Error).message}`,
-        checks: [],
-      };
-    }
+    const raw = await this.llm.complete({
+      model: spec.model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0,
+      maxTokens: 700,
+      json: true,
+    });
 
     const parsed = safeParse(raw);
     if (!parsed) {

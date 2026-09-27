@@ -217,6 +217,71 @@ export class BlandIntegration implements VoiceProviderIntegration {
     return { externalAgentId: agentId };
   }
 
+  async getInboundVoice(account: ProviderAccount, phoneNumber: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/v1/inbound/${encodeURIComponent(phoneNumber)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { voice?: string; voice_id?: string };
+    return data.voice_id ?? data.voice;
+  }
+
+  async getAgentVoice(account: ProviderAccount, externalAgentId: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/v1/agents/${encodeURIComponent(externalAgentId)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { voice?: string; agent?: { voice?: string } };
+    return data.voice ?? data.agent?.voice;
+  }
+
+  async listAvailableVoices(account: ProviderAccount): Promise<string[]> {
+    const res = await this.fetchImpl(`${this.base}/v1/voices`, { headers: this.headers(account) });
+    if (!res.ok) throw new Error(`Bland could not list voices (${res.status}): ${await safeText(res)}`);
+    const data = await res.json() as Array<{ voice_id?: string; id?: string }> | { voices?: Array<{ voice_id?: string; id?: string }> };
+    return (Array.isArray(data) ? data : data.voices ?? []).map((voice) => voice.voice_id ?? voice.id).filter((id): id is string => !!id);
+  }
+
+  /** Keep the selected tester's pathway id while replacing its script. */
+  async updateTestingAgent(account: ProviderAccount, agent: HostedTestingAgent, spec: TestingAgentSpec): Promise<void> {
+    const graph = this.buildFlowConfig(spec) as { nodes?: unknown[]; edges?: unknown[] } | null;
+    if (!graph?.nodes?.length) throw new Error("The selected Bland tester needs a script or structured simulation. No call was placed.");
+    const pathwayId = agent.externalAgentId;
+    const res = await this.post(account, `/v1/pathway/${encodeURIComponent(pathwayId)}`, {
+      name: agent.name,
+      description: "HAL testing pathway. Script updated from the selected simulation before dispatch.",
+      nodes: graph.nodes,
+      edges: graph.edges ?? [],
+    });
+    const detail = await safeText(res);
+    let failed = !res.ok;
+    try { failed ||= JSON.parse(detail).status === "error"; } catch { /* HTTP status remains authoritative */ }
+    if (failed) throw new Error(`Bland could not update tester pathway ${pathwayId} (${res.status}): ${detail.slice(0, 200)}. No call was placed.`);
+
+    // Calls without pathway_version use Bland's production version. Updating
+    // the editable pathway alone can leave an older published script active.
+    const versionRes = await this.post(account, `/v1/pathway/${encodeURIComponent(pathwayId)}/version`, {
+      name: spec.name,
+      nodes: graph.nodes,
+      edges: graph.edges ?? [],
+    });
+    const versionText = await safeText(versionRes);
+    let version: number | undefined;
+    try {
+      const body = JSON.parse(versionText) as { status?: string; version_number?: unknown; data?: { version_number?: unknown } };
+      if (body.status !== "error") {
+        const value = body.data?.version_number ?? body.version_number;
+        if (typeof value === "number") version = value;
+      }
+    } catch { /* report below */ }
+    if (!versionRes.ok || version === undefined) throw new Error(`Bland updated tester pathway ${pathwayId}, but could not create its production version (${versionRes.status}): ${versionText.slice(0, 200)}. No call was placed.`);
+
+    const publishRes = await this.post(account, `/v1/pathway/${encodeURIComponent(pathwayId)}/publish`, {
+      version_id: version,
+      environment: "production",
+    });
+    const publishText = await safeText(publishRes);
+    let publishFailed = !publishRes.ok;
+    try { publishFailed ||= JSON.parse(publishText).status === "error"; } catch { /* HTTP status remains authoritative */ }
+    if (publishFailed) throw new Error(`Bland updated tester pathway ${pathwayId}, but could not publish version ${version} (${publishRes.status}): ${publishText.slice(0, 200)}. No call was placed.`);
+  }
+
   async getInboundPathway(account: ProviderAccount, phoneNumber: string): Promise<string | undefined> {
     const res = await this.fetchImpl(`${this.base}/v1/inbound/${encodeURIComponent(phoneNumber)}`, { headers: this.headers(account) });
     if (!res.ok) return undefined;
@@ -230,6 +295,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
     }
     const res = await this.post(account, `/v1/inbound/${encodeURIComponent(phoneNumber)}`, {
       pathway_id: agent.externalAgentId,
+      ...(agent.spec?.voice ? { voice: agent.spec.voice } : {}),
     });
     const detail = await safeText(res);
     let failed = !res.ok;
@@ -253,6 +319,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
           record: true,
           phone_number: target.phoneNumber,
           pathway_id: agent.externalAgentId,
+          ...(agent.spec?.voice ? { voice: agent.spec.voice } : {}),
           ...(from ? { from } : {}),
         }
       : {
@@ -385,6 +452,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
       status: mapStatus(data),
       transcript: parseTranscript(data),
       endedReason: data.error_message ?? undefined,
+      endedAt: data.end_at ? Date.parse(data.end_at) || undefined : undefined,
     };
   }
 }
@@ -399,6 +467,7 @@ interface BlandCall {
   status?: string;
   completed?: boolean;
   error_message?: string;
+  end_at?: string;
   transcripts?: BlandTurn[];
 }
 

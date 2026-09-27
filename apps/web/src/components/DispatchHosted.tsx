@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import BlandChatRun from "./BlandChatRun";
+import HostedChatRun from "./HostedChatRun";
 import NumberPicker from "./NumberPicker";
 
 interface Account {
@@ -21,10 +21,13 @@ interface TestingAgentLite extends CallerCredential {
   id: string;
   name: string;
   provider: string;
+  externalAgentId?: string;
+  spec?: { structured?: unknown; steps?: unknown[]; pathwayId?: string };
 }
 interface TargetAgentLite extends CallerCredential {
   id: string;
   name: string;
+  externalAgentId?: string;
   target: { transport: string; phoneNumber?: string };
 }
 interface TestCaseLite {
@@ -159,6 +162,9 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const caller = outboundIsTarget
     ? targets.find((a) => a.id === outboundParsed.id)
     : testingAgents.find((a) => a.id === outboundParsed.id);
+  const callerPathwayId = outboundIsTarget ? caller?.externalAgentId
+    : chosenTesting && (chosenTesting.imported || chosenTesting.spec?.structured || chosenTesting.spec?.steps?.length || chosenTesting.spec?.pathwayId)
+      ? chosenTesting.externalAgentId : undefined;
   const callerSavedKey = savedKeys.find((key) => key.id === caller?.byotKeyId);
   const callerKeyError = caller?.byotKeyId
     ? caller.byotAccountId && caller.byotAccountId !== selected
@@ -243,10 +249,10 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       <div className="section-heading"><div><h3>Hosted testing</h3><p className="muted">Run the saved scenario against your provider.</p></div>
         <div className="mode-switch" aria-label="Test channel">
           <button className={mode === "call" ? "active" : "secondary"} aria-pressed={mode === "call"} disabled={busy} onClick={() => setMode("call")}>Phone call</button>
-          <button className={mode === "chat" ? "active" : "secondary"} aria-pressed={mode === "chat"} disabled={busy} onClick={() => setMode("chat")}>Bland chat</button>
+          <button className={mode === "chat" ? "active" : "secondary"} aria-pressed={mode === "chat"} disabled={busy} onClick={() => setMode("chat")}>Chat</button>
         </div>
       </div>
-      {mode === "chat" ? <BlandChatRun testCaseId={testCaseId} /> : accounts.length === 0 ? <p className="muted">Connect an account on <Link href="/agents">Providers</Link> to place a call.</p> : <>
+      {mode === "chat" ? <HostedChatRun testCaseId={testCaseId} /> : accounts.length === 0 ? <p className="muted">Connect an account on <Link href="/agents">Providers</Link> to place a call.</p> : <>
         <label className="field account-picker"><span className="field-label">Provider account</span>
           <select disabled={busy || keyBusy || keysLoading} value={selected} onChange={(e) => { setAccountId(e.target.value); if (inboundParsed.kind === "testing") { setInbound(AUTO); setPhone(""); } if (outboundParsed.kind === "testing") setOutbound(AUTO); }}>
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.label} ({a.provider})</option>)}
@@ -256,6 +262,10 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           <div className="call-participants">
             <section className="participant-panel"><div className="section-heading"><h4>Caller</h4><span className="pill outbound">Outbound</span></div>
               <label className="field"><span className="field-label">Agent placing the call</span><select value={outbound} onChange={(e) => setOutbound(e.target.value as AgentValue)}>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
+              {isBland && <p className="field-help">{callerPathwayId
+                ? <>Bland pathway sent with this call: <span className="mono">{callerPathwayId}</span></>
+                : chosenTesting ? "This saved tester uses a task prompt, not a Bland pathway."
+                  : "Auto creates a new Bland pathway from this simulation’s script for the call."}</p>}
               <label className="field"><span className="field-label">Caller ID</span><select value={callerIdMode} onChange={(e) => setCallerIdMode(e.target.value)}><option value="account">Account default</option>{isBland && <option value="pool">Bland default pool</option>}<option value="custom">Choose a number</option></select></label>
               {callerIdMode === "custom" && <NumberPicker accountId={selected} value={fromPhone} onChange={setFromPhone} ariaLabel="Outbound caller ID" placeholder="+14155550123" />}
               <p className="field-help">{isBland ? "Use a number owned by this account, including + and country code." : "Vapi and ElevenLabs use the number ID saved on the account."}</p>
@@ -285,11 +295,11 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               <p className="field-help">The number the caller will dial.</p>
             </section>
           </div>
-          {chosenTesting?.imported && <p className="field-help">This imported tester uses its existing provider configuration. The saved scenario script is not applied; this simulation’s judges still score the call.</p>}
+          {chosenTesting && <p className="field-help">HAL applies this simulation’s script and personality to the selected tester before the call. Its provider graph keeps the new script afterward. This simulation’s judges score the call.</p>}
           {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with {chosenTesting?.imported ? "the imported tester’s pathway" : "this scenario"}. This replaces its current pathway and stays set after the run.</span></label>}
           {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
         </fieldset>
-        <div className="action-bar"><span className="field-help">{chosenTesting?.imported ? "Uses the imported tester." : "Uses the saved scenario below."} This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
+        <div className="action-bar"><span className="field-help">{chosenTesting ? "Updates the selected testing agent with this simulation." : "Creates a tester from the saved scenario."} This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
       </>}
       {mode === "call" && err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
       {mode === "call" && result && (

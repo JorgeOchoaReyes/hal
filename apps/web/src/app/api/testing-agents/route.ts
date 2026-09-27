@@ -66,7 +66,9 @@ export async function POST(req: NextRequest) {
     const agent: HostedTestingAgent = {
       id: existing?.id ?? id("agent"), accountId: account.id, provider: account.provider,
       externalAgentId, name, imported: true, createdAt: existing?.createdAt ?? Date.now(),
-      spec: account.provider === "bland" ? { name, persona: { name, systemPrompt: "" }, pathwayId: externalAgentId } : undefined,
+      spec: existing?.spec && existing.externalAgentId === externalAgentId
+        ? { ...existing.spec, name, ...(account.provider === "bland" ? { pathwayId: externalAgentId } : {}) }
+        : account.provider === "bland" ? { name, persona: { name, systemPrompt: "" }, pathwayId: externalAgentId } : undefined,
       encryptedKey: body.encryptedKey !== undefined ? body.encryptedKey.trim() || undefined : existing?.encryptedKey,
       byotKeyId: body.byotKeyId !== undefined ? body.byotKeyId || undefined : existing?.byotKeyId,
       byotAccountId: account.id,
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest) {
       externalAgentId,
       name: body.name || existing?.name || "HAL tester",
       createdAt: existing?.createdAt ?? Date.now(),
-      spec,
+      spec: account.provider === "vapi" && integration.buildFlowConfig(spec) ? { ...spec, graphKind: "squad" } : spec,
       encryptedKey: body.encryptedKey !== undefined ? body.encryptedKey.trim() || undefined : existing?.encryptedKey,
       byotKeyId: body.byotKeyId !== undefined ? body.byotKeyId || undefined : existing?.byotKeyId,
       byotAccountId: account.id,

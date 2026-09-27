@@ -6,6 +6,7 @@ import {
   RetellIntegration,
   BlandIntegration,
   runHostedCall,
+  refreshHostedCall,
   MockLLMClient,
   getIntegration,
   type ProviderAccount,
@@ -357,6 +358,61 @@ test("runHostedCall polls to completion then judges the transcript", async () =>
   assert.equal(result.externalCallId, "c1");
 });
 
+test("a timed-out hosted run can be checked later and scored without placing another call", async () => {
+  let polls = 0;
+  const opts = runnerOptions(async () => {
+    polls++;
+    return { externalCallId: "c", status: "ended", transcript: [
+      { role: "agent", text: "Can I book?", startedAt: 0 },
+      { role: "target", text: "Booked.", startedAt: 1 },
+    ] };
+  });
+  opts.integration.placeCall = async () => { throw new Error("A refresh must not place a call"); };
+  const timedOut = { id: "run-original", testCaseId: "tc", status: "errored" as const,
+    startedAt: 1, endedAt: 2, transcript: [], liveChecks: [], externalCallId: "c",
+    error: "Timed out waiting for the hosted call to finish." };
+  const refreshed = await refreshHostedCall({ result: timedOut, integration: opts.integration,
+    account: opts.account, judge: opts.judge, llm: opts.llm });
+  assert.equal(polls, 1);
+  assert.equal(refreshed.state, "completed");
+  assert.equal(refreshed.result?.id, timedOut.id);
+  assert.equal(refreshed.result?.status, "passed");
+  assert.equal(refreshed.result?.error, undefined);
+  assert.equal(refreshed.result?.transcript.length, 2);
+  assert.ok(refreshed.result?.verdict);
+});
+
+test("checking a call that is still active or lacks a finished transcript never scores partial turns", async () => {
+  let status: HostedCallState = { externalCallId: "c", status: "in-progress" };
+  const opts = runnerOptions(async () => status);
+  const timedOut = { id: "run-original", testCaseId: "tc", status: "errored" as const,
+    startedAt: 1, transcript: [{ role: "agent" as const, text: "partial", startedAt: 1 }],
+    liveChecks: [], externalCallId: "c", error: "Timed out" };
+  const base = { result: timedOut, integration: opts.integration, account: opts.account,
+    judge: opts.judge, llm: opts.llm };
+  assert.equal((await refreshHostedCall(base)).state, "in-progress");
+  status = { externalCallId: "c", status: "ended" };
+  assert.equal((await refreshHostedCall(base)).state, "waiting-transcript");
+});
+
+test("an unavailable judge model leaves a completed call recoverable instead of recording a failed verdict", async () => {
+  const opts = runnerOptions(async () => ({ externalCallId: "c", status: "ended", transcript: [
+    { role: "agent", text: "Hello", startedAt: 0 }, { role: "target", text: "Hello", startedAt: 1 },
+  ] }));
+  const result = await refreshHostedCall({
+    result: { id: "run1", testCaseId: "tc", status: "errored", startedAt: 0,
+      transcript: [], liveChecks: [], externalCallId: "c", error: "Timed out" },
+    integration: opts.integration, account: opts.account,
+    judge: { mode: "llm-only", criteria: ["The target greeted the caller"] },
+    llm: { name: "unavailable", defaultModel: "missing", complete: async () => { throw new Error("model unavailable"); } },
+  });
+  assert.equal(result.state, "evaluation-failed");
+  assert.equal(result.result?.status, "errored");
+  assert.match(result.result?.error ?? "", /model unavailable/);
+  assert.equal(result.result?.verdict, undefined);
+  assert.equal(result.result?.transcript.length, 2);
+});
+
 test("Bland validates caller ID and explains ownership errors without leaking credentials", async () => {
   const requests: Array<{ body: any; headers: any }> = [];
   const bland = new BlandIntegration((async (_url, init) => {
@@ -492,6 +548,54 @@ test("Bland dispatch attaches the newly provisioned say-then-hangup pathway", as
   const before = requests.length;
   await assert.rejects(bland.createTestingAgent(account, { ...spec, steps: [{ kind: "say", text: "Hi", delayMs: 1000 }] }), /cannot be reproduced exactly/);
   assert.equal(requests.length, before, "unsupported scripts must fail before provider mutations");
+});
+
+test("Bland updates the selected tester with each exact authored line before dispatch", async () => {
+  const requests: Array<{ url: string; body: any }> = [];
+  const bland = new BlandIntegration((async (url, init) => {
+    const u = String(url);
+    requests.push({ url: u, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (u.endsWith("/version")) return Response.json({ status: "success", data: { version_number: 5 } });
+    if (u.endsWith("/calls")) return Response.json({ call_id: "call1" });
+    return Response.json({ status: "success" });
+  }) as typeof fetch);
+  const spec = {
+    name: "HAL tester",
+    persona: { name: "Everyday customer", systemPrompt: "You are a polite but busy customer calling a business. Answer questions directly." },
+    steps: [
+      { kind: "say" as const, text: "Hi, I'd like some help please." },
+      { kind: "say" as const, text: "Hey i need help sap" },
+      { kind: "say" as const, text: "need to help now" },
+      { kind: "say" as const, text: "hello?" },
+      { kind: "hangup" as const },
+    ],
+  };
+  const agent = { id: "tester", accountId: account.id, provider: "bland", name: "HAL tester", createdAt: 0, externalAgentId: "existing-pathway", spec };
+  await bland.updateTestingAgent(account, agent, spec);
+  await bland.placeCall(account, agent, { phoneNumber: "+14155550123" });
+  assert.equal(requests[0]?.url, "https://api.bland.ai/v1/pathway/existing-pathway");
+  assert.deepEqual(requests[0]?.body.nodes.map((node: any) => node.data.text), spec.steps.slice(0, 4).map((step) => step.text));
+  assert.deepEqual(requests[0]?.body.nodes.map((node: any) => node.type), ["Default", "Default", "Default", "End Call"]);
+  assert.ok(requests[0]?.body.nodes.every((node: any) => node.data.globalPrompt === spec.persona.systemPrompt));
+  assert.deepEqual(requests[1]?.body.nodes.map((node: any) => node.data.text), spec.steps.slice(0, 4).map((step) => step.text));
+  assert.deepEqual(requests[2]?.body, { version_id: 5, environment: "production" });
+  assert.equal(requests[3]?.body.pathway_id, "existing-pathway");
+  assert.ok(!requests.some((r) => r.url.endsWith("/pathway/create")));
+});
+
+test("Bland stops dispatch when the simulation cannot become the production pathway", async () => {
+  const requests: string[] = [];
+  const bland = new BlandIntegration((async (url) => {
+    const path = String(url);
+    requests.push(path);
+    if (path.endsWith("/version")) return Response.json({ status: "success", data: { version_number: 7 } });
+    if (path.endsWith("/publish")) return Response.json({ status: "error", message: "Could not promote" });
+    return Response.json({ status: "success" });
+  }) as typeof fetch);
+  const spec = { name: "HAL tester", persona: { name: "Everyday customer", systemPrompt: "Be busy" }, steps: [{ kind: "say" as const, text: "Hello" }, { kind: "hangup" as const }] };
+  const agent = { id: "tester", accountId: account.id, provider: "bland", name: spec.name, createdAt: 0, externalAgentId: "existing-pathway", spec };
+  await assert.rejects(bland.updateTestingAgent(account, agent, spec), /No call was placed/);
+  assert.ok(!requests.some((path) => path.endsWith("/calls")));
 });
 
 test("Bland reads the inbound pathway without changing the number", async () => {

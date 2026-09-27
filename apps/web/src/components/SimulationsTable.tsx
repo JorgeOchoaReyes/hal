@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { RunStatus } from "@hal/core";
 import { useNewSimulation } from "./NewSimulationContext";
@@ -28,19 +29,35 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
   const [q, setQ] = useState("");
   const [runState, setRunState] = useState<Record<string, RunState>>({});
   const [runModalFor, setRunModalFor] = useState<string | null>(null);
+  const [deleteFor, setDeleteFor] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState<string[]>([]);
+  const [deleteError, setDeleteError] = useState("");
+  const router = useRouter();
   const { openNewSimulation } = useNewSimulation();
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter(
+    const visible = rows.filter((r) => !deleted.includes(r.id));
+    if (!needle) return visible;
+    return visible.filter(
       (r) =>
         r.name.toLowerCase().includes(needle) ||
         r.id.toLowerCase().includes(needle) ||
         r.persona.toLowerCase().includes(needle) ||
         r.tags.some((t) => t.toLowerCase().includes(needle)),
     );
-  }, [rows, q]);
+  }, [rows, q, deleted]);
+
+  async function remove(id: string) {
+    setDeleting(true); setDeleteError("");
+    try {
+      const response = await fetch(`/api/testcases/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not delete the simulation. Try again.");
+      setDeleted((ids) => [...ids, id]); setDeleteFor(null); router.refresh();
+    } catch (error) { setDeleteError((error as Error).message); }
+    finally { setDeleting(false); }
+  }
 
   function onRunComplete(id: string, status: RunStatus) {
     setRunState((s) => ({ ...s, [id]: status }));
@@ -66,6 +83,7 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
       </div>
 
       <div className="table-wrap">
+        {deleteError && <p role="alert" className="error-text">{deleteError}</p>}
         <table className="data">
           <thead>
             <tr>
@@ -135,6 +153,10 @@ export default function SimulationsTable({ rows }: { rows: SimRow[] }) {
                       <Link href={`/simulations/${r.id}`} className="icon-btn" title="Open">
                         Open
                       </Link>
+                      {deleteFor === r.id ? <>
+                        <button className="icon-btn" disabled={deleting} onClick={() => remove(r.id)}>Confirm delete</button>
+                        <button className="icon-btn" disabled={deleting} onClick={() => setDeleteFor(null)}>Cancel</button>
+                      </> : <button className="icon-btn" onClick={() => setDeleteFor(r.id)} title={`Delete ${r.name}`}>Delete</button>}
                     </div>
                   </td>
                 </tr>

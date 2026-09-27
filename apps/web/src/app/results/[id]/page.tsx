@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { JudgeSpec, JudgeVerdict, RunAgentSnapshot } from "@hal/core";
 import { getResult, listJudges, listAccounts } from "@/lib/store";
-import { RunAudio, ApplyRunJudges } from "@/components/RunDetailActions";
+import { RunAudio, ApplyRunJudges, CheckHostedCall } from "@/components/RunDetailActions";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +52,7 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
   const run = getResult(id);
   if (!run) notFound();
   const context = run.context;
+  const retryJudgeError = run.status === "failed" && Boolean(run.verdict?.summary.startsWith("Judge LLM error:"));
   const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId && (!run.recordingSource || run.recordingSource.provider === "bland"));
   return <div className="run-detail">
     <nav style={{ marginTop: 24 }}><Link href="/results">← All results</Link></nav>
@@ -63,6 +64,7 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
       </dl>
       {!run.testCaseId.startsWith("hosted:") && <Link href={`/simulations/${encodeURIComponent(run.testCaseId)}`}>Open simulation →</Link>}
       {run.error && <p role="alert" style={{ color: "var(--fail)", whiteSpace: "pre-wrap" }}>{run.error}</p>}
+      {(run.status === "errored" || retryJudgeError) && run.externalCallId && context?.account && context.transport !== "bland-chat" && <CheckHostedCall runId={id} retryEvaluation={retryJudgeError} />}
     </section>
     {run.metrics && <section className="card"><h2 style={{ marginTop: 0 }}>Run metrics</h2><dl className="run-facts">
       <dt>Testing agent turns</dt><dd>{run.metrics.agentTurns}</dd><dt>Target turns</dt><dd>{run.metrics.targetTurns}</dd>

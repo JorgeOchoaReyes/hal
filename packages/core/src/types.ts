@@ -126,7 +126,7 @@ export interface Scenario {
 // Target (system under test)
 // ---------------------------------------------------------------------------
 
-export type TransportKind = "mock" | "telephony" | "webrtc" | "sip" | "bland-chat";
+export type TransportKind = "mock" | "telephony" | "webrtc" | "sip" | "bland-chat" | "hosted-chat";
 
 /**
  * Describes the voice AI being tested and how to reach it.
@@ -134,6 +134,7 @@ export type TransportKind = "mock" | "telephony" | "webrtc" | "sip" | "bland-cha
  */
 export type Target =
   | { transport: "bland-chat"; name: string; pathwayId: string }
+  | { transport: "hosted-chat"; name: string; provider: "vapi" | "retell" | "elevenlabs"; externalAgentId: string; resourceKind?: "assistant" | "squad" }
   | {
       transport: "mock";
       name: string;
@@ -287,6 +288,8 @@ export interface TargetAgent {
   byotAccountId?: string;
   id: string;
   name: string;
+  /** Provider voice ID used by this agent; fallback when HAL cannot read its remote configuration. */
+  voiceId?: string;
   target: Target;
   description?: string;
   /**
