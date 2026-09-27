@@ -588,19 +588,26 @@ function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []
         text, startedAt: eventTime(event.created_at) ?? Date.now(),
         meta: { ...event, ...(nodeId ? { nodeId } : {}) } }];
     });
-    if (turns.length) return turns;
+    const detailTurnCount = call.transcripts?.filter((turn) => asText(turn.text)).length ?? 0;
+    if (turns.length && turns.length >= detailTurnCount) return turns;
   }
   if (!call.transcripts?.length) return undefined;
   const base = Date.now();
   const out: Transcript = [];
+  const unmatched = [...speechEvents];
   for (const t of call.transcripts) {
     const text = (t.text ?? "").trim();
     if (!text) continue;
     const who = (t.user ?? t.speaker ?? t.role ?? "").toLowerCase();
     const isHuman = who === "user" || who === "human" || who === "customer" || who === "target";
+    const eventIndex = unmatched.findIndex((event) =>
+      (event.event_type === "transcript.user") === isHuman
+      && asText(asRecord(event.payload).text)?.toLowerCase() === text.toLowerCase());
+    const matched = eventIndex >= 0 ? unmatched.splice(eventIndex, 1)[0] : undefined;
+    const nodeId = t.node_id ?? t.pathway_node_id ?? asText(matched?.node_id);
     out.push({ role: isHuman ? "target" : "agent", text,
-      startedAt: eventTime(t.start_at ?? t.created_at) ?? base,
-      meta: { ...t, ...(t.node_id || t.pathway_node_id ? { nodeId: t.node_id ?? t.pathway_node_id } : {}) },
+      startedAt: eventTime(t.start_at ?? t.created_at ?? matched?.created_at) ?? base,
+      meta: { ...t, ...(nodeId ? { nodeId } : {}) },
     });
   }
   return out.length ? out : undefined;

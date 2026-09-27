@@ -28,6 +28,22 @@ test("Bland preserves full details and pathway events, including per-message nod
   assert.equal(state.trace?.[0]?.kind, "tool-call");
 });
 
+test("Bland keeps all call transcript turns when pathway events are delayed", async () => {
+  const integration = new BlandIntegration(fetchFor({
+    "https://api.bland.ai/v1/calls/call-2": { completed: true, transcripts: [
+      { user: "assistant", text: "Hello" }, { user: "user", text: "I need help" },
+    ] },
+    "https://api.bland.ai/v1/pathway_calls/call-2?v=2": [
+      { sequence: 1, event_type: "transcript.assistant", node_id: "greeting", payload: { text: "Hello" },
+        created_at: "2026-01-01T00:00:01Z" },
+    ],
+  }));
+  const state = await integration.getCall(account, "call-2");
+  assert.equal(state.transcript?.length, 2);
+  assert.equal(state.transcript?.[0]?.meta?.nodeId, "greeting");
+  assert.equal(state.transcript?.[1]?.text, "I need help");
+});
+
 test("Vapi, Retell and ElevenLabs retain provider metadata and expose tool activity", async () => {
   const cases = [
     { provider: "vapi", integration: new VapiIntegration(fetchFor({ "https://api.vapi.ai/call/call-1": {
