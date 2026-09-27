@@ -592,6 +592,9 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-head { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .activity-head strong:last-child { text-align: right; }
 .activity-feed { display: grid; gap: 10px; margin-top: 12px; }
+.activity-group { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.activity-group > summary { color: var(--muted); }
+.activity-group-feed { display: grid; gap: 8px; padding-top: 10px; }
 .activity-entry { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); overflow-wrap: anywhere; }
 .activity-row > .activity-entry { grid-row: 1; }
 .activity-collapsible { padding: 6px 12px; }

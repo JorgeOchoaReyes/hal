@@ -44,4 +44,6 @@ test("activity places speech by speaker and metadata by provider source", () => 
   assert.match(html, /<summary>Visited node: Tester opening<\/summary>/);
   assert.match(html, /<summary>Tool call: lookup<\/summary>/);
   assert.match(html, /<summary>Provider event: recording completed<\/summary>/);
+  assert.match(html, /<summary>1 activity between messages 1 and 2<\/summary>/);
+  assert.match(html, /<summary>2 activities between messages 2 and 3<\/summary>/);
 });

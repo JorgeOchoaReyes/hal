@@ -18,10 +18,12 @@ const env = { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", NODE_EN
 for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "DEEPGRAM_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"]) delete env[key];
 const judge = { id: "j1", name: "Booking checker", kind: "code", createdAt: 0, spec: { mode: "rules-only", rules: [{ kind: "regex", role: "target", pattern: "booked" }] } };
 const secondJudge = { id: "j2", name: "Courtesy checker", kind: "code", createdAt: 0, spec: { mode: "rules-only", rules: [{ kind: "transcript-contains", needle: "please" }] } };
-const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [] };
+const csatMetric = { id: "csat", name: "CSAT", description: "Customer satisfaction", outputType: "rating" };
+const csatJudge = { id: "j3", name: "CSAT judge", kind: "llm", createdAt: 0, spec: { metrics: [csatMetric] } };
+const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [], metricResults: [{ id: "csat", name: "CSAT", outputType: "rating", value: 82, passed: null, reasoning: "Helpful response" }] };
 const fixture = { id: "run1", testCaseId: "tc1", status: "passed", startedAt: 0, endedAt: 1000, externalCallId: "fixture-call", transcript: [{ role: "target", text: "Your appointment is booked.", startedAt: 1, audioStartMs: 0 }], liveChecks: [], verdict: originalVerdict,
   recording: { status: "available", contentType: "audio/wav", bytes: 76, downloadedAt: 1 },
-  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: judge.spec, judges: [judge, secondJudge] } };
+  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: { mode: "all", rules: [...judge.spec.rules, ...secondJudge.spec.rules], metrics: [csatMetric] }, judges: [judge, secondJudge, csatJudge] } };
 const tc = { id: "tc1", name: "Current simulation", target: { name: "Mock target", transport: "mock", mock: { systemPrompt: "Say hello", greeting: "Hello" } }, scenario: { id: "s1", name: "Test", persona: { name: "New tester", systemPrompt: "Say hello" }, steps: [{ kind: "say", text: "Hello" }], maxTurns: 2 }, judge: { mode: "rules-only", rules: [{ kind: "min-turns", count: 1 }] } };
 await writeFile(join(data, "results.json"), JSON.stringify([fixture]));
 await writeFile(join(data, "judges.json"), JSON.stringify([judge]));
@@ -127,9 +129,13 @@ try {
   console.log("PASS: editable scenarios and agents persist, secrets are redacted, only the outbound caller key is required, and Bland chat validates inputs");
   console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();
-  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Courtesy checker", "Original verdict", "Apply additional judges", "Sync latest call data", "Transcript and activity", "Expected message match", "Provider metadata JSON", "Metadata to view", "HAL testing agent", "Main agent", "Both agents and full run", "Copy JSON", "/api/results/run1/recording"]) assert(html.includes(value), value);
+  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Courtesy checker", "CSAT judge", "Original verdict", "Apply additional judges", "Sync latest call data", "Transcript and activity", "Expected message match", "Provider metadata JSON", "Metadata to view", "HAL testing agent", "Main agent", "Both agents and full run", "Copy JSON", "/api/results/run1/recording"]) assert(html.includes(value), value);
   assert(html.includes('class="judge-cards"'));
-  assert.equal((html.match(/<article class="card"><p class="field-label">Attached judge/g) ?? []).length, 2);
+  assert.equal((html.match(/<article class="card"><p class="field-label">Attached judge/g) ?? []).length, 3);
+  const overallCard = html.split("<h3>Overall verdict</h3>")[1].split("</article>")[0];
+  const csatCard = html.split("<h3>CSAT judge</h3>")[1].split("</article>")[0];
+  assert(!overallCard.includes("Helpful response"));
+  assert(csatCard.includes("Helpful response"));
   assert(!html.includes('aria-label="Audio transcript"'));
   assert.equal((await fetch(base + "/results/missing")).status, 404);
   const range = await fetch(base + "/api/results/run1/recording", { headers: { range: "bytes=0-3" } });

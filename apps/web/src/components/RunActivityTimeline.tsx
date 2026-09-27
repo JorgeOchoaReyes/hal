@@ -49,6 +49,16 @@ function MessageMetadata({ turn, side, speaker }: { turn: Utterance; side: Side;
   </details>;
 }
 
+function ActivityEvent({ event }: { event: RunTraceEvent }) {
+  return <div className="activity-row">
+    <details className={`activity-entry activity-collapsible ${sideClass(event.side)}`}>
+      <summary>{activityTitle(event)}</summary>
+      <p className="muted" style={{ fontSize: 12 }}>{sideName(event.side)} activity{event.nodeId ? ` · node ${event.nodeId}` : ""}</p>
+      {event.data && <pre className="run-json">{JSON.stringify(event.data, null, 2)}</pre>}
+    </details>
+  </div>;
+}
+
 export default function RunActivityTimeline({ run, primarySide }: { run: TestResult; primarySide: Side }) {
   const audio = useRef<HTMLAudioElement>(null);
   const [positionMs, setPositionMs] = useState(0);
@@ -67,22 +77,32 @@ export default function RunActivityTimeline({ run, primarySide }: { run: TestRes
     ...run.transcript.map((turn, index) => ({ kind: "speech" as const, at: turn.startedAt, order: index, turn })),
     ...(run.trace ?? []).map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
   ].sort((a, b) => a.at - b.at || a.order - b.order);
+  const blocks: Array<({ kind: "speech"; order: number; turn: Utterance }) | ({ kind: "activity"; events: RunTraceEvent[]; afterTurn: number })> = [];
+  let pending: RunTraceEvent[] = [];
+  let speechCount = 0;
+  const flush = () => {
+    if (pending.length) blocks.push({ kind: "activity", events: pending, afterTurn: speechCount });
+    pending = [];
+  };
+  for (const entry of entries) {
+    if (entry.kind === "event") pending.push(entry.event);
+    else { flush(); blocks.push({ kind: "speech", order: entry.order, turn: entry.turn }); speechCount++; }
+  }
+  flush();
 
   return <section className="card">
     <h2 style={{ marginTop: 0 }}>Transcript and activity</h2>
     {hasAudio && <div className="activity-audio"><audio ref={audio} key={run.recording?.downloadedAt} controls preload="metadata" aria-label="Call recording" src={`/api/results/${encodeURIComponent(run.id)}/recording`} onTimeUpdate={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} /><span className="muted">Play a timed message to seek in the recording.</span></div>}
-    <p className="muted">Read speech by speaker. Open any activity title to see its details. Activity and message metadata sit under the provider call that captured them.</p>
+    <p className="muted">Read speech by speaker. Open an activity group to inspect events between messages, then open an event for its details. Activity and metadata sit under the call that captured them.</p>
     <div className="activity-head"><strong>Testing agent</strong><strong>Main agent</strong></div>
-    {!entries.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript or activity was captured."}</p>
-      : <div className="activity-feed">{entries.map((item, index) => {
-        if (item.kind === "event") {
-          return <div className="activity-row" key={`event-${index}`}>
-            <details className={`activity-entry activity-collapsible ${sideClass(item.event.side)}`}>
-              <summary>{activityTitle(item.event)}</summary>
-              <p className="muted" style={{ fontSize: 12 }}>{sideName(item.event.side)} activity{item.event.nodeId ? ` · node ${item.event.nodeId}` : ""}</p>
-              {item.event.data && <pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre>}
-            </details>
-          </div>;
+    {!blocks.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript or activity was captured."}</p>
+      : <div className="activity-feed">{blocks.map((item, index) => {
+        if (item.kind === "activity") {
+          const position = item.afterTurn === 0 ? "before the first message" : item.afterTurn === speechCount ? "after the last message" : `between messages ${item.afterTurn} and ${item.afterTurn + 1}`;
+          return <details className="activity-group" key={`activity-${index}`}>
+            <summary>{item.events.length} {item.events.length === 1 ? "activity" : "activities"} {position}</summary>
+            <div className="activity-group-feed">{item.events.map((event, eventIndex) => <ActivityEvent key={eventIndex} event={event} />)}</div>
+          </details>;
         }
         const turn = item.turn;
         if (turn.role === "system") return <div className="activity-row" key={`speech-${index}`}><div className="activity-entry activity-wide"><div className="activity-who">System</div>{turn.text}</div></div>;
