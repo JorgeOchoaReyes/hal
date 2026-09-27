@@ -31,6 +31,7 @@ interface TargetAgent {
   byotKeyId?: string;
   byotAccountId?: string;
   externalAgentId?: string;
+  voiceId?: string;
   target: {
     transport: Transport;
     name: string;
@@ -170,6 +171,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   const [description, setDescription] = useState("");
   const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState("");
+  const [voiceId, setVoiceId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -253,6 +255,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           target: buildTarget(name, transport, address, room),
           ...outboundKey,
           externalAgentId: externalAgentId.trim() || undefined,
+          voiceId: voiceId.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -263,6 +266,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
       setDescription("");
       setOutboundKey({});
       setExternalAgentId("");
+      setVoiceId("");
       onDone();
     } catch (e) {
       setErr((e as Error).message);
@@ -445,6 +449,10 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
         </div>
       )}
       <div className="field">
+        <span className="field-label">Agent voice ID (if HAL cannot read it from the provider)</span>
+        <input value={voiceId} onChange={(e) => setVoiceId(e.target.value)} placeholder="Voice ID used by this agent" className="mono" />
+      </div>
+      <div className="field">
         <span className="field-label">Description (optional)</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
       </div>
@@ -534,6 +542,7 @@ function EditTargetModal({
   const [description, setDescription] = useState(target.description ?? "");
   const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState(target.externalAgentId ?? "");
+  const [voiceId, setVoiceId] = useState(target.voiceId ?? "");
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
   const [busy, setBusy] = useState(false);
@@ -571,6 +580,7 @@ function EditTargetModal({
           judgeIds: [...judgeIds],
           ...outboundKey,
           externalAgentId: externalAgentId.trim(),
+          voiceId: voiceId.trim(),
         }),
       });
       const data = await res.json();
@@ -674,6 +684,10 @@ function EditTargetModal({
             {provider === "bland" && <AgentOutboundKey initial={target} hasKey={target.hasEncryptedKey} onChange={setOutboundKey} />}
           </div>
         )}
+        <div className="field">
+          <span className="field-label">Agent voice ID (if HAL cannot read it from the provider)</span>
+          <input value={voiceId} onChange={(e) => setVoiceId(e.target.value)} placeholder="Voice ID used by this agent" className="mono" />
+        </div>
         <div className="field">
           <span className="field-label">Description (optional)</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />

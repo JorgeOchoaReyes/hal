@@ -98,6 +98,17 @@ details were not recorded. Applying additional saved judges evaluates the same
 transcript and adds separate, timestamped results without overwriting the original
 verdict or placing another call.
 
+If hosted polling times out while the provider call continues, open the run and
+choose **Check call status and finish run**. HAL checks the existing provider
+call, then saves and judges its completed transcript without placing another call.
+Selecting a saved testing agent updates its provider graph with the simulation
+script and personality before dispatch. Each `say` step becomes its own spoken
+turn. Bland uses a Pathway, Vapi a Squad, Retell a Conversation Flow, and
+ElevenLabs an Agent Workflow. **Auto** creates a new tester from the script.
+HAL reads the main agent's voice ID (or uses the voice ID saved in My agents),
+then assigns a different available voice ID to the tester before placing a call.
+If it cannot verify two distinct voice IDs, dispatch stops without calling.
+
 New Bland calls request recording and automatically download the audio using the
 original provider account. Audio is saved under `HAL_DATA_DIR/recordings` (inside
 Electron's persistent user-data directory), then played and sought locally. If
@@ -111,30 +122,32 @@ not encrypted secrets.
 
 ### Hosted script execution and pathway IDs
 
-Bland dispatch now passes the simulation’s linear steps into a newly provisioned
+Bland dispatch passes the simulation’s linear steps into a newly provisioned
 pathway. A `say` followed by `hangup` becomes an End Call node with the exact text.
 Untimed `wait` steps after speech separate turns; unsupported steps (including
 timed waits, delayed speech, prompts, branches and live assertions) are rejected
-before provisioning rather than silently replaced by the persona. Use structured
-simulations for other hosted providers or more complex hosted conversations.
+before provisioning rather than silently replaced by the persona. Other hosted
+providers also compile supported linear scripts into their native graphs. Use
+structured simulations for more complex hosted conversations.
 
 Run details capture the script and the tester pathway ID submitted with the call.
 For inbound Bland targets, HAL attempts to read the number’s assigned pathway
 before dispatch. The page distinguishes this from a saved, unverified target
 pathway ID. Older runs without this information remain explicitly unverified.
 
-### Editing and text-based Bland tests
+### Editing and text-based tests
 
 On a simulation page, use **Edit scenario** to change persona instructions,
 script steps or structured conditions, then **Save scenario**. Changes apply to
 future runs; past run snapshots are preserved. Concurrent edits are rejected so
 an older editor cannot silently overwrite a newer scenario.
 
-Hosted testing has **Phone call** and **Bland chat** modes. Chat executes the saved
-scenario as text against a selected Bland pathway, uses the simulation’s judges,
-and saves the transcript in Results. It requires a Bland account and pathway,
-but no phone number or Twilio key. Dynamic persona steps and AI judges also need
-a configured LLM provider. Chat does not test audio or telephony behavior.
+Hosted testing has **Phone call** and **Chat** modes. Chat executes the saved
+scenario as text against a selected Bland pathway, Vapi assistant or squad,
+Retell agent, or ElevenLabs agent. It uses the simulation’s judges and saves the
+transcript in Results. No phone number is required. Dynamic persona steps and
+AI judges also need a configured LLM provider. Chat does not test audio or
+telephony behavior. Simulations can be deleted from their table.
 
 Testing agents now have **Edit agent**. Main agents can also be edited. Both offer
 an optional **Outbound Twilio credentials** section: select a named saved BYOT
@@ -149,6 +162,6 @@ already built. Choose a provider account and an existing agent (a pathway for
 Bland), or paste its ID, then give it a name in HAL. Importing only saves a local
 reference; it does not create or modify the provider agent. Duplicate imports on
 the same account are rejected. Imported testers retain their provider configuration
-for direct and simulation calls. Simulation judges still score the call, but the
-saved simulation script does not replace the imported tester. Edit its behavior
-on the provider; use **Edit agent** in HAL for its name, ID, or outbound credentials.
+for direct calls. Simulation dispatch replaces their test graph with the selected
+script and personality, then keeps that graph until the next simulation molds it.
+Use **Edit agent** in HAL for their name, ID, or outbound credentials.

@@ -34,6 +34,47 @@ export interface HostedRunOptions {
   place?: () => Promise<{ externalCallId: string }>;
 }
 
+export interface HostedRefreshOptions {
+  result: TestResult;
+  integration: VoiceProviderIntegration;
+  account: ProviderAccount;
+  judge: JudgeSpec;
+  llm: LLMClient;
+  providerAgentRole?: "agent" | "target";
+}
+
+/** Check a previously placed call once, without placing another call. */
+export async function refreshHostedCall(opts: HostedRefreshOptions): Promise<{
+  state: "in-progress" | "waiting-transcript" | "completed" | "failed" | "evaluation-failed";
+  result?: TestResult;
+}> {
+  const callId = opts.result.externalCallId;
+  if (!callId) throw new Error("This run has no provider call ID to check.");
+  const state = await opts.integration.getCall(opts.account, callId);
+  if (state.status === "queued" || state.status === "in-progress") return { state: "in-progress" };
+  const transcript = state.transcript
+    ? normalizeTranscript(state.transcript, opts.providerAgentRole)
+    : undefined;
+  if (state.status === "failed") {
+    return { state: "failed", result: {
+      ...opts.result, status: "errored", endedAt: state.endedAt ?? now(),
+      transcript: transcript ?? opts.result.transcript,
+      error: state.endedReason || "Hosted call failed.",
+    } };
+  }
+  if (!transcript?.length) return { state: "waiting-transcript" };
+  try {
+    const result = await scoreHostedResult({ ...opts.result, transcript, endedAt: state.endedAt ?? now() }, opts.judge, opts.llm);
+    return { state: "completed", result };
+  } catch (err) {
+    return { state: "evaluation-failed", result: {
+      ...opts.result, status: "errored", transcript, endedAt: state.endedAt ?? now(),
+      verdict: undefined, metrics: undefined, labels: undefined,
+      error: `Call completed, but evaluation failed: ${(err as Error).message}`,
+    } };
+  }
+}
+
 /**
  * Run a hosted call: place it (by default, the testing agent dials the
  * target — pass `place` to place it a different way), poll the platform
@@ -62,12 +103,7 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
       const state = await opts.integration.getCall(opts.account, externalCallId);
       status = state.status;
       endedReason = state.endedReason;
-      if (state.transcript) transcript = state.transcript.map((turn) => ({
-        ...turn,
-        role: opts.providerAgentRole === "target"
-          ? turn.role === "agent" ? "target" : turn.role === "target" ? "agent" : turn.role
-          : turn.role,
-      }));
+      if (state.transcript) transcript = normalizeTranscript(state.transcript, opts.providerAgentRole);
       if (status === "ended" || status === "failed") break;
       await sleep(interval);
     }
@@ -78,31 +114,41 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
 
     if (status !== "ended") {
       return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId,
-        "Timed out waiting for the hosted call to finish. The call may still be active; check it in the provider dashboard.");
+        "Timed out waiting for the hosted call to finish. The call may still be active; open this run’s details to check its status later.");
     }
     if (!transcript.length) {
       return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, "The provider returned no transcript for the completed call.");
     }
 
-    const verdict = await new Judge(opts.llm).evaluate(opts.judge, transcript);
-    const runStatus: RunStatus = verdict.passed ? "passed" : "failed";
-    const result: TestResult = {
+    return scoreHostedResult({
       id: runId,
       testCaseId: opts.testCaseId,
-      status: runStatus,
+      status: "running",
       startedAt,
       endedAt: now(),
       transcript,
-      verdict,
       liveChecks: [],
       externalCallId,
-    };
-    result.metrics = computeMetrics(result);
-    result.labels = deriveLabels(result.metrics);
-    return result;
+    }, opts.judge, opts.llm);
   } catch (err) {
     return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, (err as Error).message);
   }
+}
+
+function normalizeTranscript(transcript: Transcript, providerAgentRole?: "agent" | "target"): Transcript {
+  if (providerAgentRole !== "target") return transcript;
+  return transcript.map((turn) => ({ ...turn,
+    role: turn.role === "agent" ? "target" : turn.role === "target" ? "agent" : turn.role,
+  }));
+}
+
+async function scoreHostedResult(result: TestResult, judge: JudgeSpec, llm: LLMClient): Promise<TestResult> {
+  const verdict = await new Judge(llm).evaluate(judge, result.transcript);
+  const status: RunStatus = verdict.passed ? "passed" : "failed";
+  const scored: TestResult = { ...result, status, verdict, error: undefined };
+  scored.metrics = computeMetrics(scored);
+  scored.labels = deriveLabels(scored.metrics);
+  return scored;
 }
 
 function errored(

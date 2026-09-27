@@ -1,6 +1,6 @@
 import { Transcript } from "../../types.js";
 import { ProviderField } from "../templates.js";
-import { structuredToFlow, toElevenLabsWorkflow } from "../../simulation/flow.js";
+import { structuredToFlow, stepsToFlow, toElevenLabsWorkflow } from "../../simulation/flow.js";
 import {
   VoiceProviderIntegration,
   ProviderAccount,
@@ -60,24 +60,43 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
   }
 
   buildFlowConfig(spec: TestingAgentSpec): Record<string, unknown> | null {
-    return spec.structured
-      ? toElevenLabsWorkflow(structuredToFlow(spec.structured), spec.name)
-      : null;
+    const flow = spec.structured ? structuredToFlow(spec.structured) : spec.steps?.length ? stepsToFlow(spec.steps, spec.persona.systemPrompt) : null;
+    return flow ? toElevenLabsWorkflow(flow, spec.name) : null;
   }
 
   /** Native ElevenLabs ConvAI agent body — deterministic reproduction of the spec. */
   buildAgentConfig(spec: TestingAgentSpec): Record<string, unknown> {
     const { systemPrompt, firstMessage } = resolveSpecPrompt(spec);
+    const scriptedFirst = spec.steps?.find((step) => step.kind === "say")?.text;
     const agent: Record<string, unknown> = {
       prompt: { prompt: systemPrompt },
-      first_message: firstMessage ?? "Hello.",
+      first_message: firstMessage ?? scriptedFirst ?? "Hello.",
     };
-    // Node-native: embed the compiled workflow graph when a structured test.
-    if (spec.structured) {
-      const flow = this.buildFlowConfig(spec) as { workflow?: unknown } | null;
-      if (flow?.workflow) agent.workflow = flow.workflow;
-    }
-    return { name: spec.name, conversation_config: { agent } };
+    const flow = this.buildFlowConfig(spec) as { workflow?: unknown } | null;
+    return { name: spec.name, conversation_config: { agent, ...(spec.voice ? { tts: { voice_id: spec.voice } } : {}) }, ...(flow?.workflow ? { workflow: flow.workflow } : {}) };
+  }
+
+  async getAgentVoice(account: ProviderAccount, externalAgentId: string): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/v1/convai/agents/${encodeURIComponent(externalAgentId)}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as { conversation_config?: { tts?: { voice_id?: string } } };
+    return data.conversation_config?.tts?.voice_id;
+  }
+
+  async listAvailableVoices(account: ProviderAccount): Promise<string[]> {
+    const res = await this.fetchImpl(`${this.base}/v2/voices?page_size=100`, { headers: this.headers(account) });
+    if (!res.ok) throw new Error(`ElevenLabs could not list voices (${res.status}): ${await safeText(res)}`);
+    const data = await res.json() as { voices?: Array<{ voice_id?: string }> };
+    return (data.voices ?? []).map((voice) => voice.voice_id).filter((id): id is string => !!id);
+  }
+
+  async updateTestingAgent(account: ProviderAccount, agent: HostedTestingAgent, spec: TestingAgentSpec): Promise<void> {
+    const config = this.buildAgentConfig(spec);
+    if (!("workflow" in config)) throw new Error("ElevenLabs needs scripted steps or a structured simulation to mold the selected tester. No call was placed.");
+    const res = await this.fetchImpl(`${this.base}/v1/convai/agents/${agent.externalAgentId}`, {
+      method: "PATCH", headers: this.headers(account), body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`ElevenLabs updateAgent failed (${res.status}): ${await safeText(res)}`);
   }
 
   async createTestingAgent(

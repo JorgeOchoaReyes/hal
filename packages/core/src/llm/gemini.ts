@@ -23,7 +23,7 @@ export class GeminiClient implements LLMClient {
   constructor(opts: GeminiClientOptions = {}) {
     this.apiKey = opts.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
     this.baseUrl = (opts.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
-    this.defaultModel = opts.defaultModel ?? "gemini-1.5-flash";
+    this.defaultModel = opts.defaultModel ?? "gemini-3.5-flash-lite";
   }
 
   async complete(req: CompletionRequest): Promise<string> {

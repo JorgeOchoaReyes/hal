@@ -15,4 +15,4 @@ export { VapiIntegration } from "./vapi.js";
 export { ElevenLabsIntegration } from "./elevenlabs.js";
 export { BlandIntegration } from "./bland.js";
 export { RetellIntegration } from "./retell.js";
-export { runHostedCall, type HostedRunOptions } from "./hosted-runner.js";
+export { runHostedCall, refreshHostedCall, type HostedRunOptions } from "./hosted-runner.js";

@@ -38,6 +38,7 @@ export {
   stepsToFlow,
   toBlandPathway,
   toVapiWorkflow,
+  toVapiSquad,
   toRetellConversationFlow,
   toElevenLabsWorkflow,
   type ConversationFlow,
@@ -115,6 +116,7 @@ export {
   BlandIntegration,
   RetellIntegration,
   runHostedCall,
+  refreshHostedCall,
   type VoiceProviderIntegration,
   type ProviderAccount,
   type TestingAgentSpec,
@@ -140,3 +142,4 @@ export { parseTranscript, transcriptToSayScript } from "./transcript.js";
 export * from "./fixtures.js";
 
 export { BlandChatTransport } from "./transport/bland-chat.js";
+export { HostedChatTransport } from "./transport/hosted-chat.js";
