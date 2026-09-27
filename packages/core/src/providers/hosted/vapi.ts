@@ -1,4 +1,5 @@
 import { Transcript } from "../../types.js";
+import { asRecord, asText, eventTime, providerEvent, samePhoneNumber } from "./trace.js";
 import { ProviderField } from "../templates.js";
 import { structuredToFlow, stepsToFlow, toVapiSquad } from "../../simulation/flow.js";
 import {
@@ -164,8 +165,38 @@ export class VapiIntegration implements VoiceProviderIntegration {
       externalCallId,
       status: mapStatus(data.status),
       transcript: parseVapiTranscript(data),
+      details: asRecord(data),
+      trace: parseVapiTrace(data),
       endedReason: data.endedReason,
     };
+  }
+
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    return this.fetchImpl(`${this.base}/call/${encodeURIComponent(externalCallId)}/mono-recording`, {
+      headers: this.headers(account), signal: AbortSignal.timeout(60_000),
+    });
+  }
+
+  async findInboundCall(account: ProviderAccount, opts: {
+    toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
+  }): Promise<string | undefined> {
+    const query = new URLSearchParams({ limit: "1000", createdAtGe: new Date(opts.startedAt - 120_000).toISOString(),
+      createdAtLe: new Date(opts.startedAt + 120_000).toISOString() });
+    const res = await this.fetchImpl(`${this.base}/call?${query}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const rows: unknown = await res.json();
+    if (!Array.isArray(rows)) return undefined;
+    const matches = rows.map(asRecord).filter((row) => {
+      const at = eventTime(row.createdAt);
+      const phone = asRecord(row.phoneNumber);
+      const customer = asRecord(row.customer);
+      return row.type === "inboundPhoneCall" && row.id !== opts.excludeCallId
+        && at !== undefined && Math.abs(at - opts.startedAt) <= 120_000
+        && (!opts.externalAgentId || row.assistantId === opts.externalAgentId || row.squadId === opts.externalAgentId)
+        && samePhoneNumber(phone.number ?? row.phoneNumber, opts.toNumber)
+        && (!opts.fromNumber || samePhoneNumber(customer.number, opts.fromNumber));
+    });
+    return matches.length === 1 ? asText(matches[0]?.id) : undefined;
   }
 
   /**
@@ -191,9 +222,10 @@ export class VapiIntegration implements VoiceProviderIntegration {
 interface VapiMessage {
   role?: string;
   message?: string;
-  content?: string;
+  content?: unknown;
   time?: number;
   secondsFromStart?: number;
+  [key: string]: unknown;
 }
 interface VapiCall {
   status?: string;
@@ -201,6 +233,7 @@ interface VapiCall {
   transcript?: string;
   messages?: VapiMessage[];
   artifact?: { messages?: VapiMessage[] };
+  [key: string]: unknown;
 }
 
 function mapStatus(status?: string): HostedCallStatus {
@@ -225,20 +258,48 @@ function mapStatus(status?: string): HostedCallStatus {
  * testing AGENT (caller); the other party ("user") is the TARGET under test.
  */
 function parseVapiTranscript(call: VapiCall): Transcript | undefined {
-  const msgs = call.messages ?? call.artifact?.messages;
+  const msgs = (call.artifact?.messages?.length ?? 0) > (call.messages?.length ?? 0) ? call.artifact?.messages : call.messages;
   if (!msgs || msgs.length === 0) return undefined;
-  const base = Date.now();
+  const base = eventTime(asRecord(call).startedAt) ?? Date.now();
   const out: Transcript = [];
   for (const m of msgs) {
     const role = m.role?.toLowerCase();
     if (role !== "user" && role !== "bot" && role !== "assistant") continue; // skip system/tool
-    const text = (m.message ?? m.content ?? "").trim();
+    const text = asText(m.message ?? m.content);
     if (!text) continue;
     out.push({
       role: role === "user" ? "target" : "agent",
       text,
-      startedAt: m.time ?? base + (m.secondsFromStart ?? 0) * 1000,
+      startedAt: eventTime(m.time, base) ?? base + (m.secondsFromStart ?? 0) * 1000,
+      audioStartMs: typeof m.secondsFromStart === "number" ? Math.max(0, m.secondsFromStart * 1000)
+        : eventTime(m.time, base) !== undefined ? Math.max(0, eventTime(m.time, base)! - base) : undefined,
+      meta: { ...m },
     });
   }
   return out.length ? out : undefined;
+}
+
+function parseVapiTrace(call: VapiCall) {
+  const messages = (call.artifact?.messages?.length ?? 0) > (call.messages?.length ?? 0)
+    ? call.artifact?.messages ?? [] : call.messages ?? [];
+  const base = eventTime(asRecord(call).startedAt) ?? Date.now();
+  return messages.flatMap((message) => {
+    const role = message.role?.toLowerCase();
+    const data = asRecord(message);
+    const type = asText(data.type)?.toLowerCase() ?? "";
+    const at = eventTime(message.time, base) ?? eventTime(message.secondsFromStart, base);
+    if (type.startsWith("workflow.node.")) {
+      const nodeId = asText(data.nodeId ?? data.node_id ?? asRecord(data.node).id);
+      return [providerEvent("node", nodeId ?? type, data, at, nodeId)];
+    }
+    const tool = asRecord((Array.isArray(data.toolCallList) ? data.toolCallList[0] : undefined) ?? data.toolCall);
+    const label = asText(data.toolName ?? data.name ?? tool.name ?? asRecord(tool.function).name);
+    if (role === "tool" || role?.includes("result") || type.includes("tool-result")) {
+      return [providerEvent("tool-result", label ?? "Tool result", data, at)];
+    }
+    if (role?.includes("tool") || role === "function_call" || type.includes("tool-call") || data.toolCalls || data.toolCallList) {
+      return [providerEvent("tool-call", label ?? "Tool call", data, at)];
+    }
+    return [];
+  });
 }

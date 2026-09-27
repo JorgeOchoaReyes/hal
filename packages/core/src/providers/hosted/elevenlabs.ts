@@ -1,4 +1,5 @@
 import { Transcript } from "../../types.js";
+import { asRecord, asText, eventTime, providerEvent } from "./trace.js";
 import { ProviderField } from "../templates.js";
 import { structuredToFlow, stepsToFlow, toElevenLabsWorkflow } from "../../simulation/flow.js";
 import {
@@ -144,7 +145,35 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
       externalCallId,
       status: mapStatus(data.status),
       transcript: parseTranscript(data),
+      details: asRecord(data), trace: parseElevenTrace(data),
     };
+  }
+
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    return this.fetchImpl(`${this.base}/v1/convai/conversations/${encodeURIComponent(externalCallId)}/audio`, {
+      headers: this.headers(account), signal: AbortSignal.timeout(60_000),
+    });
+  }
+
+  async findInboundCall(account: ProviderAccount, opts: {
+    toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
+  }): Promise<string | undefined> {
+    if (!opts.externalAgentId) return undefined;
+    const query = new URLSearchParams({ agent_id: opts.externalAgentId,
+      call_start_after_unix: String(Math.floor((opts.startedAt - 120_000) / 1000)),
+      call_start_before_unix: String(Math.ceil((opts.startedAt + 120_000) / 1000)),
+      page_size: "100" });
+    const res = await this.fetchImpl(`${this.base}/v1/convai/conversations?${query}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const rows = asRecord(await res.json()).conversations;
+    if (!Array.isArray(rows)) return undefined;
+    const matches = rows.map(asRecord).filter((row) => {
+      const at = eventTime(row.start_time_unix_secs);
+      return row.conversation_id !== opts.excludeCallId && row.agent_id === opts.externalAgentId
+        && (row.direction === "inbound" || row.direction === undefined)
+        && at !== undefined && Math.abs(at - opts.startedAt) <= 120_000;
+    });
+    return matches.length === 1 ? asText(matches[0]?.conversation_id) : undefined;
   }
 
   /**
@@ -174,10 +203,15 @@ interface ElevenTurn {
   message?: string;
   text?: string;
   time_in_call_secs?: number;
+  tool_calls?: unknown[];
+  tool_results?: unknown[];
+  [key: string]: unknown;
 }
 interface ElevenConversation {
   status?: string;
   transcript?: ElevenTurn[];
+  metadata?: { start_time_unix_secs?: number; [key: string]: unknown };
+  [key: string]: unknown;
 }
 
 function mapStatus(status?: string): HostedCallStatus {
@@ -199,7 +233,7 @@ function mapStatus(status?: string): HostedCallStatus {
 
 function parseTranscript(conv: ElevenConversation): Transcript | undefined {
   if (!conv.transcript?.length) return undefined;
-  const base = Date.now();
+  const base = eventTime(conv.metadata?.start_time_unix_secs) ?? Date.now();
   const out: Transcript = [];
   for (const t of conv.transcript) {
     const role = t.role?.toLowerCase();
@@ -210,7 +244,23 @@ function parseTranscript(conv: ElevenConversation): Transcript | undefined {
       role: role === "user" ? "target" : "agent",
       text,
       startedAt: base + (t.time_in_call_secs ?? 0) * 1000,
+      audioStartMs: typeof t.time_in_call_secs === "number" ? Math.max(0, t.time_in_call_secs * 1000) : undefined,
+      meta: { ...t, ...(asText(t.node_id ?? t.workflow_node_id) ? { nodeId: t.node_id ?? t.workflow_node_id } : {}) },
     });
   }
   return out.length ? out : undefined;
+}
+
+function parseElevenTrace(conv: ElevenConversation) {
+  const base = eventTime(conv.metadata?.start_time_unix_secs) ?? Date.now();
+  return (conv.transcript ?? []).flatMap((turn) => {
+    const at = base + (turn.time_in_call_secs ?? 0) * 1000;
+    const events = [
+      ...(turn.tool_calls ?? []).map((item) => providerEvent("tool-call", asText(asRecord(item).tool_name ?? asRecord(item).name) ?? "Tool call", item, at)),
+      ...(turn.tool_results ?? []).map((item) => providerEvent("tool-result", asText(asRecord(item).tool_name ?? asRecord(item).name) ?? "Tool result", item, at)),
+    ];
+    const nodeId = asText(turn.node_id ?? turn.workflow_node_id);
+    if (nodeId) events.push(providerEvent("node", nodeId, turn, at, nodeId));
+    return events;
+  });
 }

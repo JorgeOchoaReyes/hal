@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
   const judge = body.judge ?? { mode: "llm-only" as const, criteria: ["The call completed successfully."] };
   const context = hostedContext({ transport: account.provider, testingAgent: { name: agent.name },
-    targetAgent: { name: "Agent under test" }, judge, judges: [] }, account, agent, body.phoneNumber, undefined, false, account.credentials.from);
+    targetAgent: { name: "Main agent" }, judge, judges: [] }, account, agent, body.phoneNumber, undefined, false, account.credentials.from);
   const result = await runHostedCall({
     testCaseId: body.testCaseId ?? `hosted:${agent.id}`,
     integration,

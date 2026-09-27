@@ -5,6 +5,30 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { RunRecording, SavedJudge } from "@hal/core";
 
+export function SyncSavedRun({ runId }: { runId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  async function sync() {
+    setBusy(true); setMessage(undefined); setError(undefined);
+    try {
+      const response = await fetch(`/api/results/${encodeURIComponent(runId)}/sync`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not sync this call.");
+      setMessage([data.state === "ended" ? "Provider details and transcript updated." : "Provider details updated. The call is still active or processing.",
+        data.recordingWarning, data.receiverWarning].filter(Boolean).join(" "));
+      router.refresh();
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <div style={{ marginTop: 16 }}>
+    <button className="secondary" onClick={sync} disabled={busy}>{busy ? "Syncing call…" : "Sync latest call data"}</button>
+    {message && <p role="status" className="muted">{message}</p>}
+    {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
+  </div>;
+}
+
 export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: string; retryEvaluation?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -16,8 +40,8 @@ export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: str
       const res = await fetch(`/api/results/${encodeURIComponent(runId)}/refresh`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not check the call.");
-      if (data.state === "in-progress") setMessage("The provider still reports this call as active. Check again later.");
-      else if (data.state === "waiting-transcript") setMessage("The call ended, but its transcript is not ready yet. Check again later.");
+      if (data.state === "in-progress") { setMessage("The provider still reports this call as active. Check again later."); router.refresh(); }
+      else if (data.state === "waiting-transcript") { setMessage("The call ended, but its transcript is not ready yet. Check again later."); router.refresh(); }
       else router.refresh();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
@@ -25,6 +49,39 @@ export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: str
   return <div style={{ marginTop: 16 }}>
     <button className="secondary" onClick={check} disabled={busy}>{busy ? "Checking provider…" : retryEvaluation ? "Retry original evaluation" : "Check call status and finish run"}</button>
     {message && <p role="status" className="muted">{message}</p>}
+    {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
+  </div>;
+}
+
+export function AttachProviderCall({ runId, side, provider, callId, accounts }: {
+  runId: string; side: "testingAgent" | "targetAgent"; provider?: string; callId?: string;
+  accounts: Array<{ id: string; label: string; provider: string }>;
+}) {
+  const router = useRouter();
+  const choices = accounts.filter((account) => !provider || account.provider === provider);
+  const [accountId, setAccountId] = useState(choices[0]?.id ?? "");
+  const [externalCallId, setExternalCallId] = useState(callId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function fetchCall() {
+    setBusy(true); setError(undefined);
+    try {
+      const response = await fetch(`/api/results/${encodeURIComponent(runId)}/provider-call`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ side, accountId, externalCallId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not fetch provider call details.");
+      router.refresh();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginTop: 12 }}>
+    <label className="field">Account<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+      <option value="">Select account</option>{choices.map((account) => <option key={account.id} value={account.id}>{account.label} ({account.provider})</option>)}
+    </select></label>
+    <label className="field">Provider call ID<input value={externalCallId} onChange={(event) => setExternalCallId(event.target.value)} placeholder="Call or conversation ID" /></label>
+    <button className="secondary" disabled={busy || !accountId || !externalCallId.trim()} onClick={fetchCall}>{busy ? "Fetching…" : callId ? "Refresh metadata" : "Fetch metadata"}</button>
     {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
   </div>;
 }
@@ -46,6 +103,7 @@ export function HostedRunWatcher({ runId }: { runId: string }) {
         if (data.state === "in-progress") setMessage("Call in progress. Checking again in a few seconds…");
         else if (data.state === "waiting-transcript") setMessage("Call ended. Waiting for the provider transcript…");
         else { router.refresh(); return; }
+        router.refresh();
         timer = setTimeout(check, 5000);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -81,12 +139,9 @@ export function RunAudio({ runId, recording, canDownload, needsAccount, accounts
   }
   return <section className="card">
     <div className="card-row"><h2 style={{ margin: 0 }}>Call recording</h2><span className="label label-neutral">Local audio</span></div>
-    {recording?.status === "available" ? <>
-      <audio key={recording.downloadedAt} controls preload="metadata" src={url} style={{ width: "100%", marginTop: 16 }} onError={() => setError("Local audio could not be played. Try downloading it again.")} />
-      <p className="muted">Saved on this device · {((recording.bytes ?? 0) / 1024 / 1024).toFixed(1)} MB · <a href={`${url}?download=1`} download>Save a copy</a></p>
-    </> : <p className="muted">{recording?.error ?? (canDownload ? "Download the Bland recording to listen on this device. New Bland runs download automatically when the recording is ready." : "No downloadable Bland recording is associated with this run.")}</p>}
+    {recording?.status === "available" ? <p className="muted">Saved on this device · {((recording.bytes ?? 0) / 1024 / 1024).toFixed(1)} MB · <a href={`${url}?download=1`} download>Save a copy</a>. Listen and follow the timed transcript in Transcript and activity below.</p> : <p className="muted">{recording?.error ?? (canDownload ? "Download the provider recording to listen on this device. Synced runs can retrieve recordings when the provider makes them available." : "No downloadable recording is associated with this run.")}</p>}
     {canDownload && <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
-      {needsAccount && <label className="field">Bland account for this older call
+      {needsAccount && <label className="field">Provider account for this older call
         <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
           <option value="">Select account</option>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}

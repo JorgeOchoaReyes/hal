@@ -215,7 +215,7 @@ export default function RunModal({
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 10 }}>
         <div className="field">
-          <span className="field-label">Agent under test</span>
+          <span className="field-label">Main agent</span>
           <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)} disabled={busy}>
             <option value="">Simulated (mock) — as authored</option>
             {targets.map((t) => (

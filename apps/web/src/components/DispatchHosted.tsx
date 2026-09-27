@@ -119,7 +119,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
     })),
     ...targets.map((t): { value: AgentValue; label: string } => ({
       value: `target:${t.id}`,
-      label: `Agent under test: ${t.name}`,
+      label: `Main agent: ${t.name}`,
     })),
   ];
 

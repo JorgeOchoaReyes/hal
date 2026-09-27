@@ -6,18 +6,23 @@ import { persistRecording, recordingPath } from "./recordingFiles";
 
 const active = new Map<string, Promise<void>>();
 
-export async function downloadRunRecording(runId: string): Promise<void> {
+export async function downloadRunRecording(runId: string, force = false): Promise<void> {
   if (active.has(runId)) return active.get(runId)!;
-  const task = download(runId).finally(() => active.delete(runId));
+  const task = download(runId, force).finally(() => active.delete(runId));
   active.set(runId, task);
   return task;
 }
 
-async function download(runId: string) {
+async function download(runId: string, force: boolean) {
   const run = getResult(runId);
   if (!run) throw new Error("Run not found");
-  if (run.recording?.status === "available" && await stat(recordingPath(runId)).catch(() => null)) return;
-  const source = run.recordingSource;
+  if (!force && run.recording?.status === "available" && await stat(recordingPath(runId)).catch(() => null)) return;
+  const side = run.context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
+  const source = run.recordingSource ?? (run.context?.account ? {
+    provider: run.context.account.provider, accountId: run.context.account.id,
+  } : run.providerCalls?.[side] ? {
+    provider: run.providerCalls[side]!.provider, accountId: run.providerCalls[side]!.accountId,
+  } : undefined);
   const account = source ? getAccountRaw(source.accountId) : undefined;
   const integration = source ? getIntegration(source.provider) : undefined;
   try {
@@ -27,8 +32,10 @@ async function download(runId: string) {
     const recording = await persistRecording(runId, await integration.getRecording(account, run.externalCallId));
     saveResult({ ...getResult(runId)!, recording });
   } catch (err) {
-    const error = err instanceof Error && /Bland|Recording|recording|provider account/.test(err.message)
+    const error = err instanceof Error && /Bland|Retell|Vapi|ElevenLabs|Recording|recording|provider account/.test(err.message)
       ? err.message : "Recording download failed. Check your connection and retry.";
-    saveResult({ ...getResult(runId)!, recording: { status: "unavailable", error } });
+    const latest = getResult(runId)!;
+    saveResult({ ...latest, recording: latest.recording?.status === "available"
+      && await stat(recordingPath(runId)).catch(() => null) ? latest.recording : { status: "unavailable", error } });
   }
 }

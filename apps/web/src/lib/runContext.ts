@@ -35,7 +35,7 @@ export function hostedContext(context: RunContext, account: ProviderAccount, age
       phoneNumber: outboundIsTarget ? phoneNumber : fromNumber,
     },
     targetAgent: {
-      id: target?.id, name: target?.name ?? "Agent under test", provider: target?.provider,
+      id: target?.id, name: target?.name ?? "Main agent", provider: target?.provider,
       pathwayId: target?.provider === "bland" ? target.externalAgentId : undefined,
       pathwaySource: target?.provider === "bland" && target.externalAgentId ? outboundIsTarget ? "dispatch" : "saved-agent" : undefined,
       externalAgentId: target?.externalAgentId, direction: outboundIsTarget ? "outbound" : "inbound",

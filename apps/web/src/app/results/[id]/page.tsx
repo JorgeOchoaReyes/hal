@@ -2,9 +2,30 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { JudgeSpec, JudgeVerdict, RunAgentSnapshot } from "@hal/core";
 import { getResult, listJudges, listAccounts } from "@/lib/store";
-import { RunAudio, ApplyRunJudges, CheckHostedCall, HostedRunWatcher } from "@/components/RunDetailActions";
+import { RunAudio, ApplyRunJudges, CheckHostedCall, HostedRunWatcher, AttachProviderCall, SyncSavedRun } from "@/components/RunDetailActions";
+import MetadataJsonViewer from "@/components/MetadataJsonViewer";
+import RunActivityTimeline from "@/components/RunActivityTimeline";
+import HalMessageCheck from "@/components/HalMessageCheck";
+import { halMessageCheck } from "@/lib/halMessageCheck";
 
 export const dynamic = "force-dynamic";
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function callFacts(details: Record<string, unknown>): string[] {
+  const metadata = record(details.metadata);
+  const durationMs = details.duration_ms;
+  const durationSecs = details.duration ?? details.call_duration ?? metadata.call_duration_secs;
+  const cost = details.cost ?? details.cost_fiat ?? metadata.cost_fiat;
+  return [
+    typeof details.status === "string" ? `Status: ${details.status}` : typeof details.call_status === "string" ? `Status: ${details.call_status}` : undefined,
+    typeof durationMs === "number" ? `Duration: ${(durationMs / 1000).toFixed(1)}s` : typeof durationSecs === "number" ? `Duration: ${durationSecs.toFixed(1)}s` : undefined,
+    typeof cost === "number" ? `Cost: ${cost}` : undefined,
+    typeof details.pathway_id === "string" ? `Pathway: ${details.pathway_id}` : typeof details.agent_id === "string" ? `Agent: ${details.agent_id}` : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
 
 function Verdict({ verdict }: { verdict: JudgeVerdict }) {
   return <>
@@ -53,7 +74,25 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
   if (!run) notFound();
   const context = run.context;
   const retryJudgeError = run.status === "failed" && Boolean(run.verdict?.summary.startsWith("Judge LLM error:"));
-  const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId && (!run.recordingSource || run.recordingSource.provider === "bland"));
+  const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId);
+  const primarySide = context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
+  const primaryCall = run.providerCalls?.[primarySide];
+  const recordingAccounts = listAccounts().filter((account) => !primaryCall || account.provider === primaryCall.provider)
+    .map((account) => ({ id: account.id, label: `${account.label} (${account.provider})` }));
+  const transcriptMetadata = run.transcript.map((turn) => ({ role: turn.role, text: turn.text,
+    startedAt: turn.startedAt, audioStartMs: turn.audioStartMs, metadataSource: turn.metadataSource ?? (turn.meta ? primarySide : undefined), meta: turn.meta }));
+  const metadataViews = (["testingAgent", "targetAgent"] as const).map((side) => ({
+    id: side, label: side === "testingAgent" ? "HAL testing agent" : "Main agent",
+    hasCallRecord: Boolean(run.providerCalls?.[side]),
+    json: JSON.stringify({ agent: side, call: run.providerCalls?.[side] ?? null,
+      ...(side === "testingAgent" ? { halMessageCheck: halMessageCheck(run) ?? null } : {}),
+      messagesCapturedByThisCall: transcriptMetadata.filter((turn) => turn.metadataSource === side),
+      activity: (run.trace ?? []).filter((event) => event.side === side) }, null, 2),
+  }));
+  const fullMetadataView = { id: "both" as const, label: "Both agents and full run", hasCallRecord: true,
+    json: JSON.stringify({ runId: run.id, externalCallId: run.externalCallId, providerCalls: run.providerCalls ?? {}, halMessageCheck: halMessageCheck(run) ?? null,
+      transcript: transcriptMetadata, activity: run.trace ?? [] }, null, 2) };
+  const providerAccounts = listAccounts().map(({ id, label, provider }) => ({ id, label, provider }));
   return <div className="run-detail">
     <nav style={{ marginTop: 24 }}><Link href="/results">← All results</Link></nav>
     <header className="card-row" style={{ margin: "20px 0" }}><div><p className="field-label">Run details</p><h1 style={{ margin: "6px 0" }}>{run.runLabel ?? context?.simulationName ?? "Saved run"}</h1><span className="muted mono">{run.id}</span></div><span className={`pill ${run.status}`}>{run.status}</span></header>
@@ -66,19 +105,45 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
       {run.error && <p role="alert" style={{ color: "var(--fail)", whiteSpace: "pre-wrap" }}>{run.error}</p>}
       {run.status === "running" && run.externalCallId && context?.account && <HostedRunWatcher runId={id} />}
       {(run.status === "running" || run.status === "errored" || retryJudgeError) && run.externalCallId && context?.account && context.transport !== "bland-chat" && <CheckHostedCall runId={id} retryEvaluation={retryJudgeError} />}
+      {run.externalCallId && context?.transport !== "bland-chat" && <SyncSavedRun runId={id} />}
     </section>
     {run.metrics && <section className="card"><h2 style={{ marginTop: 0 }}>Run metrics</h2><dl className="run-facts">
       <dt>Testing agent turns</dt><dd>{run.metrics.agentTurns}</dd><dt>Target turns</dt><dd>{run.metrics.targetTurns}</dd>
       <dt>Average target words</dt><dd>{run.metrics.avgTargetWords}</dd><dt>Target latency</dt><dd>{run.metrics.targetLatency ? `${run.metrics.targetLatency.avg} ms average · ${run.metrics.targetLatency.p95} ms p95` : "Not measured"}</dd>
     </dl><div>{(run.labels ?? []).map((l, i) => <span key={i} className={`label label-${l.tone}`}>{l.text}</span>)}</div></section>}
-    {context?.transport !== "bland-chat" && <RunAudio runId={id} recording={run.recording} canDownload={canDownload} needsAccount={!context?.account && run.recording?.status !== "available"} accounts={listAccounts().filter((a) => a.provider === "bland").map((a) => ({ id: a.id, label: a.label }))} />}
-    <section><h2>Agents used for this run</h2>{context ? <div className="run-agents"><Agent title="Testing agent" agent={context.testingAgent} /><Agent title="Agent under test" agent={context.targetAgent} /></div> : <p className="card muted">Agent snapshots were not captured for this older run. Current agent settings may differ from those used at the time.</p>}</section>
-    <section className="card"><h2 style={{ marginTop: 0 }}>Original judge results</h2>{run.verdict ? <Verdict verdict={run.verdict} /> : <p className="muted">{run.status === "running" ? "The call will be evaluated when its transcript is ready." : "No original judge verdict was saved."}</p>}
-      {context ? <><JudgeConfiguration spec={context.judge} />{context.judges.length > 0 && <><h3>Saved judges included</h3><p className="muted">These configurations contributed to the combined verdict above.</p>{context.judges.map((j, i) => <div key={`${j.id}-${i}`}><h4>{j.name}</h4>{j.description && <p>{j.description}</p>}<JudgeConfiguration spec={j.spec} /></div>)}</>}</> : <p className="muted">The original judge configuration was not captured on this older run.</p>}
-      {run.liveChecks.length > 0 && <><h3>Live checks</h3>{run.liveChecks.map((c, i) => <p key={i}>{c.passed ? "PASS" : "FAIL"} · {c.description}{c.detail ? ` — ${c.detail}` : ""}</p>)}</>}
-    </section>
+    {context?.transport !== "bland-chat" && <RunAudio runId={id} recording={run.recording} canDownload={canDownload} needsAccount={!context?.account && !run.recordingSource && !primaryCall && run.recording?.status !== "available"} accounts={recordingAccounts} />}
+    <section><h2>Agents used for this run</h2>{context ? <div className="run-agents"><Agent title="Testing agent" agent={context.testingAgent} /><Agent title="Main agent" agent={context.targetAgent} /></div> : <p className="card muted">Agent snapshots were not captured for this older run. Current agent settings may differ from those used at the time.</p>}</section>
+    <section><h2>Judges</h2><div className="judge-cards">
+      <article className="card"><p className="field-label">Original evaluation</p><h3>Overall verdict</h3>{run.verdict ? <Verdict verdict={run.verdict} /> : <p className="muted">{run.status === "running" ? "The call will be evaluated when its transcript is ready." : "No original judge verdict was saved."}</p>}
+        {context ? <JudgeConfiguration spec={context.judge} /> : <p className="muted">The original judge configuration was not captured on this older run.</p>}
+        {run.liveChecks.length > 0 && <details><summary>Live checks ({run.liveChecks.length})</summary>{run.liveChecks.map((c, i) => <p key={i}>{c.passed ? "PASS" : "FAIL"} · {c.description}{c.detail ? ` — ${c.detail}` : ""}</p>)}</details>}
+      </article>
+      {context?.judges.map((judge, index) => <article className="card" key={`${judge.id}-${index}`}><p className="field-label">Attached judge · {judge.kind}</p><h3>{judge.name}</h3>{judge.description && <p>{judge.description}</p>}<p className="muted">Included in the overall verdict. This run did not save a separate verdict for this judge.</p><JudgeConfiguration spec={judge.spec} /></article>)}
+      {[...(run.evaluations ?? [])].reverse().map((evaluation) => <article className="card" key={evaluation.id}><p className="field-label">Additional evaluation</p><h3>{evaluation.judge.name}</h3><p className="muted">{new Date(evaluation.createdAt).toLocaleString()} · {evaluation.provider || "Provider unavailable"} / {evaluation.model || "default"}</p>{evaluation.error && <p style={{ color: "var(--fail)" }}>{evaluation.error}</p>}{evaluation.verdict && <Verdict verdict={evaluation.verdict} />}<JudgeConfiguration spec={evaluation.judge.spec} /></article>)}
+    </div></section>
     <ApplyRunJudges runId={id} judges={listJudges()} hasTranscript={run.transcript.length > 0} />
-    {(run.evaluations ?? []).length > 0 && <section><h2>Additional evaluations</h2>{[...(run.evaluations ?? [])].reverse().map((e) => <article className="card" key={e.id} style={{ marginBottom: 12 }}><h3 style={{ marginTop: 0 }}>{e.judge.name}</h3><p className="muted">{new Date(e.createdAt).toLocaleString()} · {e.provider || "Provider unavailable"} / {e.model || "default"}</p>{e.error && <p style={{ color: "var(--fail)" }}>{e.error}</p>}{e.verdict && <Verdict verdict={e.verdict} />}<JudgeConfiguration spec={e.judge.spec} /></article>)}</section>}
-    <section className="card"><h2 style={{ marginTop: 0 }}>Transcript</h2>{!run.transcript.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript was captured."}</p> : <div className="transcript">{run.transcript.map((turn, i) => <div className={`turn ${turn.role}`} key={i}><div className="who">{turn.role === "agent" ? "Testing agent" : turn.role === "target" ? "Agent under test" : "System"}</div><div style={{ whiteSpace: "pre-wrap" }}>{turn.text}</div></div>)}</div>}</section>
+    <HalMessageCheck run={run} />
+    <RunActivityTimeline run={run} primarySide={primarySide} />
+    {(run.externalCallId || run.providerCalls) && <section className="card"><h2 style={{ marginTop: 0 }}>Provider call metadata</h2>
+      <p className="muted">HAL fetches the dispatched agent’s call record automatically. It also looks for the receiving agent’s separate call record; a history sync refreshes both linked records. If the receiving call cannot be matched, add its call ID below.</p>
+      {(["testingAgent", "targetAgent"] as const).map((side) => {
+        const snapshot = run.providerCalls?.[side];
+        const agent = context?.[side];
+        const dispatchedSide = context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
+        return <div key={side} style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
+          <h3>{side === "testingAgent" ? "HAL testing agent" : "Main agent"}</h3>
+          {snapshot ? <><p className="muted mono">{snapshot.provider} · {snapshot.externalCallId} · fetched {new Date(snapshot.fetchedAt).toLocaleString()}</p>
+            {callFacts(snapshot.details).length > 0 && <p className="muted">{callFacts(snapshot.details).join(" · ")}</p>}
+            <p className="muted">{snapshot.events?.length ?? 0} provider events captured. Full response and event data are in the JSON below.</p>
+          </> : <p className="muted">{side === dispatchedSide ? "Call details will appear after the next status check." : "No separate provider record linked yet."}</p>}
+          <AttachProviderCall runId={id} side={side} provider={agent?.provider} callId={snapshot?.externalCallId ?? (side === dispatchedSide ? run.externalCallId : undefined)} accounts={providerAccounts} />
+        </div>;
+      })}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 18, marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Provider metadata JSON</h3>
+        <p className="muted">Choose the HAL testing agent, the main agent, or both. Each view includes that agent’s call record, message metadata, and all tool, node, and provider events. Copy the selected JSON for debugging or sharing.</p>
+        <MetadataJsonViewer views={[...metadataViews, fullMetadataView]} />
+      </div>
+    </section>}
   </div>;
 }

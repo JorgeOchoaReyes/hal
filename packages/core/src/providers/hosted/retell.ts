@@ -1,4 +1,5 @@
 import { Transcript } from "../../types.js";
+import { asRecord, asText, eventTime, providerEvent, samePhoneNumber } from "./trace.js";
 import { ProviderField } from "../templates.js";
 import {
   VoiceProviderIntegration,
@@ -189,8 +190,40 @@ export class RetellIntegration implements VoiceProviderIntegration {
       externalCallId,
       status: mapStatus(data.call_status),
       transcript: parseTranscript(data),
+      details: asRecord(data), trace: parseRetellTrace(data),
       endedReason: data.disconnection_reason,
     };
+  }
+
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    const call = await this.getCall(account, externalCallId);
+    const url = asText(call.details?.recording_url);
+    if (!url) throw new Error("Retell has not made this call's recording available yet.");
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !/^(?:[a-z0-9.-]+\.)?(?:amazonaws\.com|retellai\.com)$/.test(parsed.hostname))
+      throw new Error("Retell returned an unexpected recording URL.");
+    return this.fetchImpl(url, { signal: AbortSignal.timeout(60_000) });
+  }
+
+  async findInboundCall(account: ProviderAccount, opts: {
+    toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
+  }): Promise<string | undefined> {
+    const res = await this.fetchImpl(`${this.base}/v3/list-calls`, { method: "POST", headers: this.headers(account),
+      body: JSON.stringify({ limit: 1000, sort_order: "descending",
+        ...(opts.externalAgentId ? { filter_criteria: { agent: [{ agent_id: opts.externalAgentId }] } } : {}) }) });
+    if (!res.ok) return undefined;
+    const rows = asRecord(await res.json()).items;
+    if (!Array.isArray(rows)) return undefined;
+    const matches = rows.map(asRecord).filter((row) => {
+      const at = eventTime(row.start_timestamp);
+      return (row.call_type === "phone_call" || row.call_type === undefined)
+        && (row.direction === "inbound" || row.direction === undefined) && row.call_id !== opts.excludeCallId
+        && at !== undefined && Math.abs(at - opts.startedAt) <= 120_000
+        && (!opts.externalAgentId || row.agent_id === opts.externalAgentId)
+        && samePhoneNumber(row.to_number, opts.toNumber)
+        && (!opts.fromNumber || samePhoneNumber(row.from_number, opts.fromNumber));
+    });
+    return matches.length === 1 ? asText(matches[0]?.call_id) : undefined;
   }
 
   /**
@@ -216,11 +249,16 @@ export class RetellIntegration implements VoiceProviderIntegration {
 interface RetellTurn {
   role?: string;
   content?: string;
+  words?: Array<{ start?: number; end?: number }>;
+  [key: string]: unknown;
 }
 interface RetellCall {
   call_status?: string;
   disconnection_reason?: string;
   transcript_object?: RetellTurn[];
+  transcript_with_tool_calls?: RetellTurn[];
+  start_timestamp?: number;
+  [key: string]: unknown;
 }
 
 function mapStatus(status?: string): HostedCallStatus {
@@ -242,12 +280,30 @@ function mapStatus(status?: string): HostedCallStatus {
 /** Retell "agent" is our tester (agent); "user" is the target under test. */
 function parseTranscript(call: RetellCall): Transcript | undefined {
   if (!call.transcript_object?.length) return undefined;
-  const base = Date.now();
+  const base = eventTime(call.start_timestamp) ?? Date.now();
   const out: Transcript = [];
   for (const t of call.transcript_object) {
     const text = (t.content ?? "").trim();
     if (!text) continue;
-    out.push({ role: t.role?.toLowerCase() === "user" ? "target" : "agent", text, startedAt: base });
+    out.push({ role: t.role?.toLowerCase() === "user" ? "target" : "agent", text,
+      startedAt: eventTime(t.words?.[0]?.start, base) ?? base,
+      audioStartMs: typeof t.words?.[0]?.start === "number" ? Math.max(0, t.words[0].start * 1000) : undefined,
+      meta: { ...t, ...(asText(t.node_id) ? { nodeId: t.node_id } : {}) } });
   }
   return out.length ? out : undefined;
+}
+
+function parseRetellTrace(call: RetellCall) {
+  const base = eventTime(call.start_timestamp) ?? Date.now();
+  return (call.transcript_with_tool_calls ?? call.transcript_object ?? []).flatMap((turn) => {
+    const data = asRecord(turn);
+    const role = turn.role?.toLowerCase() ?? "";
+    const at = eventTime(turn.words?.[0]?.start ?? data.start_time, base);
+    if (role.includes("tool") || role.includes("function")) {
+      const kind = role.includes("result") || role.includes("response") ? "tool-result" : "tool-call";
+      return [providerEvent(kind, asText(data.name ?? data.tool_name) ?? role, data, at)];
+    }
+    if (role.includes("node") || data.node_id) return [providerEvent("node", asText(data.node_id) ?? role, data, at, asText(data.node_id))];
+    return [];
+  });
 }
