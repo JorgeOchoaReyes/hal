@@ -87,7 +87,7 @@ try {
   assert.deepEqual(storedCase.judge, tc.judge); assert.deepEqual(storedCase.target, tc.target);
   assert.equal(storedCase.scenario.steps[0].text, "Updated script");
   const simulationHtml = await (await fetch(base + "/simulations/tc1")).text();
-  for (const text of ["Edit scenario", "Updated script", "Chat"]) assert(simulationHtml.includes(text), text);
+  for (const text of ["Edit scenario", "Updated script", 'aria-label="Test channel"', ">Chat</button>"]) assert(simulationHtml.includes(text), text);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: "missing", pathwayId: "fixture" })).status, 400);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: account.account.id })).status, 400);
   child.kill(); await once(child, "exit");
@@ -101,7 +101,9 @@ try {
   }
   const afterRestart = await (await fetch(base + `/api/byot-keys?accountId=${account.account.id}`)).text();
   assert(!afterRestart.includes(secret)); assert.equal(JSON.parse(afterRestart).keys[0].id, key.id);
-  const dispatch = { testCaseId: "tc-unsupported", accountId: account.account.id, phoneNumber: "+14155550123", byotKeyId: key.id, inboundAgent: { kind: "target", id: "t1" }, outboundAgent: { kind: "testing", id: "" } };
+  const dispatch = { testCaseId: "tc1", accountId: account.account.id, phoneNumber: "+14155550123", byotKeyId: key.id, inboundAgent: { kind: "target", id: "t1" }, outboundAgent: { kind: "testing", id: "" } };
+  const unsupported = await post("/api/run-hosted-sim", { ...dispatch, testCaseId: "tc-unsupported" });
+  assert.equal(unsupported.status, 400); assert.match((await unsupported.json()).error, /Hosted script step/);
   const validKey = await post("/api/run-hosted-sim", dispatch);
   assert.equal(validKey.status, 400); assert.match((await validKey.json()).error, /Set the voice ID/);
   const wrongAccount = await post("/api/run-hosted-sim", { ...dispatch, accountId: account2.account.id });
