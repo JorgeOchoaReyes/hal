@@ -1,4 +1,4 @@
-import { Persona, Transcript, ScenarioStep } from "../../types.js";
+import { Persona, Transcript, ScenarioStep, RunTraceEvent } from "../../types.js";
 import { ProviderField } from "../templates.js";
 import { StructuredTest, compileStructuredToPrompt, firstMessageOf } from "../../simulation/structured.js";
 
@@ -142,6 +142,10 @@ export interface HostedCallState {
   externalCallId: string;
   status: HostedCallStatus;
   transcript?: Transcript;
+  /** Raw call details and any separate provider event stream. */
+  details?: Record<string, unknown>;
+  events?: unknown[];
+  trace?: Omit<RunTraceEvent, "side">[];
   endedReason?: string;
   /** Provider-reported completion time, when available. */
   endedAt?: number;
@@ -201,6 +205,10 @@ export interface VoiceProviderIntegration {
   getRecording?(account: ProviderAccount, externalCallId: string): Promise<Response>;
   /** Fetch the current state (and transcript, once ended) of a call. */
   getCall(account: ProviderAccount, externalCallId: string): Promise<HostedCallState>;
+  /** Find a separate inbound record for the receiving agent, if the platform exposes one. */
+  findInboundCall?(account: ProviderAccount, opts: {
+    toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
+  }): Promise<string | undefined>;
   /**
    * List phone numbers owned on this account so the UI can offer a picker
    * (target number, or a caller-id) instead of manual entry. Optional —

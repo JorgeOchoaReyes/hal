@@ -16,8 +16,8 @@ export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: str
       const res = await fetch(`/api/results/${encodeURIComponent(runId)}/refresh`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not check the call.");
-      if (data.state === "in-progress") setMessage("The provider still reports this call as active. Check again later.");
-      else if (data.state === "waiting-transcript") setMessage("The call ended, but its transcript is not ready yet. Check again later.");
+      if (data.state === "in-progress") { setMessage("The provider still reports this call as active. Check again later."); router.refresh(); }
+      else if (data.state === "waiting-transcript") { setMessage("The call ended, but its transcript is not ready yet. Check again later."); router.refresh(); }
       else router.refresh();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
@@ -25,6 +25,39 @@ export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: str
   return <div style={{ marginTop: 16 }}>
     <button className="secondary" onClick={check} disabled={busy}>{busy ? "Checking provider…" : retryEvaluation ? "Retry original evaluation" : "Check call status and finish run"}</button>
     {message && <p role="status" className="muted">{message}</p>}
+    {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
+  </div>;
+}
+
+export function AttachProviderCall({ runId, side, provider, callId, accounts }: {
+  runId: string; side: "testingAgent" | "targetAgent"; provider?: string; callId?: string;
+  accounts: Array<{ id: string; label: string; provider: string }>;
+}) {
+  const router = useRouter();
+  const choices = accounts.filter((account) => !provider || account.provider === provider);
+  const [accountId, setAccountId] = useState(choices[0]?.id ?? "");
+  const [externalCallId, setExternalCallId] = useState(callId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function fetchCall() {
+    setBusy(true); setError(undefined);
+    try {
+      const response = await fetch(`/api/results/${encodeURIComponent(runId)}/provider-call`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ side, accountId, externalCallId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not fetch provider call details.");
+      router.refresh();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginTop: 12 }}>
+    <label className="field">Account<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+      <option value="">Select account</option>{choices.map((account) => <option key={account.id} value={account.id}>{account.label} ({account.provider})</option>)}
+    </select></label>
+    <label className="field">Provider call ID<input value={externalCallId} onChange={(event) => setExternalCallId(event.target.value)} placeholder="Call or conversation ID" /></label>
+    <button className="secondary" disabled={busy || !accountId || !externalCallId.trim()} onClick={fetchCall}>{busy ? "Fetching…" : callId ? "Refresh metadata" : "Fetch metadata"}</button>
     {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
   </div>;
 }
@@ -46,6 +79,7 @@ export function HostedRunWatcher({ runId }: { runId: string }) {
         if (data.state === "in-progress") setMessage("Call in progress. Checking again in a few seconds…");
         else if (data.state === "waiting-transcript") setMessage("Call ended. Waiting for the provider transcript…");
         else { router.refresh(); return; }
+        router.refresh();
         timer = setTimeout(check, 5000);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);

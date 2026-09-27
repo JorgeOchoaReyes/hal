@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { JudgeSpec, JudgeVerdict, RunAgentSnapshot } from "@hal/core";
 import { getResult, listJudges, listAccounts } from "@/lib/store";
-import { RunAudio, ApplyRunJudges, CheckHostedCall, HostedRunWatcher } from "@/components/RunDetailActions";
+import { RunAudio, ApplyRunJudges, CheckHostedCall, HostedRunWatcher, AttachProviderCall } from "@/components/RunDetailActions";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +54,11 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
   const context = run.context;
   const retryJudgeError = run.status === "failed" && Boolean(run.verdict?.summary.startsWith("Judge LLM error:"));
   const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId && (!run.recordingSource || run.recordingSource.provider === "bland"));
+  const timeline = [
+    ...run.transcript.map((turn, index) => ({ kind: "speech" as const, at: turn.startedAt, order: index, turn })),
+    ...(run.trace ?? []).map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
+  ].sort((a, b) => a.at - b.at || a.order - b.order);
+  const providerAccounts = listAccounts().map(({ id, label, provider }) => ({ id, label, provider }));
   return <div className="run-detail">
     <nav style={{ marginTop: 24 }}><Link href="/results">← All results</Link></nav>
     <header className="card-row" style={{ margin: "20px 0" }}><div><p className="field-label">Run details</p><h1 style={{ margin: "6px 0" }}>{run.runLabel ?? context?.simulationName ?? "Saved run"}</h1><span className="muted mono">{run.id}</span></div><span className={`pill ${run.status}`}>{run.status}</span></header>
@@ -79,6 +84,24 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
     </section>
     <ApplyRunJudges runId={id} judges={listJudges()} hasTranscript={run.transcript.length > 0} />
     {(run.evaluations ?? []).length > 0 && <section><h2>Additional evaluations</h2>{[...(run.evaluations ?? [])].reverse().map((e) => <article className="card" key={e.id} style={{ marginBottom: 12 }}><h3 style={{ marginTop: 0 }}>{e.judge.name}</h3><p className="muted">{new Date(e.createdAt).toLocaleString()} · {e.provider || "Provider unavailable"} / {e.model || "default"}</p>{e.error && <p style={{ color: "var(--fail)" }}>{e.error}</p>}{e.verdict && <Verdict verdict={e.verdict} />}<JudgeConfiguration spec={e.judge.spec} /></article>)}</section>}
-    <section className="card"><h2 style={{ marginTop: 0 }}>Transcript</h2>{!run.transcript.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript was captured."}</p> : <div className="transcript">{run.transcript.map((turn, i) => <div className={`turn ${turn.role}`} key={i}><div className="who">{turn.role === "agent" ? "Testing agent" : turn.role === "target" ? "Agent under test" : "System"}</div><div style={{ whiteSpace: "pre-wrap" }}>{turn.text}</div></div>)}</div>}</section>
+    <section className="card"><h2 style={{ marginTop: 0 }}>Transcript and activity</h2>{!timeline.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript or activity was captured."}</p> : <div className="transcript">{timeline.map((item, i) => item.kind === "speech"
+      ? <div className={`turn ${item.turn.role}`} key={`speech-${i}`}><div className="who">{item.turn.role === "agent" ? "Testing agent" : item.turn.role === "target" ? "Agent under test" : "System"}{typeof item.turn.meta?.nodeId === "string" && <span className="muted mono"> · node {item.turn.meta.nodeId}</span>}</div><div style={{ whiteSpace: "pre-wrap" }}>{item.turn.text}</div>{item.turn.meta && <details><summary>Message metadata</summary><pre className="run-json">{JSON.stringify(item.turn.meta, null, 2)}</pre></details>}</div>
+      : <div className="turn system" key={`event-${i}`}><div className="who">{item.event.side === "testingAgent" ? "Testing agent" : "Agent under test"} · {item.event.kind}{item.event.nodeId && <span className="muted mono"> · node {item.event.nodeId}</span>}</div><div>{item.event.label}</div>{item.event.data && <details><summary>Event metadata</summary><pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre></details>}</div>)}</div>}</section>
+    {(run.externalCallId || run.providerCalls) && <section className="card"><h2 style={{ marginTop: 0 }}>Provider call metadata</h2>
+      <p className="muted">Each agent may have a separate provider call record. The dispatched call is captured automatically. Add the receiving agent’s call ID when its provider exposes a separate record.</p>
+      {(["testingAgent", "targetAgent"] as const).map((side) => {
+        const snapshot = run.providerCalls?.[side];
+        const agent = context?.[side];
+        const dispatchedSide = context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
+        return <div key={side} style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
+          <h3>{side === "testingAgent" ? "HAL testing agent" : "Agent under test"}</h3>
+          {snapshot ? <><p className="muted mono">{snapshot.provider} · {snapshot.externalCallId} · fetched {new Date(snapshot.fetchedAt).toLocaleString()}</p>
+            <details><summary>Full call details</summary><pre className="run-json">{JSON.stringify(snapshot.details, null, 2)}</pre></details>
+            {snapshot.events?.length ? <details><summary>Provider events ({snapshot.events.length})</summary><pre className="run-json">{JSON.stringify(snapshot.events, null, 2)}</pre></details> : null}
+          </> : <p className="muted">{side === dispatchedSide ? "Call details will appear after the next status check." : "No separate provider record linked yet."}</p>}
+          <AttachProviderCall runId={id} side={side} provider={agent?.provider} callId={snapshot?.externalCallId ?? (side === dispatchedSide ? run.externalCallId : undefined)} accounts={providerAccounts} />
+        </div>;
+      })}
+    </section>}
   </div>;
 }

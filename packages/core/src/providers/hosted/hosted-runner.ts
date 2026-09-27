@@ -10,6 +10,7 @@ import {
   HostedTestingAgent,
   HostedTarget,
   HostedCallStatus,
+  HostedCallState,
 } from "./integration.js";
 
 export interface HostedRunOptions {
@@ -51,24 +52,35 @@ export async function refreshHostedCall(opts: HostedRefreshOptions): Promise<{
   const callId = opts.result.externalCallId;
   if (!callId) throw new Error("This run has no provider call ID to check.");
   const state = await opts.integration.getCall(opts.account, callId);
-  if (state.status === "queued" || state.status === "in-progress") return { state: "in-progress" };
+  const side: "targetAgent" | "testingAgent" = opts.providerAgentRole === "target" ? "targetAgent" : "testingAgent";
+  const captured: TestResult = {
+    ...opts.result,
+    providerCalls: state.details ? {
+      ...opts.result.providerCalls,
+      [side]: { provider: opts.account.provider, accountId: opts.account.id, externalCallId: callId,
+        fetchedAt: now(), details: state.details, events: state.events },
+    } : opts.result.providerCalls,
+    trace: state.trace ? [...(opts.result.trace ?? []).filter((event) => event.side !== side),
+      ...state.trace.map((event) => ({ ...event, side }))] : opts.result.trace,
+  };
+  if (state.status === "queued" || state.status === "in-progress") return { state: "in-progress", result: captured };
   const transcript = state.transcript
     ? normalizeTranscript(state.transcript, opts.providerAgentRole)
     : undefined;
   if (state.status === "failed") {
     return { state: "failed", result: {
-      ...opts.result, status: "errored", endedAt: state.endedAt ?? now(),
-      transcript: transcript ?? opts.result.transcript,
+      ...captured, status: "errored", endedAt: state.endedAt ?? now(),
+      transcript: transcript ?? captured.transcript,
       error: state.endedReason || "Hosted call failed.",
     } };
   }
-  if (!transcript?.length) return { state: "waiting-transcript" };
+  if (!transcript?.length) return { state: "waiting-transcript", result: captured };
   try {
-    const result = await scoreHostedResult({ ...opts.result, transcript, endedAt: state.endedAt ?? now() }, opts.judge, opts.llm);
+    const result = await scoreHostedResult({ ...captured, transcript, endedAt: state.endedAt ?? now() }, opts.judge, opts.llm);
     return { state: "completed", result };
   } catch (err) {
     return { state: "evaluation-failed", result: {
-      ...opts.result, status: "errored", transcript, endedAt: state.endedAt ?? now(),
+      ...captured, status: "errored", transcript, endedAt: state.endedAt ?? now(),
       verdict: undefined, metrics: undefined, labels: undefined,
       error: `Call completed, but evaluation failed: ${(err as Error).message}`,
     } };
@@ -88,6 +100,7 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
   const startedAt = now();
   let externalCallId: string | undefined;
   let transcript: Transcript = [];
+  let lastState: HostedCallState | undefined;
 
   try {
     const place = opts.place ?? (() => opts.integration.placeCall(opts.account, opts.agent, opts.target));
@@ -101,6 +114,7 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
 
     while (now() < deadline) {
       const state = await opts.integration.getCall(opts.account, externalCallId);
+      lastState = state;
       status = state.status;
       endedReason = state.endedReason;
       if (state.transcript) transcript = normalizeTranscript(state.transcript, opts.providerAgentRole);
@@ -109,18 +123,18 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
     }
 
     if (status === "failed") {
-      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, endedReason || "hosted call failed");
+      return withCallData(errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, endedReason || "hosted call failed"), opts, lastState);
     }
 
     if (status !== "ended") {
-      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId,
-        "Timed out waiting for the hosted call to finish. The call may still be active; open this run’s details to check its status later.");
+      return withCallData(errored(runId, opts.testCaseId, startedAt, transcript, externalCallId,
+        "Timed out waiting for the hosted call to finish. The call may still be active; open this run’s details to check its status later."), opts, lastState);
     }
     if (!transcript.length) {
-      return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, "The provider returned no transcript for the completed call.");
+      return withCallData(errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, "The provider returned no transcript for the completed call."), opts, lastState);
     }
 
-    return scoreHostedResult({
+    return scoreHostedResult(withCallData({
       id: runId,
       testCaseId: opts.testCaseId,
       status: "running",
@@ -129,10 +143,20 @@ export async function runHostedCall(opts: HostedRunOptions): Promise<TestResult>
       transcript,
       liveChecks: [],
       externalCallId,
-    }, opts.judge, opts.llm);
+    }, opts, lastState), opts.judge, opts.llm);
   } catch (err) {
     return errored(runId, opts.testCaseId, startedAt, transcript, externalCallId, (err as Error).message);
   }
+}
+
+function withCallData(result: TestResult, opts: HostedRunOptions, state?: HostedCallState): TestResult {
+  if (!state || !result.externalCallId) return result;
+  const side = opts.providerAgentRole === "target" ? "targetAgent" : "testingAgent";
+  return { ...result,
+    providerCalls: state.details ? { [side]: { provider: opts.account.provider, accountId: opts.account.id,
+      externalCallId: result.externalCallId, fetchedAt: now(), details: state.details, events: state.events } } : undefined,
+    trace: state.trace?.map((event) => ({ ...event, side })),
+  };
 }
 
 function normalizeTranscript(transcript: Transcript, providerAgentRole?: "agent" | "target"): Transcript {

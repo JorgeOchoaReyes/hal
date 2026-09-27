@@ -34,6 +34,27 @@ export interface Utterance {
 
 export type Transcript = Utterance[];
 
+/** Provider activity shown alongside speech, but excluded from speech judging. */
+export interface RunTraceEvent {
+  side: "testingAgent" | "targetAgent";
+  kind: "tool-call" | "tool-result" | "node" | "event";
+  label: string;
+  at?: number;
+  nodeId?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ProviderCallSnapshot {
+  provider: string;
+  accountId: string;
+  externalCallId: string;
+  fetchedAt: number;
+  /** Provider response, including fields HAL does not yet interpret. */
+  details: Record<string, unknown>;
+  /** Extra event endpoint response, when the provider exposes one. */
+  events?: unknown[];
+}
+
 // ---------------------------------------------------------------------------
 // Scenario / simulation
 // ---------------------------------------------------------------------------
@@ -408,6 +429,8 @@ export interface TestResult {
   startedAt: number;
   endedAt?: number;
   transcript: Transcript;
+  trace?: RunTraceEvent[];
+  providerCalls?: { testingAgent?: ProviderCallSnapshot; targetAgent?: ProviderCallSnapshot };
   verdict?: JudgeVerdict;
   /** Live assertion outcomes gathered during the call. */
   liveChecks: CheckResult[];

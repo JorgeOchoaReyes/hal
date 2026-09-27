@@ -1,4 +1,5 @@
 import { Transcript } from "../../types.js";
+import { asRecord, asText, eventTime, providerEvent } from "./trace.js";
 import { ProviderField } from "../templates.js";
 import {
   VoiceProviderIntegration,
@@ -447,13 +448,61 @@ export class BlandIntegration implements VoiceProviderIntegration {
     });
     if (!res.ok) throw new Error(`Bland getCall failed (${res.status}): ${await safeText(res)}`);
     const data = (await res.json()) as BlandCall;
+    let events: unknown[] | undefined;
+    {
+      try {
+        const eventRes = await this.fetchImpl(`${this.base}/v1/pathway_calls/${encodeURIComponent(externalCallId)}?v=2`, {
+          headers: this.headers(account),
+        });
+        if (eventRes.ok) {
+          const payload: unknown = await eventRes.json();
+          if (Array.isArray(payload)) events = payload;
+        }
+      } catch { /* A missing pathway event stream must not hide the call result. */ }
+    }
+    const ordered = (events ?? []).map(asRecord).sort((a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0));
+    const trace = ordered.flatMap((event) => {
+      const type = asText(event.event_type);
+      if (!type) return [];
+      const payload = asRecord(event.payload);
+      const nodeId = type === "node.transition" ? asText(payload.chosen_node_id) : asText(event.node_id);
+      const kind = type === "node.transition" ? "node" as const
+        : /^(tool|webhook|custom_code)\.(invoke|result|error)$/.test(type)
+          ? type.endsWith(".invoke") ? "tool-call" as const : "tool-result" as const
+          : type.startsWith("transcript.") ? undefined : "event" as const;
+      return kind ? [providerEvent(kind, type === "node.transition" ? `Visited ${nodeId ?? "node"}`
+        : asText(payload.tool_name) ?? type, event, eventTime(event.created_at), nodeId)] : [];
+    });
     return {
       externalCallId,
       status: mapStatus(data),
-      transcript: parseTranscript(data),
+      transcript: parseTranscript(data, ordered),
+      details: asRecord(data), events, trace,
       endedReason: data.error_message ?? undefined,
       endedAt: data.end_at ? Date.parse(data.end_at) || undefined : undefined,
     };
+  }
+
+  async findInboundCall(account: ProviderAccount, opts: {
+    toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string;
+  }): Promise<string | undefined> {
+    const query = new URLSearchParams({ to_number: opts.toNumber, inbound: "true", limit: "100",
+      start_date: new Date(opts.startedAt - 120_000).toISOString(),
+      end_date: new Date(opts.startedAt + 120_000).toISOString() });
+    const res = await this.fetchImpl(`${this.base}/v1/calls?${query}`, { headers: this.headers(account) });
+    if (!res.ok) return undefined;
+    const rows = asRecord(await res.json()).calls;
+    if (!Array.isArray(rows)) return undefined;
+    const number = (value: unknown) => String(value ?? "").replace(/\D/g, "");
+    const matches = rows.map(asRecord).filter((row) => {
+      const callId = asText(row.call_id);
+      const createdAt = eventTime(row.created_at);
+      return callId && callId !== opts.excludeCallId && createdAt !== undefined
+        && Math.abs(createdAt - opts.startedAt) <= 120_000
+        && number(row.to) === number(opts.toNumber)
+        && (!opts.fromNumber || number(row.from) === number(opts.fromNumber));
+    });
+    return matches.length === 1 ? asText(matches[0]?.call_id) : undefined;
   }
 }
 
@@ -462,6 +511,11 @@ interface BlandTurn {
   speaker?: string; // some responses use "speaker": "ai" | "human"
   role?: string;
   text?: string;
+  created_at?: string;
+  start_at?: string;
+  node_id?: string;
+  pathway_node_id?: string;
+  [key: string]: unknown;
 }
 interface BlandCall {
   status?: string;
@@ -469,6 +523,9 @@ interface BlandCall {
   error_message?: string;
   end_at?: string;
   transcripts?: BlandTurn[];
+  pathway_id?: string;
+  pathway_logs?: unknown;
+  [key: string]: unknown;
 }
 
 type NumberRow = Record<string, unknown> & {
@@ -520,7 +577,19 @@ function mapStatus(call: BlandCall): HostedCallStatus {
  * so we read whichever is present and map the human side to `target`. Mislabeling
  * would make the judge see only one side of the call.
  */
-function parseTranscript(call: BlandCall): Transcript | undefined {
+function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []): Transcript | undefined {
+  const speechEvents = events.filter((event) => event.event_type === "transcript.user" || event.event_type === "transcript.assistant");
+  if (speechEvents.length) {
+    const turns = speechEvents.flatMap((event) => {
+      const text = asText(asRecord(event.payload).text);
+      if (!text) return [];
+      const nodeId = asText(event.node_id);
+      return [{ role: event.event_type === "transcript.user" ? "target" as const : "agent" as const,
+        text, startedAt: eventTime(event.created_at) ?? Date.now(),
+        meta: { ...event, ...(nodeId ? { nodeId } : {}) } }];
+    });
+    if (turns.length) return turns;
+  }
   if (!call.transcripts?.length) return undefined;
   const base = Date.now();
   const out: Transcript = [];
@@ -529,7 +598,10 @@ function parseTranscript(call: BlandCall): Transcript | undefined {
     if (!text) continue;
     const who = (t.user ?? t.speaker ?? t.role ?? "").toLowerCase();
     const isHuman = who === "user" || who === "human" || who === "customer" || who === "target";
-    out.push({ role: isHuman ? "target" : "agent", text, startedAt: base });
+    out.push({ role: isHuman ? "target" : "agent", text,
+      startedAt: eventTime(t.start_at ?? t.created_at) ?? base,
+      meta: { ...t, ...(t.node_id || t.pathway_node_id ? { nodeId: t.node_id ?? t.pathway_node_id } : {}) },
+    });
   }
   return out.length ? out : undefined;
 }
