@@ -130,6 +130,12 @@ export async function POST(req: NextRequest) {
     steps: testCase.scenario.structured ? undefined : testCase.scenario.steps,
   };
 
+  // Reject an unsupported script before any provider lookup or mutation.
+  if (spec.steps?.length) {
+    try { integration.buildFlowConfig(spec); }
+    catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
+  }
+
   // Resolve both voices before changing the tester or placing a call. The
   // saved voice ID covers targets whose provider config is on another account.
   try {
@@ -152,11 +158,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 
-  // Validate before provisioning so unsupported steps cannot become a persona-only call.
-  if (spec.steps?.length) {
-    try { integration.buildFlowConfig(spec); }
-    catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
-  }
   const initialContext = snapshotRun(testCase);
 
   // Prevent a second dispatch from replacing the receiving pathway mid-call.
