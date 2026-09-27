@@ -6,6 +6,7 @@ import AgentOutboundKey, { type OutboundKeyValue } from "./AgentOutboundKey";
 import NumberPicker from "./NumberPicker";
 import Modal from "./Modal";
 import ImportTestingAgent from "./ImportTestingAgent";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 interface Account {
   id: string;
@@ -15,6 +16,7 @@ interface Account {
 }
 interface Agent {
   imported?: boolean;
+  encryptedKey?: string;
   spec?: TestingAgentSpec;
   hasEncryptedKey?: boolean;
   byotKeyId?: string;
@@ -28,6 +30,7 @@ interface Agent {
 }
 
 export default function TestingAgentsManager() {
+  const { visible } = useSecretVisibility();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,15 +41,16 @@ export default function TestingAgentsManager() {
   const refresh = useCallback(async () => {
     const [a, g] = await Promise.all([
       fetch("/api/provider-accounts").then((r) => r.json()),
-      fetch("/api/testing-agents").then((r) => r.json()),
+      fetch(`/api/testing-agents${visible ? "?reveal=1" : ""}`).then((r) => r.json()),
     ]);
     setAccounts(a.accounts);
     setAgents(g.agents);
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
+    if (!visible) setAgents((previous) => previous.map((agent) => ({ ...agent, encryptedKey: undefined })));
     refresh().catch(() => setError("Failed to load"));
-  }, [refresh]);
+  }, [refresh, visible]);
 
   return (
     <div className="grid" style={{ gap: 18 }}>

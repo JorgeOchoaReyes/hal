@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getIntegration, id, type ProviderAccount } from "@hal/core";
-import { listAccounts, upsertAccount } from "@/lib/store";
+import { getAccountRaw, listAccounts, upsertAccount } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return NextResponse.json({ accounts: listAccounts() });
+export async function GET(req: NextRequest) {
+  const accounts = listAccounts();
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ accounts: reveal ? accounts.map((account) => getAccountRaw(account.id) ?? account) : accounts }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Connect a provider account by storing its credentials. */

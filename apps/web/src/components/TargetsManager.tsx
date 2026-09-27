@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { SavedJudge } from "@hal/core";
 import AgentOutboundKey, { type OutboundKeyValue } from "./AgentOutboundKey";
 import Modal from "./Modal";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
 type Direction = "inbound" | "outbound";
@@ -86,18 +87,20 @@ function buildTarget(name: string, transport: Transport, address: string, room: 
 }
 
 export default function TargetsManager() {
+  const { visible } = useSecretVisibility();
   const [targets, setTargets] = useState<TargetAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    const d = await fetch("/api/targets").then((r) => r.json());
+    const d = await fetch(`/api/targets${visible ? "?reveal=1" : ""}`).then((r) => r.json());
     setTargets(d.targets ?? []);
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
+    if (!visible) setTargets((previous) => previous.map((target) => ({ ...target, encryptedKey: undefined })));
     refresh().catch(() => setError("Failed to load agents"));
-  }, [refresh]);
+  }, [refresh, visible]);
 
   return (
     <div className="grid" style={{ gap: 18 }}>

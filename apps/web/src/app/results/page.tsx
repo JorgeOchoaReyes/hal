@@ -1,5 +1,6 @@
 import { listResults, listTestCases } from "@/lib/store";
 import ResultsTable, { type ResultRow } from "@/components/ResultsTable";
+import PageIntro from "@/components/PageIntro";
 
 export const dynamic = "force-dynamic";
 
@@ -25,16 +26,15 @@ export default function ResultsPage() {
 
   return (
     <>
-      <div className="card-row" style={{ marginTop: 28 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Results</h1>
-          <p className="sub" style={{ margin: "4px 0 0" }}>
-            Every run across all simulations, newest first — status, verdict score, and the
-            labels the judge assigned. Give a run a label when you start it (or a batch of them)
-            to find it again here. Open a run to review its audio, transcript, agents, and judge evaluations.
-          </p>
-        </div>
-      </div>
+      <PageIntro number="02" section="Run history" title="Results" stats={[
+        { label: "Total runs", value: rows.length },
+        { label: "Passed", value: rows.filter((row) => row.status === "passed").length },
+        { label: "Needs review", value: rows.filter((row) => row.status === "failed" || row.status === "errored").length },
+      ]}>
+        Every run across all simulations, newest first — status, verdict score, and the
+        labels the judge assigned. Give a run a label when you start it (or a batch of them)
+        to find it again here. Open a run to review its audio, transcript, agents, and judge evaluations.
+      </PageIntro>
 
       <ResultsTable rows={rows} />
     </>

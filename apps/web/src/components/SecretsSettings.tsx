@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 type Source = "env" | "stored" | "none";
 interface SecretStatus {
@@ -46,7 +47,9 @@ const GROUPS: Group[] = [
 ];
 
 export default function SecretsSettings() {
+  const { visible } = useSecretVisibility();
   const [status, setStatus] = useState<Record<string, SecretStatus>>({});
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -59,12 +62,15 @@ export default function SecretsSettings() {
   }
 
   useEffect(() => {
-    fetch("/api/settings/secrets")
+    let active = true;
+    if (!visible) setRevealed({});
+    fetch(`/api/settings/secrets${visible ? "?reveal=1" : ""}`)
       .then((r) => r.json())
-      .then((d: { secrets: SecretStatus[] }) => ingest(d.secrets ?? []))
+      .then((d: { secrets: SecretStatus[]; values?: Record<string, string> }) => { if (active) { ingest(d.secrets ?? []); if (visible) setRevealed(d.values ?? {}); } })
       .catch(() => undefined)
-      .finally(() => setLoaded(true));
-  }, []);
+      .finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, [visible]);
 
   async function save() {
     setBusy(true);
@@ -81,6 +87,10 @@ export default function SecretsSettings() {
       });
       const d: { secrets: SecretStatus[] } = await res.json();
       ingest(d.secrets ?? []);
+      if (visible) {
+        const refreshed = await fetch("/api/settings/secrets?reveal=1").then((r) => r.json()) as { values?: Record<string, string> };
+        setRevealed(refreshed.values ?? {});
+      }
       setDrafts({});
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -99,6 +109,7 @@ export default function SecretsSettings() {
       });
       const d: { secrets: SecretStatus[] } = await res.json();
       ingest(d.secrets ?? []);
+      setRevealed((prev) => { const next = { ...prev }; delete next[key]; return next; });
       setDrafts((prev) => {
         const n = { ...prev };
         delete n[key];
@@ -122,7 +133,7 @@ export default function SecretsSettings() {
         {saved && <span className="label label-pass">saved ✓</span>}
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-        Add the keys HAL needs. Stored server-side, never shown back. A real environment variable always
+        Add the keys HAL needs. Saved values are shown only while credential visibility is enabled. A real environment variable always
         wins and shows <em>from env</em>. <span style={{ color: "var(--fail)" }}>*</span> marks a required
         key — set at least one AI model key.
       </p>
@@ -194,9 +205,10 @@ export default function SecretsSettings() {
                     )}
                   </span>
                   <input
-                    type={m.secret === false ? "text" : "password"}
-                    value={drafts[m.key] ?? ""}
+                    type={visible || m.secret === false ? "text" : "password"}
+                    value={drafts[m.key] ?? (visible ? revealed[m.key] ?? "" : "")}
                     disabled={fromEnv}
+                    autoComplete="off"
                     onChange={(e) => setDrafts((prev) => ({ ...prev, [m.key]: e.target.value }))}
                     placeholder={
                       fromEnv

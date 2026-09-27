@@ -13,8 +13,10 @@ import { publicAgent, resolveByotKey, getAccountRaw, listAgents, upsertAgent, ge
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
-  return NextResponse.json({ agents: listAgents() });
+export async function GET(req: NextRequest) {
+  const agents = listAgents();
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ agents: reveal ? agents.map((agent) => getAgent(agent.id) ?? agent) : agents }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /**

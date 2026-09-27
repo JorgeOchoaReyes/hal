@@ -472,6 +472,11 @@ export function getSecretsStatus(): SecretStatus[] {
   });
 }
 
+/** UI-managed values only; environment secrets remain managed outside HAL. */
+export function getStoredSecretValues(): Partial<Record<SecretKey, string>> {
+  return loadSecretsDoc(halState().db).values;
+}
+
 /**
  * Save UI secrets. For each key: a non-empty string sets it, null or "" clears
  * the stored value, and `undefined` (key omitted) leaves it unchanged. Applied

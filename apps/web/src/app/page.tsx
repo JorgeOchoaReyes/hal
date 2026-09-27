@@ -1,5 +1,6 @@
 import { listTestCases } from "@/lib/store";
 import SimulationsTable, { type SimRow } from "@/components/SimulationsTable";
+import PageIntro from "@/components/PageIntro";
 import type { TestCase } from "@hal/core";
 
 export const dynamic = "force-dynamic";
@@ -43,15 +44,14 @@ export default function DashboardPage() {
 
   return (
     <>
-      <div className="card-row" style={{ marginTop: 28 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Simulations</h1>
-          <p className="sub" style={{ margin: "4px 0 0" }}>
-            Test scenarios that drive a simulated caller against a voice AI, each with a
-            persona and the metrics it should pass.
-          </p>
-        </div>
-      </div>
+      <PageIntro number="01" section="Simulation workspace" title="Simulations" stats={[
+        { label: "Saved scenarios", value: rows.length },
+        { label: "Scripted steps", value: rows.reduce((sum, row) => sum + row.steps, 0) },
+        { label: "Evaluation checks", value: rows.reduce((sum, row) => sum + row.metrics, 0) },
+      ]}>
+        Test scenarios that drive a simulated caller against a voice AI, each with a
+        persona and the metrics it should pass.
+      </PageIntro>
 
       <SimulationsTable rows={rows} />
 

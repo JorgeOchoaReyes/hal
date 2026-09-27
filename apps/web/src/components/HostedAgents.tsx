@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Modal from "./Modal";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 interface Integration {
   id: string;
@@ -13,9 +14,11 @@ interface Account {
   provider: string;
   label: string;
   createdAt: number;
+  credentials?: Record<string, string>;
 }
 
 export default function HostedAgents() {
+  const { visible } = useSecretVisibility();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -24,15 +27,16 @@ export default function HostedAgents() {
   const refresh = useCallback(async () => {
     const [i, a] = await Promise.all([
       fetch("/api/hosted-integrations").then((r) => r.json()),
-      fetch("/api/provider-accounts").then((r) => r.json()),
+      fetch(`/api/provider-accounts${visible ? "?reveal=1" : ""}`).then((r) => r.json()),
     ]);
     setIntegrations(i.integrations);
     setAccounts(a.accounts);
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
+    if (!visible) setAccounts((previous) => previous.map((account) => ({ ...account, credentials: undefined })));
     refresh().catch(() => setError("Failed to load"));
-  }, [refresh]);
+  }, [refresh, visible]);
 
   return (
     <div className="grid" style={{ gap: 18 }}>
@@ -91,6 +95,7 @@ function ConnectAccount({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { visible } = useSecretVisibility();
   const [provider, setProvider] = useState("");
   const [label, setLabel] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
@@ -142,7 +147,8 @@ function ConnectAccount({
             {f.required ? " *" : ""}
           </span>
           <input
-            type="password"
+            type={visible ? "text" : "password"}
+            autoComplete="off"
             value={creds[f.key] ?? ""}
             onChange={(e) => setCreds({ ...creds, [f.key]: e.target.value })}
           />
@@ -166,6 +172,7 @@ function ConnectAccount({
 }
 
 function AccountRow({ account }: { account: Account }) {
+  const { visible } = useSecretVisibility();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; detail?: string } | null>(null);
 
@@ -198,6 +205,7 @@ function AccountRow({ account }: { account: Account }) {
     >
       <div>
         <strong>{account.label}</strong> <span className="pill telephony">{account.provider}</span>
+        {visible && account.credentials && <dl className="revealed-credentials">{Object.entries(account.credentials).map(([key, value]) => <div key={key}><dt>{key}</dt><dd className="mono">{value}</dd></div>)}</dl>}
         {result && (
           <div style={{ marginTop: 4 }}>
             {result.ok ? (

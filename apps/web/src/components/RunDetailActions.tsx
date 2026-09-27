@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { RunRecording, SavedJudge } from "@hal/core";
@@ -26,6 +26,37 @@ export function CheckHostedCall({ runId, retryEvaluation = false }: { runId: str
     <button className="secondary" onClick={check} disabled={busy}>{busy ? "Checking provider…" : retryEvaluation ? "Retry original evaluation" : "Check call status and finish run"}</button>
     {message && <p role="status" className="muted">{message}</p>}
     {error && <p role="alert" style={{ color: "var(--fail)" }}>{error}</p>}
+  </div>;
+}
+
+export function HostedRunWatcher({ runId }: { runId: string }) {
+  const router = useRouter();
+  const [message, setMessage] = useState("Checking the provider for call results…");
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function check() {
+      try {
+        const response = await fetch(`/api/results/${encodeURIComponent(runId)}/refresh`, { method: "POST" });
+        if (cancelled) return;
+        if (response.status === 409) { timer = setTimeout(check, 5000); return; }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Could not check the call.");
+        if (data.state === "in-progress") setMessage("Call in progress. Checking again in a few seconds…");
+        else if (data.state === "waiting-transcript") setMessage("Call ended. Waiting for the provider transcript…");
+        else { router.refresh(); return; }
+        timer = setTimeout(check, 5000);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    }
+    timer = setTimeout(check, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [runId, router]);
+  return <div role="status" style={{ marginTop: 16 }}>
+    <p className="muted" style={{ margin: 0 }}>{message}</p>
+    {error && <p role="alert" style={{ color: "var(--fail)" }}>Automatic checking paused: {error}. Use “Check call status and finish run” to retry.</p>}
   </div>;
 }
 
