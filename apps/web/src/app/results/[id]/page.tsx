@@ -3,8 +3,47 @@ import { notFound } from "next/navigation";
 import type { JudgeSpec, JudgeVerdict, RunAgentSnapshot } from "@hal/core";
 import { getResult, listJudges, listAccounts } from "@/lib/store";
 import { RunAudio, ApplyRunJudges, CheckHostedCall, HostedRunWatcher, AttachProviderCall, SyncSavedRun } from "@/components/RunDetailActions";
+import MetadataJsonViewer from "@/components/MetadataJsonViewer";
 
 export const dynamic = "force-dynamic";
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function metadataFacts(meta?: Record<string, unknown>): string[] {
+  if (!meta) return [];
+  const payload = record(meta.payload);
+  return [
+    typeof meta.sequence === "number" ? `event #${meta.sequence}` : undefined,
+    typeof meta.confidence === "number" ? `${Math.round(meta.confidence * 100)}% confidence` : undefined,
+    typeof meta.secondsFromStart === "number" ? `+${meta.secondsFromStart.toFixed(1)}s` : undefined,
+    typeof meta.time_in_call_secs === "number" ? `+${meta.time_in_call_secs.toFixed(1)}s` : undefined,
+    typeof payload.tool_name === "string" ? `tool ${payload.tool_name}` : undefined,
+    typeof payload.status === "string" ? payload.status : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
+
+function activityPayload(data?: Record<string, unknown>): string | undefined {
+  const payload = record(data?.payload);
+  const useful = Object.keys(payload).length ? payload : record(data?.arguments ?? data?.result);
+  if (!Object.keys(useful).length) return undefined;
+  const json = JSON.stringify(useful);
+  return json.length > 360 ? `${json.slice(0, 360)}…` : json;
+}
+
+function callFacts(details: Record<string, unknown>): string[] {
+  const metadata = record(details.metadata);
+  const durationMs = details.duration_ms;
+  const durationSecs = details.duration ?? details.call_duration ?? metadata.call_duration_secs;
+  const cost = details.cost ?? details.cost_fiat ?? metadata.cost_fiat;
+  return [
+    typeof details.status === "string" ? `Status: ${details.status}` : typeof details.call_status === "string" ? `Status: ${details.call_status}` : undefined,
+    typeof durationMs === "number" ? `Duration: ${(durationMs / 1000).toFixed(1)}s` : typeof durationSecs === "number" ? `Duration: ${durationSecs.toFixed(1)}s` : undefined,
+    typeof cost === "number" ? `Cost: ${cost}` : undefined,
+    typeof details.pathway_id === "string" ? `Pathway: ${details.pathway_id}` : typeof details.agent_id === "string" ? `Agent: ${details.agent_id}` : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
 
 function Verdict({ verdict }: { verdict: JudgeVerdict }) {
   return <>
@@ -60,8 +99,10 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
     .map((account) => ({ id: account.id, label: `${account.label} (${account.provider})` }));
   const timeline = [
     ...run.transcript.map((turn, index) => ({ kind: "speech" as const, at: turn.startedAt, order: index, turn })),
-    ...(run.trace ?? []).map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
+    ...(run.trace ?? []).filter((event) => event.kind !== "event")
+      .map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
   ].sort((a, b) => a.at - b.at || a.order - b.order);
+  const otherEvents = (run.trace ?? []).filter((event) => event.kind === "event").length;
   const providerAccounts = listAccounts().map(({ id, label, provider }) => ({ id, label, provider }));
   return <div className="run-detail">
     <nav style={{ marginTop: 24 }}><Link href="/results">← All results</Link></nav>
@@ -90,8 +131,8 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
     <ApplyRunJudges runId={id} judges={listJudges()} hasTranscript={run.transcript.length > 0} />
     {(run.evaluations ?? []).length > 0 && <section><h2>Additional evaluations</h2>{[...(run.evaluations ?? [])].reverse().map((e) => <article className="card" key={e.id} style={{ marginBottom: 12 }}><h3 style={{ marginTop: 0 }}>{e.judge.name}</h3><p className="muted">{new Date(e.createdAt).toLocaleString()} · {e.provider || "Provider unavailable"} / {e.model || "default"}</p>{e.error && <p style={{ color: "var(--fail)" }}>{e.error}</p>}{e.verdict && <Verdict verdict={e.verdict} />}<JudgeConfiguration spec={e.judge.spec} /></article>)}</section>}
     <section className="card"><h2 style={{ marginTop: 0 }}>Transcript and activity</h2>{!timeline.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript or activity was captured."}</p> : <div className="transcript">{timeline.map((item, i) => item.kind === "speech"
-      ? <div className={`turn ${item.turn.role}`} key={`speech-${i}`}><div className="who">{item.turn.role === "agent" ? "Testing agent" : item.turn.role === "target" ? "Agent under test" : "System"}{typeof item.turn.meta?.nodeId === "string" && <span className="muted mono"> · node {item.turn.meta.nodeId}</span>}</div><div style={{ whiteSpace: "pre-wrap" }}>{item.turn.text}</div>{item.turn.meta && <details><summary>Message metadata</summary><pre className="run-json">{JSON.stringify(item.turn.meta, null, 2)}</pre></details>}</div>
-      : <div className="turn system" key={`event-${i}`}><div className="who">{item.event.side === "testingAgent" ? "Testing agent" : "Agent under test"} · {item.event.kind}{item.event.nodeId && <span className="muted mono"> · node {item.event.nodeId}</span>}</div><div>{item.event.label}</div>{item.event.data && <details><summary>Event metadata</summary><pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre></details>}</div>)}</div>}</section>
+      ? <div className={`turn ${item.turn.role}`} key={`speech-${i}`}><div className="who">{item.turn.role === "agent" ? "Testing agent" : item.turn.role === "target" ? "Agent under test" : "System"}{typeof item.turn.meta?.nodeId === "string" && <span className="muted mono"> · node {item.turn.meta.nodeId}</span>}</div><div style={{ whiteSpace: "pre-wrap" }}>{item.turn.text}</div>{(item.turn.audioStartMs !== undefined || metadataFacts(item.turn.meta).length > 0) && <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>{[item.turn.audioStartMs !== undefined ? `Audio +${(item.turn.audioStartMs / 1000).toFixed(1)}s` : undefined, ...metadataFacts(item.turn.meta)].filter(Boolean).join(" · ")}</p>}{item.turn.meta && <details><summary>Message metadata</summary><pre className="run-json">{JSON.stringify(item.turn.meta, null, 2)}</pre></details>}</div>
+      : <div className="turn system" key={`event-${i}`}><div className="who">{item.event.side === "testingAgent" ? "Testing agent" : "Agent under test"} · {item.event.kind}{item.event.nodeId && <span className="muted mono"> · node {item.event.nodeId}</span>}</div><div>{item.event.label}</div>{activityPayload(item.event.data) && <p className="muted mono" style={{ overflowWrap: "anywhere", margin: "8px 0 0", fontSize: 12 }}>{activityPayload(item.event.data)}</p>}{item.event.data && <details><summary>Event metadata</summary><pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre></details>}</div>)}</div>}{otherEvents > 0 && <p className="muted" style={{ marginBottom: 0 }}>{otherEvents} additional provider events are included in the JSON below.</p>}</section>
     {(run.externalCallId || run.providerCalls) && <section className="card"><h2 style={{ marginTop: 0 }}>Provider call metadata</h2>
       <p className="muted">Each agent may have a separate provider call record. The dispatched call is captured automatically. Add the receiving agent’s call ID when its provider exposes a separate record.</p>
       {(["testingAgent", "targetAgent"] as const).map((side) => {
@@ -101,12 +142,21 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
         return <div key={side} style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
           <h3>{side === "testingAgent" ? "HAL testing agent" : "Agent under test"}</h3>
           {snapshot ? <><p className="muted mono">{snapshot.provider} · {snapshot.externalCallId} · fetched {new Date(snapshot.fetchedAt).toLocaleString()}</p>
-            <details><summary>Full call details</summary><pre className="run-json">{JSON.stringify(snapshot.details, null, 2)}</pre></details>
-            {snapshot.events?.length ? <details><summary>Provider events ({snapshot.events.length})</summary><pre className="run-json">{JSON.stringify(snapshot.events, null, 2)}</pre></details> : null}
+            {callFacts(snapshot.details).length > 0 && <p className="muted">{callFacts(snapshot.details).join(" · ")}</p>}
+            <p className="muted">{snapshot.events?.length ?? 0} provider events captured. Full response and event data are in the JSON below.</p>
           </> : <p className="muted">{side === dispatchedSide ? "Call details will appear after the next status check." : "No separate provider record linked yet."}</p>}
           <AttachProviderCall runId={id} side={side} provider={agent?.provider} callId={snapshot?.externalCallId ?? (side === dispatchedSide ? run.externalCallId : undefined)} accounts={providerAccounts} />
         </div>;
       })}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 18, marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Complete run metadata JSON</h3>
+        <p className="muted">Both provider call records, per-message metadata, and all tool, node, and provider events. Copy it for debugging or sharing.</p>
+        <MetadataJsonViewer json={JSON.stringify({
+          runId: run.id, externalCallId: run.externalCallId, providerCalls: run.providerCalls ?? {},
+          transcript: run.transcript.map((turn) => ({ role: turn.role, text: turn.text, startedAt: turn.startedAt, audioStartMs: turn.audioStartMs, meta: turn.meta })),
+          activity: run.trace ?? [],
+        }, null, 2)} />
+      </div>
     </section>}
   </div>;
 }

@@ -124,7 +124,7 @@ try {
   console.log("PASS: editable scenarios and agents persist, secrets are redacted, only the outbound caller key is required, and Bland chat validates inputs");
   console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();
-  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Original verdict", "Apply additional judges", "Sync latest call data", "Audio transcript", "/api/results/run1/recording"]) assert(html.includes(value), value);
+  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Original verdict", "Apply additional judges", "Sync latest call data", "Audio transcript", "Complete run metadata JSON", "Copy JSON", "/api/results/run1/recording"]) assert(html.includes(value), value);
   assert.equal((await fetch(base + "/results/missing")).status, 404);
   const range = await fetch(base + "/api/results/run1/recording", { headers: { range: "bytes=0-3" } });
   assert.equal(range.status, 206); assert.equal(range.headers.get("content-range"), "bytes 0-3/76"); assert.equal(await range.text(), "RIFF");
