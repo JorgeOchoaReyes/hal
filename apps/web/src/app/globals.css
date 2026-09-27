@@ -596,6 +596,7 @@ table.data tbody tr:hover { background: var(--hover); }
 .participant-panel { min-width:0; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--bg); }
 .participant-panel select, .participant-panel input { width:100% !important; min-width:0 !important; }
 .participant-panel .field { margin-bottom:12px; }
+.caller-credentials { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
 .field-help { color:var(--muted); font-size:12px; line-height:1.6; margin:8px 0 0; }
 .action-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-top:18px; margin-top:18px; border-top:1px solid var(--border); }
 .outbound-settings { margin-top:16px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; }
