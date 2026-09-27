@@ -94,6 +94,7 @@ export class TestRunner {
 
     let externalCallId: string | undefined;
     let status: RunStatus = "running";
+    let error: string | undefined;
 
     const session = await transport.connect(testCase.target);
     externalCallId = session.externalId;
@@ -130,6 +131,13 @@ export class TestRunner {
           break;
         }
 
+        // The final reply has been recorded and its assertions evaluated. Do
+        // not send another script line to a peer that has already finished.
+        if (session.completed) {
+          log("info", "Target ended the conversation.");
+          break;
+        }
+
         const action = await conductor.next(transcript);
 
         if (action.kind === "hangup") {
@@ -159,16 +167,24 @@ export class TestRunner {
           else log("warn", "Wait step timed out with no matching reply.");
         }
       }
+    } catch (err) {
+      status = isAborted() ? "aborted" : "errored";
+      error = (err as Error).message;
     } finally {
       await session.hangup("run complete").catch(() => undefined);
     }
 
     // Judge the final transcript (unless we errored/aborted out).
     const judge = new Judge(this.deps.judgeLlm ?? this.deps.llm);
-    const verdict =
-      status === "aborted"
-        ? undefined
-        : await judge.evaluate(testCase.judge, transcript);
+    let verdict: TestResult["verdict"];
+    if (status !== "aborted" && status !== "errored") {
+      try {
+        verdict = await judge.evaluate(testCase.judge, transcript);
+      } catch (err) {
+        status = "errored";
+        error = (err as Error).message;
+      }
+    }
     if (verdict) events.emit({ type: "verdict", verdict });
 
     const livePassed = liveChecks.every((c) => c.passed);
@@ -189,6 +205,7 @@ export class TestRunner {
       verdict,
       liveChecks,
       externalCallId,
+      error,
     };
     result.metrics = computeMetrics(result);
     result.labels = deriveLabels(result.metrics);

@@ -7,9 +7,9 @@ export default function TestingAgentsPage() {
     <>
       <h1 style={{ margin: 0 }}>Testing agents</h1>
       <p className="sub" style={{ marginTop: 4 }}>
-        HAL keeps <strong>reusable testing agents</strong> on your connected provider accounts —
-        the callers it uses to run your simulations — and reconfigures them for each run.
-        Provisioning edits that same agent.
+        Import a <strong>testing agent you already built</strong> or create a new one on a connected
+        provider. Imported testers use their existing configuration; HAL-created testers use the
+        saved simulation script for each run.
       </p>
       <TestingAgentsManager />
     </>

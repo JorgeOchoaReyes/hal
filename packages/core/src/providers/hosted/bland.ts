@@ -266,7 +266,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
         };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
-      headers: { ...this.headers(account), ...byotHeaders(agent.encryptedKey || account.credentials.encryptedKey) },
+      headers: { ...this.headers(account), ...(target.fromNumber === "" ? {} : byotHeaders(agent.encryptedKey || account.credentials.encryptedKey)) },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw await callError(res, account, target);
@@ -298,7 +298,7 @@ export class BlandIntegration implements VoiceProviderIntegration {
     };
     const res = await this.fetchImpl(`${this.base}/v1/calls`, {
       method: "POST",
-      headers: { ...this.headers(account), ...byotHeaders(outbound.encryptedKey || account.credentials.encryptedKey) },
+      headers: { ...this.headers(account), ...(target.fromNumber === "" ? {} : byotHeaders(outbound.encryptedKey || account.credentials.encryptedKey)) },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw await callError(res, account, target);

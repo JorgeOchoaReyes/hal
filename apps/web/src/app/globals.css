@@ -582,3 +582,32 @@ table.data tbody tr:hover { background: var(--hover); }
 .run-json { background: var(--panel-2); padding: 12px; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; }
 .run-detail summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 @media (max-width: 900px) { .run-agents { grid-template-columns: 1fr; } }
+
+/* Simulation workspace: aligned participants, compact actions and saved edits. */
+.section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
+.section-heading h2, .section-heading h3, .section-heading h4 { margin:0; }
+.section-heading p { margin:6px 0 0; font-size:13px; }
+.hosted-panel { margin-top:12px; }
+.mode-switch, .button-row { display:flex; gap:8px; flex-wrap:wrap; }
+.mode-switch { padding:4px; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
+.mode-switch button { padding:8px 14px; }
+.account-picker { max-width:420px; }
+.call-participants, .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.participant-panel { min-width:0; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--bg); }
+.participant-panel select, .participant-panel input { width:100% !important; min-width:0 !important; }
+.participant-panel .field { margin-bottom:12px; }
+.field-help { color:var(--muted); font-size:12px; line-height:1.6; margin:8px 0 0; }
+.action-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-top:18px; margin-top:18px; border-top:1px solid var(--border); }
+.outbound-settings { margin-top:16px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; }
+.outbound-settings summary { cursor:pointer; font-weight:600; }
+.outbound-settings[open] summary { margin-bottom:12px; }
+.confirmation-row { display:flex; align-items:flex-start; gap:10px; font-size:13px; margin-top:16px; }
+.confirmation-row input { width:auto; flex-shrink:0; margin-top:4px; }
+.error-text { color:var(--fail); }
+.scenario-editor { margin-top:28px; scroll-margin-top:24px; }
+.scenario-fields { border:0; margin:0; padding:0; min-width:0; }
+.scenario-fields .card { margin-bottom:12px; }
+.scenario-preview { padding-left:24px; margin-bottom:0; }
+.scenario-preview li { padding:8px 0; }
+.full-width { grid-column:1/-1; }
+@media(max-width:800px) { .call-participants, .settings-grid { grid-template-columns:1fr; } .action-bar { align-items:stretch; flex-direction:column; } }

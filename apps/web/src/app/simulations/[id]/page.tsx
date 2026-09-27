@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTestCase, listResults } from "@/lib/store";
+import ScenarioEditor from "@/components/ScenarioEditor";
 import RunPanel from "@/components/RunPanel";
 import DispatchHosted from "@/components/DispatchHosted";
 import AttachJudges from "@/components/AttachJudges";
-import type { ScenarioStep, JudgeRule, Target } from "@hal/core";
+import type { JudgeRule, Target } from "@hal/core";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +31,8 @@ export default async function TestDetailPage({
       <p className="sub">{tc.scenario.description}</p>
 
       <h2>Run this simulation</h2>
-      <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 12 }}>
-        How this runs is decided here, not at creation. Clicking run opens a popup where you can
-        pick which agent to run against, its direction, which judges score it, an optional label
-        to find the run(s) later on the Results page, and how many times to run it — or dispatch
-        it to a hosted provider for a real call below, where HAL pulls the result once it ends.
-      </p>
       <RunPanel testCaseId={tc.id} />
       <div style={{ marginTop: 12 }}>
-        <div className="field-label" style={{ marginBottom: 6 }}>
-          Or dispatch to a hosted provider (real call)
-        </div>
         <DispatchHosted testCaseId={tc.id} />
       </div>
 
@@ -90,48 +82,7 @@ export default async function TestDetailPage({
         </div>
       </div>
 
-      <h2>Persona</h2>
-      <div className="card">
-        <strong>{tc.scenario.persona.name}</strong>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          {tc.scenario.persona.systemPrompt}
-        </p>
-      </div>
-
-      {tc.scenario.structured ? (
-        <>
-          <h2>Structured test</h2>
-          <div className="card">
-            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-              <strong>Role:</strong> {tc.scenario.structured.role}
-            </div>
-            <ol style={{ margin: 0, paddingLeft: 20 }}>
-              {tc.scenario.structured.conditions.map((c) => (
-                <li key={c.id} style={{ padding: "4px 0" }}>
-                  <span className="tag">{c.type}</span>{" "}
-                  <span className="mono">
-                    {c.id === 0 ? "FIRST_MESSAGE" : c.type === "action_followup" ? `after #${c.condition}` : `“${c.condition}”`}
-                  </span>{" "}
-                  → {c.fixed_message ? <span className="mono">“{c.action}”</span> : <span className="muted">{c.action}</span>}
-                </li>
-              ))}
-            </ol>
-          </div>
-        </>
-      ) : (
-        <>
-          <h2>Scenario script ({tc.scenario.steps.length} steps)</h2>
-          <div className="card">
-            <ol style={{ margin: 0, paddingLeft: 20 }}>
-              {tc.scenario.steps.map((s, i) => (
-                <li key={i} style={{ padding: "4px 0" }}>
-                  {renderStep(s)}
-                </li>
-              ))}
-            </ol>
-          </div>
-        </>
-      )}
+      <ScenarioEditor testCaseId={tc.id} initial={tc.scenario} />
 
       <h2>Pass criteria</h2>
       <div className="card">
@@ -173,58 +124,6 @@ export default async function TestDetailPage({
   );
 }
 
-function renderStep(s: ScenarioStep): React.ReactNode {
-  switch (s.kind) {
-    case "say":
-      return (
-        <>
-          <span className="tag">say</span> <span className="mono">“{s.text}”</span>
-        </>
-      );
-    case "prompt":
-      return (
-        <>
-          <span className="tag">prompt</span> <span className="muted">{s.directive}</span>
-        </>
-      );
-    case "wait":
-      return (
-        <>
-          <span className="tag">wait</span>{" "}
-          <span className="muted">
-            {s.until ? `until /${s.until}/` : "for reply"}
-            {s.timeoutMs ? ` (${s.timeoutMs}ms)` : ""}
-          </span>
-        </>
-      );
-    case "expect":
-      return (
-        <>
-          <span className="tag">expect</span> <span className="muted">{s.assertion.description}</span>
-        </>
-      );
-    case "branch":
-      return (
-        <>
-          <span className="tag">branch</span>{" "}
-          <span className="muted">
-            {s.branches.length} condition{s.branches.length === 1 ? "" : "s"}
-            {s.branches.slice(0, 3).map((b, i) => (
-              <span key={i} className="mono" style={{ display: "block", marginLeft: 8 }}>
-                if /{b.when}/ → {b.action.kind}
-                {b.action.kind === "say" ? `: “${b.action.text}”` : ""}
-                {b.action.kind === "prompt" ? `: ${b.action.directive}` : ""}
-                {b.action.kind === "goto" ? ` step ${b.action.step}` : ""}
-              </span>
-            ))}
-          </span>
-        </>
-      );
-    case "hangup":
-      return <span className="tag">hangup</span>;
-  }
-}
-
 function renderRule(r: JudgeRule): string {
   switch (r.kind) {
     case "transcript-contains":
@@ -244,6 +143,7 @@ function renderRule(r: JudgeRule): string {
 
 function targetDetail(target: Target): string {
   switch (target.transport) {
+    case "bland-chat": return `Bland chat · pathway ${target.pathwayId}`;
     case "mock":
       return `simulated agent · greeting: ${target.mock.greeting ?? "(none)"}`;
     case "telephony":

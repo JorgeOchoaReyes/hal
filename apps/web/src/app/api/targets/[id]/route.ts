@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Target } from "@hal/core";
-import { getTarget, upsertTarget, deleteTarget } from "@/lib/store";
+import { publicAgent, getAccountRaw, resolveByotKey, getTarget, upsertTarget, deleteTarget } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,11 +23,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
      * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
      */
     encryptedKey?: string;
+    byotKeyId?: string;
+    byotAccountId?: string;
     /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
     externalAgentId?: string;
   };
+  if (body.byotKeyId && (getAccountRaw(body.byotAccountId ?? "")?.provider !== "bland" || !resolveByotKey(body.byotAccountId ?? "", body.byotKeyId))) return NextResponse.json({ error: "Select a saved key from its Bland account" }, { status: 400 });
   const updated = {
     ...existing,
+    byotKeyId: body.byotKeyId !== undefined ? body.byotKeyId || undefined : existing.byotKeyId,
+    byotAccountId: body.byotAccountId !== undefined ? body.byotAccountId || undefined : existing.byotAccountId,
     name: body.name?.trim() || existing.name,
     target: body.target ?? existing.target,
     description: body.description?.trim() || existing.description,
@@ -39,7 +44,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       body.externalAgentId !== undefined ? body.externalAgentId.trim() || undefined : existing.externalAgentId,
   };
   upsertTarget(updated);
-  return NextResponse.json({ target: updated });
+  return NextResponse.json({ target: publicAgent(updated) });
 }
 
 /** Remove a target agent. */

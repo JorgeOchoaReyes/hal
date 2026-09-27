@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { SavedJudge } from "@hal/core";
+import AgentOutboundKey, { type OutboundKeyValue } from "./AgentOutboundKey";
 import Modal from "./Modal";
 
 type Transport = "mock" | "telephony" | "webrtc" | "sip";
@@ -26,6 +27,9 @@ interface TargetAgent {
   direction?: Direction;
   judgeIds?: string[];
   encryptedKey?: string;
+  hasEncryptedKey?: boolean;
+  byotKeyId?: string;
+  byotAccountId?: string;
   externalAgentId?: string;
   target: {
     transport: Transport;
@@ -164,7 +168,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   const [address, setAddress] = useState("");
   const [room, setRoom] = useState("");
   const [description, setDescription] = useState("");
-  const [encryptedKey, setEncryptedKey] = useState("");
+  const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -247,7 +251,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           provider,
           direction,
           target: buildTarget(name, transport, address, room),
-          encryptedKey: encryptedKey.trim() || undefined,
+          ...outboundKey,
           externalAgentId: externalAgentId.trim() || undefined,
         }),
       });
@@ -257,7 +261,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
       setAddress("");
       setRoom("");
       setDescription("");
-      setEncryptedKey("");
+      setOutboundKey({});
       setExternalAgentId("");
       onDone();
     } catch (e) {
@@ -423,7 +427,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           </div>
         )}
       </div>
-      {direction === "outbound" && (
+      {(provider === "bland" || direction === "outbound") && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div className="field">
             <span className="field-label">Pathway / agent id</span>
@@ -434,22 +438,10 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
               className="mono"
             />
             <span className="muted" style={{ fontSize: 12 }}>
-              Which pathway on the provider to trigger — set automatically when imported above.
+              The provider pathway for this agent — set automatically when imported above.
             </span>
           </div>
-          <div className="field">
-            <span className="field-label">Encrypted key</span>
-            <input
-              type="password"
-              value={encryptedKey}
-              onChange={(e) => setEncryptedKey(e.target.value)}
-              placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
-              className="mono"
-            />
-            <span className="muted" style={{ fontSize: 12 }}>
-              Per-agent secret used to trigger this agent&apos;s own pathway. Stored as given.
-            </span>
-          </div>
+          {provider === "bland" && <AgentOutboundKey onChange={setOutboundKey} />}
         </div>
       )}
       <div className="field">
@@ -540,7 +532,7 @@ function EditTargetModal({
   );
   const [room, setRoom] = useState(target.target.transport === "webrtc" ? target.target.room ?? "" : "");
   const [description, setDescription] = useState(target.description ?? "");
-  const [encryptedKey, setEncryptedKey] = useState(target.encryptedKey ?? "");
+  const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState(target.externalAgentId ?? "");
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
@@ -577,7 +569,7 @@ function EditTargetModal({
           direction,
           target: buildTarget(name, transport, address, room, target.target.mock?.systemPrompt),
           judgeIds: [...judgeIds],
-          encryptedKey: encryptedKey.trim(),
+          ...outboundKey,
           externalAgentId: externalAgentId.trim(),
         }),
       });
@@ -665,7 +657,7 @@ function EditTargetModal({
             </div>
           )}
         </div>
-        {direction === "outbound" && (
+        {(provider === "bland" || direction === "outbound") && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div className="field">
               <span className="field-label">Pathway / agent id</span>
@@ -676,22 +668,10 @@ function EditTargetModal({
                 className="mono"
               />
               <span className="muted" style={{ fontSize: 12 }}>
-                Which pathway on the provider to trigger for outbound dispatch.
+                The provider pathway used for outbound calls or chat tests.
               </span>
             </div>
-            <div className="field">
-              <span className="field-label">Encrypted key</span>
-              <input
-                type="password"
-                value={encryptedKey}
-                onChange={(e) => setEncryptedKey(e.target.value)}
-                placeholder={provider === "bland" ? "Bland encrypted_key for this agent" : "Provider key for this agent"}
-                className="mono"
-              />
-              <span className="muted" style={{ fontSize: 12 }}>
-                Per-agent secret used to trigger this agent&apos;s own pathway. Stored as given.
-              </span>
-            </div>
+            {provider === "bland" && <AgentOutboundKey initial={target} hasKey={target.hasEncryptedKey} onChange={setOutboundKey} />}
           </div>
         )}
         <div className="field">

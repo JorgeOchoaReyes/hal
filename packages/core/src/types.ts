@@ -126,13 +126,14 @@ export interface Scenario {
 // Target (system under test)
 // ---------------------------------------------------------------------------
 
-export type TransportKind = "mock" | "telephony" | "webrtc" | "sip";
+export type TransportKind = "mock" | "telephony" | "webrtc" | "sip" | "bland-chat";
 
 /**
  * Describes the voice AI being tested and how to reach it.
  * The `transport` discriminates which fields are meaningful.
  */
 export type Target =
+  | { transport: "bland-chat"; name: string; pathwayId: string }
   | {
       transport: "mock";
       name: string;
@@ -282,6 +283,8 @@ export interface TestCase {
  * (phone number / SIP URI / room) lives in one place.
  */
 export interface TargetAgent {
+  byotKeyId?: string;
+  byotAccountId?: string;
   id: string;
   name: string;
   target: Target;
@@ -309,8 +312,7 @@ export interface TargetAgent {
    * Per-agent provider secret used to dispatch an outbound call from this
    * agent's own pathway/assistant (e.g. Bland's encrypted key). Distinct per
    * agent, so it's stored here rather than on the {@link ProviderAccount}.
-   * The value is stored as given — providers that issue it already return it
-   * encrypted, so HAL doesn't encrypt it again.
+   * HAL additionally encrypts the value at rest and never returns it in agent lists.
    */
   encryptedKey?: string;
   /**

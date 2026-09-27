@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id, type Target, type TargetAgent, type CallDirection } from "@hal/core";
-import { listTargets, upsertTarget } from "@/lib/store";
+import { publicAgent, getAccountRaw, resolveByotKey, listTargets, upsertTarget } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
      * agent (e.g. Bland's encrypted key). Stored as given, not re-encrypted.
      */
     encryptedKey?: string;
+    byotKeyId?: string;
+    byotAccountId?: string;
     /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
     externalAgentId?: string;
   };
@@ -32,8 +34,11 @@ export async function POST(req: NextRequest) {
   if (body.direction && body.direction !== "inbound" && body.direction !== "outbound")
     return NextResponse.json({ error: "direction must be 'inbound' or 'outbound'" }, { status: 400 });
 
+  if (body.byotKeyId && (getAccountRaw(body.byotAccountId ?? "")?.provider !== "bland" || !resolveByotKey(body.byotAccountId ?? "", body.byotKeyId))) return NextResponse.json({ error: "Select a saved key from its Bland account" }, { status: 400 });
   const agent: TargetAgent = {
     id: id("target"),
+    byotKeyId: body.byotKeyId || undefined,
+    byotAccountId: body.byotAccountId || undefined,
     name: body.name.trim(),
     target: body.target,
     description: body.description?.trim() || undefined,
@@ -44,5 +49,5 @@ export async function POST(req: NextRequest) {
     createdAt: Date.now(),
   };
   upsertTarget(agent);
-  return NextResponse.json({ target: agent }, { status: 201 });
+  return NextResponse.json({ target: publicAgent(agent) }, { status: 201 });
 }

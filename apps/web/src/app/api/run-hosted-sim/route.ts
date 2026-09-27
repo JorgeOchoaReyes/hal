@@ -9,7 +9,7 @@ import {
   type HostedTestingAgent,
   type TestingAgentSpec,
 } from "@hal/core";
-import { resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
+import { outboundAgentKey, resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     if (!body.configureInbound || !integration.configureInbound) {
       return NextResponse.json({ error: "Confirm that HAL may configure the dedicated inbound test number. This provider must support inbound configuration." }, { status: 400 });
     }
-    if (account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
+    if (!chosen?.imported && account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
       return NextResponse.json({ error: "Inbound Bland testing requires a structured simulation so HAL can assign its pathway to the test number." }, { status: 400 });
     }
     if (!targetAgent.externalAgentId) {
@@ -119,6 +119,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let callerKey: string | undefined;
+  try { callerKey = account.provider === "bland" && body.fromNumber === "" ? undefined : dispatchKey ?? outboundAgentKey(account.id, outboundIsTarget ? targetAgent : chosen ?? {}); }
+  catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
   const spec: TestingAgentSpec = {
     name: chosen?.name ?? `${testCase.name} (${account.provider})`,
     persona: testCase.scenario.persona,
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
   };
 
   // Validate before provisioning so unsupported steps cannot become a persona-only call.
-  if (spec.steps?.length) {
+  if (!chosen?.imported && spec.steps?.length) {
     if (account.provider !== "bland") return NextResponse.json({ error: "Hosted linear scripts currently require Bland. Use a structured simulation for this provider. No call was placed." }, { status: 400 });
     try { integration.buildFlowConfig(spec); }
     catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
@@ -145,20 +148,21 @@ export async function POST(req: NextRequest) {
   }
   if (inboundKey) inboundRuns.add(inboundKey);
   try {
-    // The testing agent side is always reconfigured to match this simulation
-    // before the call — whether it's the one waiting or the one dialing.
-    const { externalAgentId } = await integration.createTestingAgent(account, spec);
-    const agent: HostedTestingAgent = {
+    // Linked testers retain their provider configuration. Only HAL-managed
+    // testers are provisioned from the simulation's saved script.
+    const agent: HostedTestingAgent = chosen?.imported ? chosen : {
       id: chosen?.id ?? id("agent"),
       accountId: account.id,
       provider: account.provider,
-      externalAgentId,
+      externalAgentId: (await integration.createTestingAgent(account, spec)).externalAgentId,
       name: spec.name,
       createdAt: chosen?.createdAt ?? Date.now(),
       spec,
       encryptedKey: chosen?.encryptedKey,
+      byotKeyId: chosen?.byotKeyId,
+      byotAccountId: chosen?.byotAccountId,
     };
-    upsertAgent(agent);
+    if (!chosen?.imported) upsertAgent(agent);
 
     if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 
@@ -177,7 +181,7 @@ export async function POST(req: NextRequest) {
       // Leave time for provisioning, final evaluation, and saving within the route budget.
       timeoutMs: 180_000,
       account,
-      agent: dispatchKey ? { ...agent, encryptedKey: dispatchKey } : agent,
+      agent: { ...agent, encryptedKey: outboundIsTarget ? undefined : callerKey },
       target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
       judge: testCase.judge,
       llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
@@ -185,7 +189,7 @@ export async function POST(req: NextRequest) {
         ? () =>
             integration.placeOutboundCall!(
               account,
-              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: dispatchKey ?? targetAgent.encryptedKey },
+              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: callerKey },
               { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
             )
         : undefined,
