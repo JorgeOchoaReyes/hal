@@ -160,9 +160,10 @@ function withCallData(result: TestResult, opts: HostedRunOptions, state?: Hosted
 }
 
 function normalizeTranscript(transcript: Transcript, providerAgentRole?: "agent" | "target"): Transcript {
-  if (providerAgentRole !== "target") return transcript;
+  const metadataSource = providerAgentRole === "target" ? "targetAgent" : "testingAgent";
   return transcript.map((turn) => ({ ...turn,
-    role: turn.role === "agent" ? "target" : turn.role === "target" ? "agent" : turn.role,
+    metadataSource,
+    role: providerAgentRole === "target" ? turn.role === "agent" ? "target" : turn.role === "target" ? "agent" : turn.role : turn.role,
   }));
 }
 

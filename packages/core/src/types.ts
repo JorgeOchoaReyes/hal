@@ -23,6 +23,8 @@ export interface Utterance {
   startedAt: number;
   /** Milliseconds from the beginning of the call audio, when supplied by the provider. */
   audioStartMs?: number;
+  /** Which provider call supplied this turn's metadata; the speaker may be the other agent. */
+  metadataSource?: "testingAgent" | "targetAgent";
   /** Unix ms when the utterance finished, if known. */
   endedAt?: number;
   /**

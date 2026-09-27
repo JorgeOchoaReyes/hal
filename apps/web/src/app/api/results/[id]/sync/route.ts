@@ -34,9 +34,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         ...(primary.trace ?? []).map((event) => ({ ...event, side: dispatchedSide }))],
     };
     if (primary.transcript?.length) {
-      updated.transcript = dispatchedSide === "targetAgent"
-        ? primary.transcript.map((turn) => ({ ...turn, role: turn.role === "agent" ? "target" as const : turn.role === "target" ? "agent" as const : turn.role }))
-        : primary.transcript;
+      updated.transcript = primary.transcript.map((turn) => ({ ...turn, metadataSource: dispatchedSide,
+        role: dispatchedSide === "targetAgent" ? turn.role === "agent" ? "target" as const : turn.role === "target" ? "agent" as const : turn.role : turn.role }));
       if (updated.metrics) {
         updated.metrics = computeMetrics(updated);
         updated.labels = deriveLabels(updated.metrics);

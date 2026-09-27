@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createLLM, getIntegration, refreshHostedCall } from "@hal/core";
+import { createLLM, getIntegration, refreshHostedCall, type ProviderAccount } from "@hal/core";
 import { getAccountRaw, getResult, listAccounts, saveResult } from "@/lib/store";
 import { downloadRunRecording } from "@/lib/runRecordings";
 
@@ -40,29 +40,36 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       const otherSide: "testingAgent" | "targetAgent" = run.context.targetAgent.direction === "outbound" ? "testingAgent" : "targetAgent";
       const receiver = run.context[otherSide];
       const receiverIntegration = getIntegration(receiver.provider ?? account.provider);
-      if (receiverIntegration?.findInboundCall && receiver.phoneNumber && !updated.providerCalls?.[otherSide]) {
+      if (receiverIntegration) {
         try {
-          const receiverAccounts = listAccounts().filter((candidate) => candidate.provider === receiverIntegration.id)
-            .map((candidate) => getAccountRaw(candidate.id)).filter((candidate) => candidate !== undefined);
-          const candidates = await Promise.allSettled(receiverAccounts.map(async (candidate) => ({
-            account: candidate, callId: await receiverIntegration.findInboundCall!(candidate, {
-              toNumber: receiver.phoneNumber!,
-              fromNumber: run.context![otherSide === "testingAgent" ? "targetAgent" : "testingAgent"].phoneNumber,
-              externalAgentId: receiver.externalAgentId,
-              startedAt: run.startedAt, excludeCallId: run.externalCallId!,
-            }),
-          })));
-          const matches = candidates.flatMap((candidate) => candidate.status === "fulfilled" && candidate.value.callId ? [candidate.value] : []);
-          if (matches.length === 1) {
-            const { account: receiverAccount, callId: inboundId } = matches[0];
-            const inbound = await receiverIntegration.getCall(receiverAccount, inboundId!);
+          const capture = async (receiverAccount: ProviderAccount, inboundId: string) => {
+            const inbound = await receiverIntegration.getCall(receiverAccount, inboundId);
             if (inbound.details) {
               updated.providerCalls = { ...updated.providerCalls, [otherSide]: {
-                provider: receiverAccount.provider, accountId: receiverAccount.id, externalCallId: inboundId!,
+                provider: receiverAccount.provider, accountId: receiverAccount.id, externalCallId: inboundId,
                 fetchedAt: Date.now(), details: inbound.details, events: inbound.events,
               } };
-              updated.trace = [...(updated.trace ?? []), ...(inbound.trace ?? []).map((event) => ({ ...event, side: otherSide as "testingAgent" | "targetAgent" }))];
+              updated.trace = [...(updated.trace ?? []).filter((event) => event.side !== otherSide),
+                ...(inbound.trace ?? []).map((event) => ({ ...event, side: otherSide }))];
             }
+          };
+          const linked = updated.providerCalls?.[otherSide];
+          const linkedAccount = linked ? getAccountRaw(linked.accountId) : undefined;
+          if (linked && linkedAccount?.provider === receiverIntegration.id) {
+            await capture(linkedAccount, linked.externalCallId);
+          } else if (!linked && receiverIntegration.findInboundCall && receiver.phoneNumber) {
+            const receiverAccounts = listAccounts().filter((candidate) => candidate.provider === receiverIntegration.id)
+              .map((candidate) => getAccountRaw(candidate.id)).filter((candidate) => candidate !== undefined);
+            const candidates = await Promise.allSettled(receiverAccounts.map(async (candidate) => ({
+              account: candidate, callId: await receiverIntegration.findInboundCall!(candidate, {
+                toNumber: receiver.phoneNumber!,
+                fromNumber: run.context![otherSide === "testingAgent" ? "targetAgent" : "testingAgent"].phoneNumber,
+                externalAgentId: receiver.externalAgentId,
+                startedAt: run.startedAt, excludeCallId: run.externalCallId!,
+              }),
+            })));
+            const matches = candidates.flatMap((candidate) => candidate.status === "fulfilled" && candidate.value.callId ? [candidate.value] : []);
+            if (matches.length === 1) await capture(matches[0].account, matches[0].callId!);
           }
         } catch { /* A second provider record is optional; keep the primary result. */ }
       }

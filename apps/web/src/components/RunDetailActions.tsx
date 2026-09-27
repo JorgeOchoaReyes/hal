@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { RunRecording, SavedJudge, Utterance } from "@hal/core";
+import type { RunRecording, SavedJudge } from "@hal/core";
 
 export function SyncSavedRun({ runId }: { runId: string }) {
   const router = useRouter();
@@ -118,20 +118,14 @@ export function HostedRunWatcher({ runId }: { runId: string }) {
   </div>;
 }
 
-export function RunAudio({ runId, recording, canDownload, needsAccount, accounts, transcript }: {
+export function RunAudio({ runId, recording, canDownload, needsAccount, accounts }: {
   runId: string; recording?: RunRecording; canDownload: boolean; needsAccount: boolean;
-  accounts: Array<{ id: string; label: string }>; transcript: Pick<Utterance, "role" | "text" | "audioStartMs">[];
+  accounts: Array<{ id: string; label: string }>;
 }) {
   const router = useRouter();
-  const audio = useRef<HTMLAudioElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [positionMs, setPositionMs] = useState(0);
-  const timed = useMemo(() => transcript.map((turn, index) => ({ turn, index }))
-    .filter(({ turn }) => typeof turn.audioStartMs === "number")
-    .sort((a, b) => (a.turn.audioStartMs ?? 0) - (b.turn.audioStartMs ?? 0)), [transcript]);
-  const active = timed.reduce((current, item) => (item.turn.audioStartMs ?? Infinity) <= positionMs ? item.index : current, -1);
   const url = `/api/results/${encodeURIComponent(runId)}/recording`;
   async function download() {
     setBusy(true); setError(undefined);
@@ -145,23 +139,7 @@ export function RunAudio({ runId, recording, canDownload, needsAccount, accounts
   }
   return <section className="card">
     <div className="card-row"><h2 style={{ margin: 0 }}>Call recording</h2><span className="label label-neutral">Local audio</span></div>
-    {recording?.status === "available" ? <>
-      <audio ref={audio} key={recording.downloadedAt} aria-label="Call recording" controls preload="metadata" src={url} style={{ width: "100%", marginTop: 16 }} onTimeUpdate={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} onError={() => setError("Local audio could not be played. Try downloading it again.")} />
-      <p className="muted">Saved on this device · {((recording.bytes ?? 0) / 1024 / 1024).toFixed(1)} MB · <a href={`${url}?download=1`} download>Save a copy</a></p>
-      {transcript.length > 0 && <div style={{ maxHeight: 320, overflowY: "auto", display: "grid", gap: 8, marginTop: 16 }} aria-label="Audio transcript">
-        {transcript.map((turn, index) => {
-          const start = turn.audioStartMs;
-          const current = index === active;
-          return <button key={index} type="button" className="secondary" aria-current={current ? "true" : undefined}
-            disabled={start === undefined} title={start === undefined ? "Provider did not supply a playback time" : "Play from this turn"}
-            onClick={() => { if (audio.current && start !== undefined) { audio.current.currentTime = start / 1000; void audio.current.play(); setPositionMs(start); } }}
-            style={{ textAlign: "left", width: "100%", borderColor: current ? "var(--accent)" : undefined, background: current ? "var(--accent-dim)" : undefined, opacity: start === undefined ? 0.65 : 1 }}>
-            <span className="muted" style={{ marginRight: 10 }}>{start === undefined ? "—" : `${Math.floor(start / 60000)}:${String(Math.floor(start / 1000) % 60).padStart(2, "0")}`}</span>
-            <strong>{turn.role === "agent" ? "Testing agent" : turn.role === "target" ? "Agent under test" : "System"}</strong> · {turn.text}
-          </button>;
-        })}
-      </div>}
-    </> : <p className="muted">{recording?.error ?? (canDownload ? "Download the provider recording to listen on this device. Synced runs can retrieve recordings when the provider makes them available." : "No downloadable recording is associated with this run.")}</p>}
+    {recording?.status === "available" ? <p className="muted">Saved on this device · {((recording.bytes ?? 0) / 1024 / 1024).toFixed(1)} MB · <a href={`${url}?download=1`} download>Save a copy</a>. Listen and follow the timed transcript in Transcript and activity below.</p> : <p className="muted">{recording?.error ?? (canDownload ? "Download the provider recording to listen on this device. Synced runs can retrieve recordings when the provider makes them available." : "No downloadable recording is associated with this run.")}</p>}
     {canDownload && <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
       {needsAccount && <label className="field">Provider account for this older call
         <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>

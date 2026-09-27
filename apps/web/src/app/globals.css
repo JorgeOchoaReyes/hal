@@ -583,7 +583,30 @@ table.data tbody tr:hover { background: var(--hover); }
 .run-facts dd { margin: 0; overflow-wrap: anywhere; }
 .run-json { background: var(--panel-2); padding: 12px; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; }
 .run-detail summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
-@media (max-width: 900px) { .run-agents { grid-template-columns: 1fr; } }
+.judge-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.judge-cards .card { min-width: 0; }
+.judge-cards h3 { margin: 6px 0 12px; }
+.activity-audio { display: grid; gap: 6px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.activity-audio audio { width: 100%; }
+.activity-head, .activity-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.activity-head { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.activity-head strong:last-child { text-align: right; }
+.activity-feed { display: grid; gap: 10px; margin-top: 12px; }
+.activity-entry { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); overflow-wrap: anywhere; }
+.activity-row > .activity-entry { grid-row: 1; }
+.activity-left { grid-column: 1; border-left: 3px solid var(--agent); }
+.activity-right { grid-column: 2; border-right: 3px solid var(--target); }
+.activity-wide { grid-column: 1 / -1; }
+.activity-who { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.activity-left .activity-who { color: var(--agent); }
+.activity-right .activity-who { color: var(--target); }
+.activity-active { border-color: var(--accent); background: var(--accent-dim); }
+.activity-message-meta { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.activity-meta-source { margin: 0; font-size: 12px; color: var(--muted); }
+.hal-check-list { display: grid; gap: 10px; }
+.hal-check-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+@media (max-width: 900px) { .run-agents, .judge-cards { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .activity-row { display: block; } .activity-entry { margin-bottom: 8px; } .activity-left { margin-right: 10%; } .activity-right { margin-left: 10%; } }
 
 /* Simulation workspace: aligned participants, compact actions and saved edits. */
 .section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }

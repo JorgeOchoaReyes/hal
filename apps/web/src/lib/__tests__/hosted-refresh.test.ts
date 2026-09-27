@@ -100,3 +100,36 @@ test("refresh looks up the receiving provider in its own saved account", async (
   assert.equal(saved.providerCalls.targetAgent.accountId, "retell-account");
   assert.equal(saved.providerCalls.targetAgent.details.analysis.success, true);
 });
+
+test("later status checks refresh an already linked receiving call without duplicating activity", async () => {
+  let saved: any = { id: "run4", status: "running", externalCallId: "outbound", startedAt: 1000,
+    transcript: [], trace: [{ side: "targetAgent", kind: "node", label: "old" }],
+    providerCalls: { targetAgent: { provider: "retell", accountId: "retell-account", externalCallId: "inbound",
+      details: { status: "ongoing" } } },
+    context: { account: { id: "vapi-account", provider: "vapi" }, judge: { mode: "rules-only" },
+      testingAgent: { provider: "vapi", direction: "outbound" },
+      targetAgent: { provider: "retell", direction: "inbound", phoneNumber: "+14155550100" } } };
+  let lookups = 0;
+  const context = { exports: {} as { POST: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response> },
+    require: (name: string) => {
+      if (name === "next/server") return { NextResponse: Response };
+      if (name === "@/lib/store") return { getResult: () => saved, saveResult: (value: unknown) => { saved = value; },
+        listAccounts: () => [], getAccountRaw: (id: string) => ({ id, provider: id === "retell-account" ? "retell" : "vapi" }) };
+      if (name === "@hal/core") return { createLLM: () => ({}), getIntegration: (provider: string) => provider === "retell"
+        ? { id: "retell", findInboundCall: async () => { lookups++; return undefined; },
+          getCall: async (account: any, callId: string) => { assert.equal(account.id, "retell-account"); assert.equal(callId, "inbound");
+            return { details: { status: "ended" }, trace: [{ kind: "node", label: "new" }] }; } }
+        : { id: "vapi" }, refreshHostedCall: async ({ result }: any) => ({ state: "completed", result: {
+          ...result, status: "passed", trace: [{ side: "testingAgent", kind: "tool-call", label: "lookup" }],
+        } }) };
+      if (name === "@/lib/runRecordings") return { downloadRunRecording: () => {} };
+      throw new Error(`Unexpected dependency: ${name}`);
+    } };
+  runInNewContext(compiled, context);
+  const response = await context.exports.POST(new Request("http://localhost"), { params: Promise.resolve({ id: "run4" }) });
+  assert.equal(response.status, 200);
+  assert.equal(lookups, 0);
+  assert.equal(saved.providerCalls.targetAgent.details.status, "ended");
+  assert.equal(saved.trace.length, 2);
+  assert.equal(saved.trace[1].label, "new");
+});
