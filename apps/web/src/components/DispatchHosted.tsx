@@ -10,14 +10,19 @@ interface Account {
   provider: string;
   label: string;
 }
-interface TestingAgentLite {
+interface CallerCredential {
+  byotKeyId?: string;
+  byotAccountId?: string;
+  hasEncryptedKey?: boolean;
+}
+interface TestingAgentLite extends CallerCredential {
   imported?: boolean;
   accountId: string;
   id: string;
   name: string;
   provider: string;
 }
-interface TargetAgentLite {
+interface TargetAgentLite extends CallerCredential {
   id: string;
   name: string;
   target: { transport: string; phoneNumber?: string };
@@ -63,6 +68,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [fromPhone, setFromPhone] = useState("");
   const [callerIdMode, setCallerIdMode] = useState("account");
   const [encryptedKey, setEncryptedKey] = useState("");
+  const [customKey, setCustomKey] = useState(false);
   const [savedKeys, setSavedKeys] = useState<Array<{ id: string; name: string }>>([]);
   const [byotKeyId, setByotKeyId] = useState("");
   const [keyName, setKeyName] = useState("");
@@ -133,6 +139,10 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   useEffect(() => {
     setFromPhone("");
     setEncryptedKey("");
+    setByotKeyId("");
+    setCustomKey(false);
+    setKeyName("");
+    setKeyError(null);
     setCallerIdMode("account");
     setConfigureInbound(false);
   }, [selected, outbound]);
@@ -143,8 +153,25 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const chosenTesting = testingAgents.find((a) => a.id === (inboundParsed.kind === "testing" ? inboundParsed.id : outboundParsed.id));
   const accountMismatch = Boolean(chosenTesting && chosenTesting.accountId !== selected);
   const invalidPair = sameAgent || bothTesting || bothTarget || accountMismatch;
-  const isBland = accounts.find((a) => a.id === selected)?.provider === "bland";
+  const selectedAccount = accounts.find((a) => a.id === selected);
+  const isBland = selectedAccount?.provider === "bland";
   const outboundIsTarget = outboundParsed.kind === "target";
+  const caller = outboundIsTarget
+    ? targets.find((a) => a.id === outboundParsed.id)
+    : testingAgents.find((a) => a.id === outboundParsed.id);
+  const callerSavedKey = savedKeys.find((key) => key.id === caller?.byotKeyId);
+  const callerKeyError = caller?.byotKeyId
+    ? caller.byotAccountId && caller.byotAccountId !== selected
+      ? "This caller’s saved key belongs to a different account. Select its account or choose a key below."
+      : !keysLoading && !keyError && !callerSavedKey
+        ? "This caller’s saved key was removed. Edit the caller or choose another key below."
+        : undefined
+    : undefined;
+  const defaultKeyLabel = caller?.byotKeyId
+    ? `${callerSavedKey?.name ?? "Saved key"} — ${caller.name}`
+    : caller?.hasEncryptedKey
+      ? `•••••••• — saved on ${caller.name}`
+      : "Use provider account default";
 
   useEffect(() => {
     let cancelled = false;
@@ -164,7 +191,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       const res = await fetch("/api/byot-keys", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId: selected, name: keyName, encryptedKey }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not save key");
-      setSavedKeys((keys) => [...keys, data.key]); setByotKeyId(data.key.id); setEncryptedKey(""); setKeyName("");
+      setSavedKeys((keys) => [...keys, data.key]); setByotKeyId(data.key.id); setCustomKey(false); setEncryptedKey(""); setKeyName("");
     } catch (e) { setKeyError((e as Error).message); }
     finally { setKeyBusy(false); }
   }
@@ -203,6 +230,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setResult(data.result);
       setEncryptedKey("");
+      setCustomKey(false);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -231,6 +259,25 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               <label className="field"><span className="field-label">Caller ID</span><select value={callerIdMode} onChange={(e) => setCallerIdMode(e.target.value)}><option value="account">Account default</option>{isBland && <option value="pool">Bland default pool</option>}<option value="custom">Choose a number</option></select></label>
               {callerIdMode === "custom" && <NumberPicker accountId={selected} value={fromPhone} onChange={setFromPhone} ariaLabel="Outbound caller ID" placeholder="+14155550123" />}
               <p className="field-help">{isBland ? "Use a number owned by this account, including + and country code." : "Vapi and ElevenLabs use the number ID saved on the account."}</p>
+              {isBland && callerIdMode !== "pool" && <div className="caller-credentials">
+                <label className="field"><span className="field-label">Twilio encrypted key</span>
+                  <select disabled={keysLoading} value={byotKeyId || (customKey ? "__custom__" : "")} onChange={(e) => { setByotKeyId(e.target.value === "__custom__" ? "" : e.target.value); setCustomKey(e.target.value === "__custom__"); setEncryptedKey(""); setKeyName(""); }}>
+                    <option value="">{defaultKeyLabel}</option>
+                    {savedKeys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}
+                    <option value="__custom__">Enter a key for this call</option>
+                  </select>
+                </label>
+                {!byotKeyId && !customKey && <p className="field-help">{caller?.byotKeyId || caller?.hasEncryptedKey ? `Loaded from ${caller.name}. Used automatically when this agent calls outbound.` : "Uses the provider account’s default key, if configured."}</p>}
+                {!byotKeyId && !customKey && callerKeyError && <p role="alert" className="error-text">{callerKeyError}</p>}
+                {customKey && <>
+                  <label className="field"><span className="field-label">Key for this call</span><input type="password" autoComplete="off" spellCheck={false} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Paste the BYOT encrypted key" /></label>
+                  <label className="field"><span className="field-label">Name for reuse (optional)</span><input maxLength={120} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="e.g. Main Twilio" /></label>
+                  <button type="button" className="secondary" onClick={saveKey} disabled={keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key"}</button>
+                </>}
+                {byotKeyId && <button type="button" className="secondary" onClick={removeKey}>Remove saved key</button>}
+                {keyError && <p role="alert" className="error-text">{keyError}</p>}
+              </div>}
+              {isBland && callerIdMode === "pool" && <p className="field-help">Bland’s default pool does not use a Twilio key.</p>}
             </section>
             <section className="participant-panel"><div className="section-heading"><h4>Receiver</h4><span className="pill inbound">Inbound</span></div>
               <label className="field"><span className="field-label">Agent answering the call</span><select value={inbound} onChange={(e) => setInbound(e.target.value as AgentValue)}>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
@@ -238,16 +285,6 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
               <p className="field-help">The number the caller will dial.</p>
             </section>
           </div>
-          {isBland && callerIdMode !== "pool" && <details className="outbound-settings"><summary>Twilio caller credentials <span className="muted">· optional, outbound only</span></summary>
-            <p className="field-help">Leave blank to use the caller agent’s saved key, then the account default. The receiving agent’s key is not used.</p>
-            <label className="field"><span className="field-label">Saved BYOT key</span><select disabled={keysLoading} value={byotKeyId} onChange={(e) => { setByotKeyId(e.target.value); setEncryptedKey(""); }}><option value="">Use caller default or enter a key</option>{savedKeys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}</select></label>
-            {byotKeyId ? <button type="button" className="secondary" onClick={removeKey}>Remove saved key</button> : <div className="settings-grid">
-              <label className="field"><span className="field-label">Bland encrypted key</span><input type="password" autoComplete="off" spellCheck={false} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Paste the BYOT encrypted key" /></label>
-              <label className="field"><span className="field-label">Name for reuse</span><input maxLength={120} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="e.g. Main Twilio" /></label>
-              <button type="button" className="secondary" onClick={saveKey} disabled={keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key"}</button>
-            </div>}
-            {keyError && <p role="alert" className="error-text">{keyError}</p>}
-          </details>}
           {chosenTesting?.imported && <p className="field-help">This imported tester uses its existing provider configuration. The saved scenario script is not applied; this simulation’s judges still score the call.</p>}
           {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with {chosenTesting?.imported ? "the imported tester’s pathway" : "this scenario"}. This replaces its current pathway and stays set after the run.</span></label>}
           {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
