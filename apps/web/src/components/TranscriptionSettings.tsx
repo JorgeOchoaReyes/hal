@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 interface Public {
   provider: string;
@@ -24,10 +25,12 @@ const PROVIDERS: Array<{ id: string; label: string; available: boolean; models?:
 ];
 
 export default function TranscriptionSettings() {
+  const { visible } = useSecretVisibility();
   const [loaded, setLoaded] = useState(false);
   const [provider, setProvider] = useState("deepgram");
   const [model, setModel] = useState("nova-2");
   const [apiKey, setApiKey] = useState("");
+  const [storedKey, setStoredKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -35,16 +38,21 @@ export default function TranscriptionSettings() {
   const active = PROVIDERS.find((p) => p.id === provider) ?? PROVIDERS[0];
 
   useEffect(() => {
-    fetch("/api/settings/transcription")
+    let active = true;
+    if (!visible) setStoredKey("");
+    fetch(`/api/settings/transcription${visible ? "?reveal=1" : ""}`)
       .then((r) => r.json())
-      .then((d: { settings: Public }) => {
+      .then((d: { settings: Public; apiKey?: string }) => {
+        if (!active) return;
         setProvider(d.settings.provider);
         if (d.settings.model) setModel(d.settings.model);
         setHasKey(d.settings.hasKey);
+        if (visible) setStoredKey(d.apiKey ?? "");
       })
       .catch(() => undefined)
-      .finally(() => setLoaded(true));
-  }, []);
+      .finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, [visible]);
 
   async function save() {
     setBusy(true);
@@ -60,6 +68,7 @@ export default function TranscriptionSettings() {
       });
       const d: { settings: Public } = await res.json();
       setHasKey(d.settings.hasKey);
+      if (visible && apiKey.trim()) setStoredKey(apiKey.trim());
       setApiKey("");
       setSaved(true);
     } finally {
@@ -78,8 +87,8 @@ export default function TranscriptionSettings() {
         )}
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-        Used to transcribe uploaded production calls before a judge scores them. The key is stored
-        server-side and never sent back to the browser.
+        Used to transcribe uploaded production calls before a judge scores them. Saved keys are
+        shown only while credential visibility is enabled.
       </p>
 
       <label className="field" style={{ marginTop: 8 }}>
@@ -117,8 +126,9 @@ export default function TranscriptionSettings() {
       <label className="field">
         <span className="field-label">API key</span>
         <input
-          type="password"
-          value={apiKey}
+          type={visible ? "text" : "password"}
+          value={apiKey || (visible ? storedKey : "")}
+          autoComplete="off"
           onChange={(e) => setApiKey(e.target.value)}
           placeholder={hasKey ? "•••••••• (leave blank to keep current)" : "Paste your API key"}
         />

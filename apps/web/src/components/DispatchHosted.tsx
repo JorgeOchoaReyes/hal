@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import HostedChatRun from "./HostedChatRun";
 import NumberPicker from "./NumberPicker";
+import { useSecretVisibility } from "./SecretVisibilityContext";
 
 interface Account {
   id: string;
@@ -51,8 +53,7 @@ function parse(value: string): { kind: AgentKind; id: string } {
  * HAL compiles it into that platform's native agent config at dispatch time —
  * this is where "how to run it" is actually decided, not at creation — creates
  * (or reconfigures) the testing agent to match this simulation's current
- * persona/scenario, places the call, waits for it to finish, and pulls the
- * judged result from the provider.
+ * persona/scenario, places the call, and opens a result page that tracks it.
  *
  * Either side of the call can be any saved agent — pick which one waits
  * (inbound) and which one places the call (outbound). One side must be a
@@ -60,6 +61,8 @@ function parse(value: string): { kind: AgentKind; id: string } {
  * saved agent under test.
  */
 export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
+  const router = useRouter();
+  const { visible: credentialsVisible } = useSecretVisibility();
   const [mode, setMode] = useState<"call" | "chat">("call");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
@@ -81,14 +84,6 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [configureInbound, setConfigureInbound] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    id: string;
-    status: string;
-    error?: string;
-    externalCallId?: string;
-    labels?: Array<{ text: string; tone: string }>;
-    transcript?: Array<{ role: string; text: string }>;
-  } | null>(null);
 
   useEffect(() => {
     fetch("/api/provider-accounts")
@@ -215,7 +210,6 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   async function dispatch() {
     setBusy(true);
     setErr(null);
-    setResult(null);
     try {
       const res = await fetch("/api/run-hosted-sim", {
         method: "POST",
@@ -234,9 +228,10 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      setResult(data.result);
+      if (!data.result?.id) throw new Error("The call started, but HAL did not return a result page.");
       setEncryptedKey("");
       setCustomKey(false);
+      router.push(`/results/${encodeURIComponent(data.result.id)}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -280,7 +275,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
                 {!byotKeyId && !customKey && <p className="field-help">{caller?.byotKeyId || caller?.hasEncryptedKey ? `Loaded from ${caller.name}. Used automatically when this agent calls outbound.` : "Uses the provider account’s default key, if configured."}</p>}
                 {!byotKeyId && !customKey && callerKeyError && <p role="alert" className="error-text">{callerKeyError}</p>}
                 {customKey && <>
-                  <label className="field"><span className="field-label">Key for this call</span><input type="password" autoComplete="off" spellCheck={false} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Paste the BYOT encrypted key" /></label>
+                  <label className="field"><span className="field-label">Key for this call</span><input type={credentialsVisible ? "text" : "password"} autoComplete="off" spellCheck={false} value={encryptedKey} onChange={(e) => setEncryptedKey(e.target.value)} placeholder="Paste the BYOT encrypted key" /></label>
                   <label className="field"><span className="field-label">Name for reuse (optional)</span><input maxLength={120} value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="e.g. Main Twilio" /></label>
                   <button type="button" className="secondary" onClick={saveKey} disabled={keysLoading || !encryptedKey.trim() || !keyName.trim()}>{keyBusy ? "Saving…" : "Save key"}</button>
                 </>}
@@ -299,51 +294,9 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
           {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with {chosenTesting?.imported ? "the imported tester’s pathway" : "this scenario"}. This replaces its current pathway and stays set after the run.</span></label>}
           {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
         </fieldset>
-        <div className="action-bar"><span className="field-help">{chosenTesting ? "Updates the selected testing agent with this simulation." : "Creates a tester from the saved scenario."} This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
+        <div className="action-bar"><span className="field-help">{chosenTesting ? "Updates the selected testing agent with this simulation." : "Creates a tester from the saved scenario."} This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Placing call…" : "Place test call"}</button></div>
       </>}
       {mode === "call" && err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
-      {mode === "call" && result && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <span className={`pill ${result.status}`}>{result.status}</span>
-            {(result.labels ?? []).filter((l) => l.text.toLowerCase() !== result.status.toLowerCase()).map((l, i) => (
-              <span key={i} className={`label label-${l.tone}`}>{l.text}</span>
-            ))}
-            {result.externalCallId && (
-              <span className="muted mono" style={{ fontSize: 12 }}>
-                call {result.externalCallId}
-              </span>
-            )}
-          </div>
-          <p><Link href={`/results/${encodeURIComponent(result.id)}`}>View full run details →</Link></p>
-          {result.error && (
-            <div
-              className="mono"
-              style={{
-                marginTop: 8,
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid var(--fail)",
-                color: "var(--fail)",
-                fontSize: 12,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {result.error}
-            </div>
-          )}
-          {(result.transcript?.length ?? 0) > 0 && (
-            <details style={{ marginTop: 12 }}><summary>View transcript</summary><div className="transcript">
-              {result.transcript!.map((u, i) => (
-                <div className={`turn ${u.role}`} key={i}>
-                  <div className="who">{u.role}</div>
-                  <div>{u.text}</div>
-                </div>
-              ))}
-            </div></details>
-          )}
-        </div>
-      )}
     </div>
   );
 }

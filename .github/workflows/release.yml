@@ -1,19 +1,12 @@
 name: Release desktop app
 
-# Cut a release by pushing a tag, e.g.:
-#   npm version --workspace @hal/desktop <x.y.z>   # or bump apps/desktop/package.json
-#   git tag v0.1.0 && git push origin v0.1.0
+# Releases are manual. Pull requests, merges, and pushed tags cannot invoke this workflow.
+# Start this workflow from Actions when an installer release is intended.
 #
 # electron-builder builds installers for macOS, Windows, and Linux and publishes
 # them (plus the latest*.yml update manifests electron-updater reads) to the
-# GitHub Release for the tag. The desktop app then auto-updates from there.
+# GitHub Release for the desktop package version. The desktop app then auto-updates from there.
 on:
-  push:
-    tags:
-      - "v*"
-  # Also allow starting a release manually (Actions → Release desktop app → Run
-  # workflow), so a release can be cut without pushing a tag. electron-builder
-  # names the GitHub Release from apps/desktop/package.json "version".
   workflow_dispatch: {}
 
 permissions:
@@ -21,6 +14,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:

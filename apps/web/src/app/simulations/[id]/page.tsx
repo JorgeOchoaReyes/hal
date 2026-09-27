@@ -21,14 +21,14 @@ export default async function TestDetailPage({
 
   return (
     <>
-      <p style={{ marginTop: 20 }}>
-        <Link href="/">← All simulations</Link>
-      </p>
-      <div className="card-row">
-        <h1 style={{ margin: 0 }}>{tc.name}</h1>
-        <span className={`pill ${tc.target.transport}`}>{tc.target.transport}</span>
-      </div>
-      <p className="sub">{tc.scenario.description}</p>
+      <header className="detail-intro">
+        <Link href="/" className="detail-back">← All simulations</Link>
+        <div className="card-row">
+          <h1 style={{ margin: 0 }}>{tc.name}</h1>
+          <span className={`pill ${tc.target.transport}`}>{tc.target.transport}</span>
+        </div>
+        <p className="sub">{tc.scenario.description}</p>
+      </header>
 
       <h2>Run this simulation</h2>
       <RunPanel testCaseId={tc.id} />

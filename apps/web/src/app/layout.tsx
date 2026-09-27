@@ -4,6 +4,8 @@ import Sidebar from "@/components/Sidebar";
 import ThemeToggle from "@/components/ThemeToggle";
 import NewSimulationButton from "@/components/NewSimulationButton";
 import NewSimulationProvider from "@/components/NewSimulationContext";
+import SecretVisibilityProvider from "@/components/SecretVisibilityContext";
+import AppbarTrail from "@/components/AppbarTrail";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,16 +26,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* suppressHydrationWarning: browser extensions commonly inject attributes
           onto <body> before React hydrates, which is harmless. */}
       <body suppressHydrationWarning>
-        <NewSimulationProvider>
+        <SecretVisibilityProvider><NewSimulationProvider>
           <div className="app">
             <Sidebar />
             <div className="main">
               <header className="appbar">
-                <div className="crumbs">
-                  <span className="crumb-chip">HAL</span>
-                  <span className="crumb-sep">/</span>
-                  <span className="crumb-current">Voice AI Test Lab</span>
-                </div>
+                <AppbarTrail />
                 <div className="appbar-actions">
                   <Link href="/agents" className="btn secondary sm">
                     Hosted agents
@@ -45,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <main className="content">{children}</main>
             </div>
           </div>
-        </NewSimulationProvider>
+        </NewSimulationProvider></SecretVisibilityProvider>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id } from "@hal/core";
-import { getAccountRaw, listByotKeys, saveByotKey, deleteByotKey } from "@/lib/store";
+import { getAccountRaw, listByotKeys, resolveByotKey, saveByotKey, deleteByotKey } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const accountId = req.nextUrl.searchParams.get("accountId") ?? "";
   if (getAccountRaw(accountId)?.provider !== "bland") return NextResponse.json({ error: "Select a Bland account" }, { status: 400 });
-  return NextResponse.json({ keys: listByotKeys(accountId) });
+  const keys = listByotKeys(accountId);
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ keys: reveal ? keys.map((key) => ({ ...key, encryptedKey: resolveByotKey(accountId, key.id) })) : keys }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSecretsStatus, setSecrets, SECRET_KEYS, type SecretKey } from "@/lib/store";
+import { getSecretsStatus, getStoredSecretValues, setSecrets, SECRET_KEYS, type SecretKey } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return NextResponse.json({ secrets: getSecretsStatus() });
+export async function GET(req: NextRequest) {
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ secrets: getSecretsStatus(), ...(reveal ? { values: getStoredSecretValues() } : {}) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {

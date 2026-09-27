@@ -1,16 +1,16 @@
 import TestingAgentsManager from "@/components/TestingAgentsManager";
+import PageIntro from "@/components/PageIntro";
 
 export const dynamic = "force-dynamic";
 
 export default function TestingAgentsPage() {
   return (
     <>
-      <h1 style={{ margin: 0 }}>Testing agents</h1>
-      <p className="sub" style={{ marginTop: 4 }}>
+      <PageIntro number="06" section="Test callers" title="Testing agents">
         Import a <strong>testing agent you already built</strong> or create a new one on a connected
         provider. Imported testers use their existing configuration; HAL-created testers use the
         saved simulation script for each run.
-      </p>
+      </PageIntro>
       <TestingAgentsManager />
     </>
   );

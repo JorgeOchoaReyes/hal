@@ -85,8 +85,8 @@ const GROUPS: NavGroup[] = [
         match: (p) => p.startsWith("/settings"),
       },
       {
-        href: "https://github.com/JorgeOchoaReyes/hal#readme",
-        label: "Docs",
+        href: "https://github.com/JorgeOchoaReyes/hal",
+        label: "Repository",
         icon: icon("M4 4h11l5 5v11H4zM15 4v5h5"),
         external: true,
       },

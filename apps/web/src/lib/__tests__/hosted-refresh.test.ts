@@ -9,9 +9,9 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-test("a manual call check uses the saved account and updates the same run", async () => {
+test("a pending hosted call check uses the saved account and updates the same run", async () => {
   let saved: any = {
-    id: "run1", testCaseId: "tc1", status: "errored", externalCallId: "call1", transcript: [],
+    id: "run1", testCaseId: "tc1", status: "running", externalCallId: "call1", transcript: [],
     context: { account: { id: "account1", provider: "bland" },
       targetAgent: { direction: "inbound" }, judge: { mode: "rules-only" } },
   };

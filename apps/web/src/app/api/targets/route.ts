@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id, type Target, type TargetAgent, type CallDirection } from "@hal/core";
-import { publicAgent, getAccountRaw, resolveByotKey, listTargets, upsertTarget } from "@/lib/store";
+import { publicAgent, getAccountRaw, resolveByotKey, getTarget, listTargets, upsertTarget } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /** List the real target agents under test ("My agents"). */
-export async function GET() {
-  return NextResponse.json({ targets: listTargets() });
+export async function GET(req: NextRequest) {
+  const targets = listTargets();
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ targets: reveal ? targets.map((target) => getTarget(target.id) ?? target) : targets }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Register a new target agent. */

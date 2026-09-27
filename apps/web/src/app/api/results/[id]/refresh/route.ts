@@ -16,7 +16,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const run = getResult(id);
   if (!run) return NextResponse.json({ error: "Run not found." }, { status: 404 });
   const retryJudgeError = run.status === "failed" && run.verdict?.summary.startsWith("Judge LLM error:");
-  if ((run.status !== "errored" && !retryJudgeError) || !run.externalCallId || !run.context?.account || !run.context.judge) {
+  if ((run.status !== "running" && run.status !== "errored" && !retryJudgeError) || !run.externalCallId || !run.context?.account || !run.context.judge) {
     return NextResponse.json({ error: "This run cannot be checked again." }, { status: 400 });
   }
   const account = getAccountRaw(run.context.account.id);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTranscriptionSettings, setTranscriptionSettings } from "@/lib/store";
+import { getTranscriptionSettings, getTranscriptionSettingsRaw, setTranscriptionSettings } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return NextResponse.json({ settings: getTranscriptionSettings() });
+export async function GET(req: NextRequest) {
+  const settings = getTranscriptionSettings();
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1";
+  return NextResponse.json({ settings, ...(reveal ? { apiKey: getTranscriptionSettingsRaw().apiKey } : {}) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {

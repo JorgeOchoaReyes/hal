@@ -78,21 +78,20 @@ test("simulation dispatch updates imported Bland tester's pathway in both call d
         assert.equal(agent.externalAgentId, "existing-pathway");
         updatedSpec = spec;
       },
-      configureInbound: async (_account: unknown, agent: HostedTestingAgent) => { inboundPathway = agent.externalAgentId; },
+      configureInbound: async (_account: unknown, agent: HostedTestingAgent) => { inboundPathway = agent.externalAgentId; receivedAgent = agent; },
+      placeCall: async (_account: unknown, agent: HostedTestingAgent) => { receivedAgent = agent; return { externalCallId: "call1" }; },
       placeOutboundCall: async () => ({ externalCallId: "call1" }),
     };
-    const result = { id: "run1", status: "passed", transcript: [] };
     const post = route("run-hosted-sim", {
       "@hal/core": {
-        getIntegration: () => integration, createLLM: () => ({}),
-        runHostedCall: async (options: { agent: HostedTestingAgent }) => { receivedAgent = options.agent; return result; },
+        getIntegration: () => integration, id: () => "run1",
       },
       "@/lib/store": {
         getTestCase: () => ({ id: "tc1", name: "Simulation", scenario: { persona: { name: "Everyday customer", systemPrompt: "You are a polite but busy customer calling a business. Answer questions directly." }, steps: [{ kind: "say", text: "Hi, I'd like some help please." }, { kind: "say", text: "Hey i need help sap" }, { kind: "say", text: "need to help now" }, { kind: "say", text: "hello?" }, { kind: "hangup" }] }, judge: {} }),
         getAgent: () => imported,
         getTarget: () => ({ id: "target", name: "Main", provider: "bland", externalAgentId: "target-pathway", voiceId: "main-voice" }),
         getAccountRaw: () => ({ id: "account1", provider: "bland", credentials: {} }),
-        outboundAgentKey: () => undefined, saveResult: () => {}, getResult: () => result,
+        outboundAgentKey: () => undefined, saveResult: () => {}, listResults: () => [],
         upsertAgent: (agent: HostedTestingAgent) => { savedAgent = agent; },
       },
       "@/lib/runContext": { snapshotRun: () => ({}), hostedContext: () => ({}) },
@@ -130,19 +129,16 @@ test("simulation dispatch uses a selected saved tester's pathway instead of prov
         buildFlowConfig: () => ({}),
         listAvailableVoices: async () => ["main-voice", "tester-voice"],
         updateTestingAgent: async () => {},
+        placeCall: async (_account: unknown, agent: HostedTestingAgent) => { received = agent; return { externalCallId: "call1" }; },
       }),
-      createLLM: () => ({}),
-      runHostedCall: async (options: { agent: HostedTestingAgent }) => {
-        received = options.agent;
-        return { id: "run1", status: "passed", transcript: [], externalCallId: "call1" };
-      },
+      id: () => "run1",
     },
     "@/lib/store": {
       getTestCase: () => ({ id: "tc1", name: "Scenario", scenario: { persona: { name: "Scenario", systemPrompt: "new" } }, judge: {} }),
       getAgent: () => selected,
       getTarget: () => ({ id: "target", name: "Main", provider: "bland", externalAgentId: "target-pathway", voiceId: "main-voice" }),
       getAccountRaw: () => ({ id: "account1", provider: "bland", credentials: {} }),
-      outboundAgentKey: () => undefined, saveResult: () => {}, getResult: () => ({ id: "run1" }),
+      outboundAgentKey: () => undefined, saveResult: () => {}, listResults: () => [],
       upsertAgent: () => {},
     },
     "@/lib/runContext": { snapshotRun: () => ({}), hostedContext: () => ({}) },
@@ -174,15 +170,15 @@ test("dispatch molds and persists a selected tester for every hosted provider be
             assert.equal(spec.steps[0]!.text, "Hi, I'd like some help please.");
             return provider === "vapi" ? { externalAgentId: "new-squad" } : undefined;
           },
+          placeCall: async (_account: unknown, agent: HostedTestingAgent) => { order.push("call"); called = agent; return { externalCallId: "call1" }; },
         }),
-        createLLM: () => ({}),
-        runHostedCall: async (options: { agent: HostedTestingAgent }) => { order.push("call"); called = options.agent; return { id: "run1", status: "passed", transcript: [] }; },
+        id: () => "run1",
       },
       "@/lib/store": {
         getTestCase: () => ({ id: "tc1", name: "Scenario", scenario: { persona: { name: "Everyday customer", systemPrompt: "Be polite but busy" }, steps: [{ kind: "say", text: "Hi, I'd like some help please." }, { kind: "hangup" }] }, judge: {} }),
         getAgent: () => selected, getTarget: () => ({ id: "target", name: "Main", provider, voiceId: "main-voice" }),
         getAccountRaw: () => ({ id: "account1", provider, credentials: {} }),
-        outboundAgentKey: () => undefined, saveResult: () => {}, getResult: () => ({ id: "run1" }),
+        outboundAgentKey: () => undefined, saveResult: () => {}, listResults: () => [],
         upsertAgent: (agent: HostedTestingAgent) => { order.push("save"); saved = agent; },
       },
       "@/lib/runContext": { snapshotRun: () => ({}), hostedContext: () => ({}) },

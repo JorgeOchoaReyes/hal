@@ -1,15 +1,13 @@
 import { snapshotRun, hostedContext } from "@/lib/runContext";
-import { downloadRunRecording } from "@/lib/runRecordings";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getIntegration,
-  createLLM,
-  runHostedCall,
   id,
   type HostedTestingAgent,
   type TestingAgentSpec,
+  type TestResult,
 } from "@hal/core";
-import { outboundAgentKey, resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, getResult, saveResult, upsertAgent } from "@/lib/store";
+import { outboundAgentKey, resolveByotKey, getAccountRaw, getTestCase, getAgent, getTarget, listResults, saveResult, upsertAgent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,7 +25,7 @@ interface AgentRef {
 /**
  * Ad-hoc dispatch: take a saved simulation, compile it into a testing agent on
  * the chosen provider AT DISPATCH TIME (node-based when the platform supports
- * it), place the call, poll to completion, and judge the transcript.
+ * it), place the call, and save a pending result for the Results page to finish.
  *
  * Either side of the call — the agent that waits ("inbound") and the agent
  * that places the call ("outbound") — can be any saved agent (a HAL-managed
@@ -171,6 +169,16 @@ export async function POST(req: NextRequest) {
   if (pathwayKey && inboundRuns.has(pathwayKey)) {
     return NextResponse.json({ error: "This testing pathway already has a run in progress." }, { status: 409 });
   }
+  // The tester's graph is mutable. Keep a second call from remolding it while
+  // an earlier call is active, including after this process has restarted.
+  const activeRuns = listResults().filter((run) => run.status === "running" && run.externalCallId && run.context?.account?.id === account.id);
+  if (pathwayKey && activeRuns.some((run) => run.context?.testingAgent.id === chosen?.id)) {
+    return NextResponse.json({ error: "This testing pathway already has a run in progress." }, { status: 409 });
+  }
+  if (inboundKey && activeRuns.some((run) => run.context?.targetAgent.direction === "outbound" &&
+    run.context.testingAgent.phoneNumber?.replace(/[\s().-]/g, "") === body.phoneNumber.replace(/[\s().-]/g, ""))) {
+    return NextResponse.json({ error: "This inbound test number already has a run in progress." }, { status: 409 });
+  }
   if (inboundKey) inboundRuns.add(inboundKey);
   if (pathwayKey) inboundRuns.add(pathwayKey);
   try {
@@ -207,31 +215,25 @@ export async function POST(req: NextRequest) {
         if (pathwayId) { context.targetAgent.pathwayId = pathwayId; context.targetAgent.pathwaySource = "inbound-number"; }
       } catch { /* A target on another account may not be visible. Preserve the unverified marker. */ }
     }
-    const result = await runHostedCall({
-      testCaseId: testCase.id,
-      integration,
-      providerAgentRole: outboundIsTarget ? "target" : "agent",
-      // Leave time for provisioning, final evaluation, and saving within the route budget.
-      timeoutMs: 180_000,
-      account,
-      agent: { ...agent, encryptedKey: outboundIsTarget ? undefined : callerKey },
-      target: { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
-      judge: testCase.judge,
-      llm: createLLM(testCase.judge.provider ?? "auto", testCase.judge.model),
-      place: outboundIsTarget
-        ? () =>
-            integration.placeOutboundCall!(
-              account,
-              { externalAgentId: targetAgent.externalAgentId!, encryptedKey: callerKey },
-              { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
-            )
-        : undefined,
-    });
-    result.context = context;
-    result.recordingSource = { provider: account.provider, accountId: account.id };
+    const placed = outboundIsTarget
+      ? await integration.placeOutboundCall!(
+          account,
+          { externalAgentId: targetAgent.externalAgentId!, encryptedKey: callerKey },
+          { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
+        )
+      : await integration.placeCall(
+          account,
+          { ...agent, encryptedKey: callerKey },
+          { phoneNumber: body.phoneNumber, fromNumber: body.fromNumber },
+        );
+    if (!placed.externalCallId) throw new Error("The provider did not return a call ID; the run could not be tracked.");
+    const result: TestResult = {
+      id: id("run"), testCaseId: testCase.id, status: "running", startedAt: Date.now(),
+      transcript: [], liveChecks: [], externalCallId: placed.externalCallId,
+      context, recordingSource: { provider: account.provider, accountId: account.id },
+    };
     saveResult(result);
-    if (result.externalCallId && integration.getRecording) await downloadRunRecording(result.id);
-    return NextResponse.json({ result: getResult(result.id), agentId: agent.id });
+    return NextResponse.json({ result, agentId: agent.id });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
   } finally {
