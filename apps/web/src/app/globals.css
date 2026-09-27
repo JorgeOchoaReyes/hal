@@ -594,6 +594,10 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-feed { display: grid; gap: 10px; margin-top: 12px; }
 .activity-entry { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); overflow-wrap: anywhere; }
 .activity-row > .activity-entry { grid-row: 1; }
+.activity-collapsible { padding: 6px 12px; }
+.activity-collapsible > summary { margin: 0; line-height: 1.4; }
+.activity-collapsible[open] { background: var(--panel); }
+.activity-collapsible .run-json { max-height: 360px; overflow: auto; }
 .activity-left { grid-column: 1; border-left: 3px solid var(--agent); }
 .activity-right { grid-column: 2; border-right: 3px solid var(--target); }
 .activity-wide { grid-column: 1 / -1; }
@@ -602,7 +606,7 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-right .activity-who { color: var(--target); }
 .activity-active { border-color: var(--accent); background: var(--accent-dim); }
 .activity-message-meta { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
-.activity-meta-source { margin: 0; font-size: 12px; color: var(--muted); }
+.activity-message-meta > summary { font-size: 12px; color: var(--muted); }
 .hal-check-list { display: grid; gap: 10px; }
 .hal-check-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
 @media (max-width: 900px) { .run-agents, .judge-cards { grid-template-columns: 1fr; } }

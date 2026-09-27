@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
-import type { TestResult, Utterance } from "@hal/core";
+import type { RunTraceEvent, TestResult, Utterance } from "@hal/core";
 
 type Side = "testingAgent" | "targetAgent";
 
@@ -25,22 +25,28 @@ function metadataFacts(meta: Record<string, unknown>): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
-function activityPayload(data?: Record<string, unknown>): string | undefined {
-  const payload = record(data?.payload);
-  const useful = Object.keys(payload).length ? payload : record(data?.arguments ?? data?.result);
-  if (!Object.keys(useful).length) return undefined;
-  const json = JSON.stringify(useful);
-  return json.length > 360 ? `${json.slice(0, 360)}…` : json;
+function activityTitle(event: RunTraceEvent): string {
+  const data = record(event.data);
+  const payload = record(data.payload);
+  const node = record(data.node);
+  if (event.kind === "node") {
+    const name = payload.chosen_node_name ?? payload.node_name ?? node.name ?? data.node_name ?? data.name;
+    return `Visited node: ${typeof name === "string" && name.trim() ? name : event.label.replace(/^Visited\s+/i, "")}`;
+  }
+  if (event.kind === "tool-call") return `Tool call: ${event.label}`;
+  if (event.kind === "tool-result") return `Tool result: ${event.label}`;
+  const type = typeof data.event_type === "string" ? data.event_type : event.label;
+  return `Provider event: ${type.replace(/[._-]+/g, " ")}`;
 }
 
 function MessageMetadata({ turn, side, speaker }: { turn: Utterance; side: Side; speaker: Side }) {
   if (!turn.meta) return null;
   const facts = metadataFacts(turn.meta);
-  return <div className="activity-message-meta">
-    {side !== speaker && <p className="activity-meta-source">{sideName(side)} call metadata for {sideName(speaker).toLowerCase()} speech</p>}
+  return <details className="activity-message-meta">
+    <summary>{side !== speaker ? `${sideName(side)} metadata for ${sideName(speaker).toLowerCase()} speech` : "Message metadata"}{typeof turn.meta.nodeId === "string" ? ` · node ${turn.meta.nodeId}` : ""}</summary>
     {facts.length > 0 && <p className="muted" style={{ margin: "6px 0", fontSize: 12 }}>{facts.join(" · ")}</p>}
-    <details><summary>Message metadata</summary><pre className="run-json">{JSON.stringify(turn.meta, null, 2)}</pre></details>
-  </div>;
+    <pre className="run-json">{JSON.stringify(turn.meta, null, 2)}</pre>
+  </details>;
 }
 
 export default function RunActivityTimeline({ run, primarySide }: { run: TestResult; primarySide: Side }) {
@@ -59,27 +65,23 @@ export default function RunActivityTimeline({ run, primarySide }: { run: TestRes
   }
   const entries = [
     ...run.transcript.map((turn, index) => ({ kind: "speech" as const, at: turn.startedAt, order: index, turn })),
-    ...(run.trace ?? []).filter((event) => event.kind !== "event")
-      .map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
+    ...(run.trace ?? []).map((event, index) => ({ kind: "event" as const, at: event.at ?? Number.MAX_SAFE_INTEGER, order: index, event })),
   ].sort((a, b) => a.at - b.at || a.order - b.order);
-  const other = (run.trace ?? []).filter((event) => event.kind === "event");
 
   return <section className="card">
     <h2 style={{ marginTop: 0 }}>Transcript and activity</h2>
     {hasAudio && <div className="activity-audio"><audio ref={audio} key={run.recording?.downloadedAt} controls preload="metadata" aria-label="Call recording" src={`/api/results/${encodeURIComponent(run.id)}/recording`} onTimeUpdate={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => setPositionMs(event.currentTarget.currentTime * 1000)} /><span className="muted">Play a timed message to seek in the recording.</span></div>}
-    <p className="muted">Speech appears under the agent who spoke. Provider activity and message metadata appear under the call that captured them.</p>
+    <p className="muted">Read speech by speaker. Open any activity title to see its details. Activity and message metadata sit under the provider call that captured them.</p>
     <div className="activity-head"><strong>Testing agent</strong><strong>Main agent</strong></div>
     {!entries.length ? <p className="muted">{run.status === "running" ? "Waiting for the provider transcript." : "No transcript or activity was captured."}</p>
       : <div className="activity-feed">{entries.map((item, index) => {
         if (item.kind === "event") {
-          const payload = activityPayload(item.event.data);
           return <div className="activity-row" key={`event-${index}`}>
-            <div className={`activity-entry ${sideClass(item.event.side)}`}>
-              <div className="activity-who">{sideName(item.event.side)} · {item.event.kind}</div>
-              <div>{item.event.label}{item.event.nodeId && <span className="muted mono"> · node {item.event.nodeId}</span>}</div>
-              {payload && <p className="muted mono" style={{ overflowWrap: "anywhere", margin: "8px 0 0", fontSize: 12 }}>{payload}</p>}
-              {item.event.data && <details><summary>Event metadata</summary><pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre></details>}
-            </div>
+            <details className={`activity-entry activity-collapsible ${sideClass(item.event.side)}`}>
+              <summary>{activityTitle(item.event)}</summary>
+              <p className="muted" style={{ fontSize: 12 }}>{sideName(item.event.side)} activity{item.event.nodeId ? ` · node ${item.event.nodeId}` : ""}</p>
+              {item.event.data && <pre className="run-json">{JSON.stringify(item.event.data, null, 2)}</pre>}
+            </details>
           </div>;
         }
         const turn = item.turn;
@@ -96,12 +98,5 @@ export default function RunActivityTimeline({ run, primarySide }: { run: TestRes
           {turn.meta && source !== speaker && <div className={`activity-entry ${sideClass(source)}`}><MessageMetadata turn={turn} side={source} speaker={speaker} /></div>}
         </div>;
       })}</div>}
-    {other.length > 0 && <div className="activity-row" style={{ marginTop: 12 }}>{(["testingAgent", "targetAgent"] as const).map((side) => {
-      const events = other.filter((event) => event.side === side);
-      return events.length ? <details className={`activity-entry ${sideClass(side)}`} key={side}>
-        <summary>Other {sideName(side).toLowerCase()} provider events ({events.length})</summary>
-        <pre className="run-json">{JSON.stringify(events, null, 2)}</pre>
-      </details> : null;
-    })}</div>}
   </section>;
 }
