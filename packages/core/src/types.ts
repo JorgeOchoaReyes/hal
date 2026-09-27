@@ -276,6 +276,8 @@ export interface JudgeVerdict {
 export interface TestCase {
   id: string;
   name: string;
+  /** Optional saved folder used to organize simulations. */
+  folderId?: string;
   scenario: Scenario;
   target: Target;
   judge: JudgeSpec;

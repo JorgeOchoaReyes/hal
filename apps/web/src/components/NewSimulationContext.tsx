@@ -5,7 +5,7 @@ import NewSimulationModal from "./NewSimulationModal";
 
 interface NewSimulationContextValue {
   /** Open the "New simulation" popup, optionally prefilled from a production call. */
-  openNewSimulation: (opts?: { fromCallId?: string }) => void;
+  openNewSimulation: (opts?: { fromCallId?: string; folderId?: string }) => void;
 }
 
 const NewSimulationContext = createContext<NewSimulationContextValue | null>(null);
@@ -20,12 +20,14 @@ export function useNewSimulation(): NewSimulationContextValue {
 export default function NewSimulationProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [fromCallId, setFromCallId] = useState<string | undefined>(undefined);
+  const [folderId, setFolderId] = useState<string | undefined>(undefined);
 
   return (
     <NewSimulationContext.Provider
       value={{
         openNewSimulation: (opts) => {
           setFromCallId(opts?.fromCallId);
+          setFolderId(opts?.folderId);
           setOpen(true);
         },
       }}
@@ -34,6 +36,7 @@ export default function NewSimulationProvider({ children }: { children: ReactNod
       {open && (
         <NewSimulationModal
           fromCallId={fromCallId}
+          folderId={folderId}
           onClose={() => setOpen(false)}
         />
       )}

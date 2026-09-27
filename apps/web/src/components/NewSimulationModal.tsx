@@ -7,9 +7,11 @@ import SimulationForm from "./SimulationForm";
 export default function NewSimulationModal({
   onClose,
   fromCallId,
+  folderId,
 }: {
   onClose: () => void;
   fromCallId?: string;
+  folderId?: string;
 }) {
   const router = useRouter();
 
@@ -21,6 +23,7 @@ export default function NewSimulationModal({
       </p>
       <SimulationForm
         fromCallId={fromCallId}
+        initialFolderId={folderId}
         onCancel={onClose}
         onCreated={(id) => {
           onClose();

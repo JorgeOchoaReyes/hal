@@ -27,6 +27,7 @@ import { encryptCredentials, decryptCredentials, encryptString, decryptString, i
 interface HalState {
   db: Persistence;
   testCases: Map<string, TestCase>;
+  simulationFolders: Map<string, SimulationFolder>;
   results: Map<string, TestResult>;
   accounts: Map<string, ProviderAccount>;
   agents: Map<string, HostedTestingAgent>;
@@ -36,6 +37,12 @@ interface HalState {
   engine: HalEngine;
   mediaServer?: MediaServer;
   mediaGateway?: MediaGateway;
+}
+
+export interface SimulationFolder {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 declare global {
@@ -56,6 +63,8 @@ function seed(): HalState {
 
   const testCases = new Map<string, TestCase>();
   for (const tc of db.loadAll<TestCase>("testcases")) testCases.set(tc.id, tc);
+  const simulationFolders = new Map<string, SimulationFolder>();
+  for (const folder of db.loadAll<SimulationFolder>("simulationfolders")) simulationFolders.set(folder.id, folder);
 
   const results = new Map<string, TestResult>();
   for (const r of db.loadAll<TestResult>("results")) results.set(r.id, r);
@@ -109,7 +118,7 @@ function seed(): HalState {
 
   // eslint-disable-next-line no-console
   console.log(`[hal] persistence backend: ${db.backend}`);
-  return { db, testCases, results, accounts, agents, targets, judges, prodCalls, engine, mediaServer, mediaGateway };
+  return { db, testCases, simulationFolders, results, accounts, agents, targets, judges, prodCalls, engine, mediaServer, mediaGateway };
 }
 
 export function halState(): HalState {
@@ -121,6 +130,32 @@ export function listTestCases(): TestCase[] {
   return [...halState().testCases.values()].sort(
     (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
   );
+}
+
+export function listSimulationFolders(): SimulationFolder[] {
+  return [...halState().simulationFolders.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getSimulationFolder(id: string): SimulationFolder | undefined {
+  return halState().simulationFolders.get(id);
+}
+
+export function saveSimulationFolder(folder: SimulationFolder): void {
+  const s = halState();
+  s.simulationFolders.set(folder.id, folder);
+  s.db.put("simulationfolders", folder.id, folder, folder.createdAt);
+}
+
+/** Removing a folder keeps its simulations and moves them to Unfiled. */
+export function deleteSimulationFolder(id: string): boolean {
+  const s = halState();
+  if (!s.simulationFolders.has(id)) return false;
+  for (const tc of s.testCases.values()) {
+    if (tc.folderId === id) upsertTestCase({ ...tc, folderId: undefined });
+  }
+  s.simulationFolders.delete(id);
+  s.db.remove("simulationfolders", id);
+  return true;
 }
 
 export function getTestCase(id: string): TestCase | undefined {

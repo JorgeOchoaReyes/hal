@@ -10,7 +10,7 @@ import {
   type TestCase,
   type StructuredTest,
 } from "@hal/core";
-import { upsertTestCase, getTarget } from "@/lib/store";
+import { upsertTestCase, getTarget, getSimulationFolder } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,7 @@ interface SimulationDraft {
   /** Reusable judges to attach to this simulation. */
   judgeIds?: string[];
   tags?: string[];
+  folderId?: string;
   maxTurns?: number;
   maxDurationMs?: number;
 }
@@ -48,6 +49,9 @@ export async function POST(req: NextRequest) {
 
   if (!draft?.name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+  if (draft.folderId && !getSimulationFolder(draft.folderId)) {
+    return NextResponse.json({ error: "Unknown simulation folder" }, { status: 400 });
   }
 
   // Two ways to set the target: pick a saved "My agents" entry, or configure one
@@ -97,6 +101,7 @@ export async function POST(req: NextRequest) {
     name: draft.name,
     createdAt: Date.now(),
     tags: draft.tags,
+    folderId: draft.folderId || undefined,
     scenario: {
       id: id("scn"),
       name: draft.name,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTestCase, getTarget, listResults } from "@/lib/store";
+import { getSimulationFolder, getTestCase, getTarget, listResults } from "@/lib/store";
 import { mainOpeningMessage } from "@/lib/openingMessages";
 import OpeningMessageWarning from "@/components/OpeningMessageWarning";
 import ScenarioEditor from "@/components/ScenarioEditor";
@@ -20,6 +20,7 @@ export default async function TestDetailPage({
   const tc = getTestCase(id);
   if (!tc) notFound();
   const results = listResults(id).slice(0, 10);
+  const folder = tc.folderId ? getSimulationFolder(tc.folderId) : undefined;
   const mainMessage = mainOpeningMessage(tc.target, tc.targetAgentId ? getTarget(tc.targetAgentId) : undefined);
 
   return (
@@ -29,6 +30,7 @@ export default async function TestDetailPage({
         <div className="card-row">
           <h1 style={{ margin: 0 }}>{tc.name}</h1>
           <span className={`pill ${tc.target.transport}`}>{tc.target.transport}</span>
+          {folder && <span className="pill">▸ {folder.name}</span>}
         </div>
         <p className="sub">{tc.scenario.description}</p>
       </header>
