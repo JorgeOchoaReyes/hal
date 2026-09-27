@@ -16,6 +16,13 @@ test("Bland event times align to the actual recording end and never exceed its d
   assert.equal(playbackOffsetMs(run, last, 30_000), 29_900);
 });
 
+test("untimed transcript turns still seek using a timed neighbor", () => {
+  const anchor = { role: "agent", text: "Hello", startedAt: 10_000, audioStartMs: 2_000 } as const;
+  const later = { role: "target", text: "Welcome", startedAt: 13_500 } as const;
+  const run = { startedAt: 7_000, transcript: [anchor, later] } as TestResult;
+  assert.equal(playbackOffsetMs(run, later, 20_000), 5_500);
+});
+
 test("simulation opening conflict uses the tester script and saved main agent opener", () => {
   const scenario = { persona: { name: "Customer", systemPrompt: "Busy" }, steps: [{ kind: "say", text: "Hi, help please" }] } as Scenario;
   const target = { transport: "telephony", name: "Main", phoneNumber: "+14155550123" } as const;

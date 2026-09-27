@@ -2,8 +2,9 @@ import type { TestResult, Utterance } from "@hal/core";
 
 /** Translate a provider transcript timestamp onto the downloaded recording. */
 export function playbackOffsetMs(run: TestResult, turn: Utterance, durationMs?: number): number | undefined {
-  if (turn.audioStartMs === undefined) return undefined;
-  let offset = turn.audioStartMs;
+  const anchor = run.transcript.find((item) => item.audioStartMs !== undefined);
+  let offset = turn.audioStartMs ?? (anchor ? anchor.audioStartMs! + turn.startedAt - anchor.startedAt : turn.startedAt - run.startedAt);
+  if (!Number.isFinite(offset)) return undefined;
   if (durationMs && Number.isFinite(durationMs) && durationMs > 0) {
     const primarySide = run.context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
     const call = run.providerCalls?.[primarySide];
