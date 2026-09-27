@@ -578,6 +578,14 @@ function mapStatus(call: BlandCall): HostedCallStatus {
  * would make the judge see only one side of the call.
  */
 function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []): Transcript | undefined {
+  const knownStart = eventTime(asRecord(call).start_at ?? asRecord(call).created_at);
+  const firstSpeech = [...events.map((event) => event.created_at), ...(call.transcripts ?? []).map((turn) => turn.start_at ?? turn.created_at)]
+    .map((value) => eventTime(value)).filter((value): value is number => value !== undefined).sort((a, b) => a - b)[0];
+  const callStart = knownStart ?? firstSpeech;
+  const audioOffset = (value: unknown) => {
+    const at = eventTime(value);
+    return at !== undefined && callStart !== undefined ? Math.max(0, at - callStart) : undefined;
+  };
   const speechEvents = events.filter((event) => event.event_type === "transcript.user" || event.event_type === "transcript.assistant");
   if (speechEvents.length) {
     const turns = speechEvents.flatMap((event) => {
@@ -586,6 +594,7 @@ function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []
       const nodeId = asText(event.node_id);
       return [{ role: event.event_type === "transcript.user" ? "target" as const : "agent" as const,
         text, startedAt: eventTime(event.created_at) ?? Date.now(),
+        audioStartMs: audioOffset(event.created_at),
         meta: { ...event, ...(nodeId ? { nodeId } : {}) } }];
     });
     const detailTurnCount = call.transcripts?.filter((turn) => asText(turn.text)).length ?? 0;
@@ -607,6 +616,7 @@ function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []
     const nodeId = t.node_id ?? t.pathway_node_id ?? asText(matched?.node_id);
     out.push({ role: isHuman ? "target" : "agent", text,
       startedAt: eventTime(t.start_at ?? t.created_at ?? matched?.created_at) ?? base,
+      audioStartMs: audioOffset(t.start_at ?? t.created_at ?? matched?.created_at),
       meta: { ...t, ...(nodeId ? { nodeId } : {}) },
     });
   }

@@ -149,6 +149,12 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
     };
   }
 
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    return this.fetchImpl(`${this.base}/v1/convai/conversations/${encodeURIComponent(externalCallId)}/audio`, {
+      headers: this.headers(account), signal: AbortSignal.timeout(60_000),
+    });
+  }
+
   async findInboundCall(account: ProviderAccount, opts: {
     toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
   }): Promise<string | undefined> {
@@ -238,6 +244,7 @@ function parseTranscript(conv: ElevenConversation): Transcript | undefined {
       role: role === "user" ? "target" : "agent",
       text,
       startedAt: base + (t.time_in_call_secs ?? 0) * 1000,
+      audioStartMs: typeof t.time_in_call_secs === "number" ? Math.max(0, t.time_in_call_secs * 1000) : undefined,
       meta: { ...t, ...(asText(t.node_id ?? t.workflow_node_id) ? { nodeId: t.node_id ?? t.workflow_node_id } : {}) },
     });
   }

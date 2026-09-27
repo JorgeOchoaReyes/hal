@@ -195,6 +195,16 @@ export class RetellIntegration implements VoiceProviderIntegration {
     };
   }
 
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    const call = await this.getCall(account, externalCallId);
+    const url = asText(call.details?.recording_url);
+    if (!url) throw new Error("Retell has not made this call's recording available yet.");
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !/^(?:[a-z0-9.-]+\.)?(?:amazonaws\.com|retellai\.com)$/.test(parsed.hostname))
+      throw new Error("Retell returned an unexpected recording URL.");
+    return this.fetchImpl(url, { signal: AbortSignal.timeout(60_000) });
+  }
+
   async findInboundCall(account: ProviderAccount, opts: {
     toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
   }): Promise<string | undefined> {
@@ -277,6 +287,7 @@ function parseTranscript(call: RetellCall): Transcript | undefined {
     if (!text) continue;
     out.push({ role: t.role?.toLowerCase() === "user" ? "target" : "agent", text,
       startedAt: eventTime(t.words?.[0]?.start, base) ?? base,
+      audioStartMs: typeof t.words?.[0]?.start === "number" ? Math.max(0, t.words[0].start * 1000) : undefined,
       meta: { ...t, ...(asText(t.node_id) ? { nodeId: t.node_id } : {}) } });
   }
   return out.length ? out : undefined;

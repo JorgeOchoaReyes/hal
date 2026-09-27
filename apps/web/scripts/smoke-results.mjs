@@ -18,7 +18,7 @@ const env = { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", NODE_EN
 for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "DEEPGRAM_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"]) delete env[key];
 const judge = { id: "j1", name: "Booking checker", kind: "code", createdAt: 0, spec: { mode: "rules-only", rules: [{ kind: "regex", role: "target", pattern: "booked" }] } };
 const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [] };
-const fixture = { id: "run1", testCaseId: "tc1", status: "passed", startedAt: 0, endedAt: 1000, transcript: [{ role: "target", text: "Your appointment is booked.", startedAt: 1 }], liveChecks: [], verdict: originalVerdict,
+const fixture = { id: "run1", testCaseId: "tc1", status: "passed", startedAt: 0, endedAt: 1000, externalCallId: "fixture-call", transcript: [{ role: "target", text: "Your appointment is booked.", startedAt: 1, audioStartMs: 0 }], liveChecks: [], verdict: originalVerdict,
   recording: { status: "available", contentType: "audio/wav", bytes: 76, downloadedAt: 1 },
   context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: judge.spec, judges: [judge] } };
 const tc = { id: "tc1", name: "Current simulation", target: { name: "Mock target", transport: "mock", mock: { systemPrompt: "Say hello", greeting: "Hello" } }, scenario: { id: "s1", name: "Test", persona: { name: "New tester", systemPrompt: "Say hello" }, steps: [{ kind: "say", text: "Hello" }], maxTurns: 2 }, judge: { mode: "rules-only", rules: [{ kind: "min-turns", count: 1 }] } };
@@ -86,7 +86,7 @@ try {
   assert.deepEqual(storedCase.judge, tc.judge); assert.deepEqual(storedCase.target, tc.target);
   assert.equal(storedCase.scenario.steps[0].text, "Updated script");
   const simulationHtml = await (await fetch(base + "/simulations/tc1")).text();
-  for (const text of ["Edit scenario", "Updated script", "Bland chat"]) assert(simulationHtml.includes(text), text);
+  for (const text of ["Edit scenario", "Updated script", "Chat"]) assert(simulationHtml.includes(text), text);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: "missing", pathwayId: "fixture" })).status, 400);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: account.account.id })).status, 400);
   child.kill(); await once(child, "exit");
@@ -102,17 +102,17 @@ try {
   assert(!afterRestart.includes(secret)); assert.equal(JSON.parse(afterRestart).keys[0].id, key.id);
   const dispatch = { testCaseId: "tc-unsupported", accountId: account.account.id, phoneNumber: "+14155550123", byotKeyId: key.id, inboundAgent: { kind: "target", id: "t1" }, outboundAgent: { kind: "testing", id: "" } };
   const validKey = await post("/api/run-hosted-sim", dispatch);
-  assert.equal(validKey.status, 400); assert.match((await validKey.json()).error, /cannot be reproduced exactly/);
+  assert.equal(validKey.status, 400); assert.match((await validKey.json()).error, /Set the voice ID/);
   const wrongAccount = await post("/api/run-hosted-sim", { ...dispatch, accountId: account2.account.id });
   assert.equal(wrongAccount.status, 400); assert.match((await wrongAccount.json()).error, /Saved BYOT key not found/);
   assert.equal((await fetch(base + `/api/byot-keys?accountId=${account.account.id}&id=${key.id}`, { method: "DELETE" })).status, 200);
   assert.deepEqual((await (await fetch(base + `/api/byot-keys?accountId=${account.account.id}`)).json()).keys, []);
   const ignoredInboundKey = await post("/api/run-hosted-sim", { ...dispatch, byotKeyId: undefined });
-  assert.equal(ignoredInboundKey.status, 400); assert.match((await ignoredInboundKey.json()).error, /cannot be reproduced exactly/);
+  assert.equal(ignoredInboundKey.status, 400); assert.match((await ignoredInboundKey.json()).error, /Set the voice ID/);
   const missingOutboundKey = await post("/api/run-hosted", { agentId: agent.id, phoneNumber: "+14155550123" });
   assert.equal(missingOutboundKey.status, 400); assert.match((await missingOutboundKey.json()).error, /saved BYOT key was removed/);
   const pool = await post("/api/run-hosted-sim", { ...dispatch, byotKeyId: undefined, fromNumber: "", outboundAgent: { kind: "testing", id: agent.id } });
-  assert.equal(pool.status, 400); assert.match((await pool.json()).error, /cannot be reproduced exactly/);
+  assert.equal(pool.status, 400); assert.match((await pool.json()).error, /Set the voice ID/);
   const reversed = await post("/api/run-hosted-sim", { ...dispatch, byotKeyId: undefined, inboundAgent: { kind: "testing", id: "" }, outboundAgent: { kind: "target", id: "t1" }, configureInbound: true });
   assert.equal(reversed.status, 400); assert.match((await reversed.json()).error, /saved BYOT key was removed/);
   const agentList = await (await fetch(base + "/api/testing-agents")).text(); assert(!agentList.includes(secret)); assert(agentList.includes("Renamed tester"));
@@ -124,7 +124,7 @@ try {
   console.log("PASS: editable scenarios and agents persist, secrets are redacted, only the outbound caller key is required, and Bland chat validates inputs");
   console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();
-  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Original verdict", "Apply additional judges", "/api/results/run1/recording"]) assert(html.includes(value), value);
+  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Original verdict", "Apply additional judges", "Sync latest call data", "Audio transcript", "/api/results/run1/recording"]) assert(html.includes(value), value);
   assert.equal((await fetch(base + "/results/missing")).status, 404);
   const range = await fetch(base + "/api/results/run1/recording", { headers: { range: "bytes=0-3" } });
   assert.equal(range.status, 206); assert.equal(range.headers.get("content-range"), "bytes 0-3/76"); assert.equal(await range.text(), "RIFF");

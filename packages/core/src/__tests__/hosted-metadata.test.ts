@@ -75,6 +75,37 @@ test("Vapi, Retell and ElevenLabs retain provider metadata and expose tool activ
   }
 });
 
+test("provider timestamps become recording offsets and recording requests use each provider's API", async () => {
+  const requests: string[] = [];
+  const fetchAudio = (async (url: string | URL | Request) => {
+    requests.push(String(url));
+    if (String(url).includes("get-call")) return new Response(JSON.stringify({ recording_url:
+      "https://retellai.s3.us-west-2.amazonaws.com/call/recording.wav" }), { headers: { "content-type": "application/json" } });
+    return new Response("audio", { headers: { "content-type": "audio/mpeg" } });
+  }) as typeof fetch;
+  const vapi = new VapiIntegration(fetchAudio);
+  const retell = new RetellIntegration(fetchAudio);
+  const eleven = new ElevenLabsIntegration(fetchAudio);
+  await vapi.getRecording({ ...account, provider: "vapi" }, "call-1");
+  await retell.getRecording({ ...account, provider: "retell" }, "call-1");
+  await eleven.getRecording({ ...account, provider: "elevenlabs" }, "call-1");
+  assert.deepEqual(requests, [
+    "https://api.vapi.ai/call/call-1/mono-recording",
+    "https://api.retellai.com/v2/get-call/call-1",
+    "https://retellai.s3.us-west-2.amazonaws.com/call/recording.wav",
+    "https://api.elevenlabs.io/v1/convai/conversations/call-1/audio",
+  ]);
+  const vapiTimed = new VapiIntegration(fetchFor({ "https://api.vapi.ai/call/call-1": { status: "ended",
+    startedAt: "2026-01-01T00:00:00Z", messages: [{ role: "bot", message: "Hi", secondsFromStart: 1.25 }] } }));
+  assert.equal((await vapiTimed.getCall({ ...account, provider: "vapi" }, "call-1")).transcript?.[0].audioStartMs, 1250);
+  const retellTimed = new RetellIntegration(fetchFor({ "https://api.retellai.com/v2/get-call/call-1": { call_status: "ended",
+    start_timestamp: 1767225600000, transcript_object: [{ role: "agent", content: "Hi", words: [{ start: 0.7 }] }] } }));
+  assert.equal((await retellTimed.getCall({ ...account, provider: "retell" }, "call-1")).transcript?.[0].audioStartMs, 700);
+  const elevenTimed = new ElevenLabsIntegration(fetchFor({ "https://api.elevenlabs.io/v1/convai/conversations/call-1": { status: "done",
+    transcript: [{ role: "agent", message: "Hi", time_in_call_secs: 2.1 }] } }));
+  assert.equal((await elevenTimed.getCall({ ...account, provider: "elevenlabs" }, "call-1")).transcript?.[0].audioStartMs, 2100);
+});
+
 test("refresh saves metadata on the dispatching side, including while the call is active", async () => {
   const integration = new VapiIntegration(fetchFor({ "https://api.vapi.ai/call/call-1": {
     status: "in-progress", metadata: { key: "value" }, messages: [{ role: "bot", message: "Hello" }],

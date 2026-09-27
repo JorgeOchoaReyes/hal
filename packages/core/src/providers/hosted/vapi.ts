@@ -171,6 +171,12 @@ export class VapiIntegration implements VoiceProviderIntegration {
     };
   }
 
+  async getRecording(account: ProviderAccount, externalCallId: string): Promise<Response> {
+    return this.fetchImpl(`${this.base}/call/${encodeURIComponent(externalCallId)}/mono-recording`, {
+      headers: this.headers(account), signal: AbortSignal.timeout(60_000),
+    });
+  }
+
   async findInboundCall(account: ProviderAccount, opts: {
     toNumber: string; fromNumber?: string; startedAt: number; excludeCallId: string; externalAgentId?: string;
   }): Promise<string | undefined> {
@@ -254,7 +260,7 @@ function mapStatus(status?: string): HostedCallStatus {
 function parseVapiTranscript(call: VapiCall): Transcript | undefined {
   const msgs = (call.artifact?.messages?.length ?? 0) > (call.messages?.length ?? 0) ? call.artifact?.messages : call.messages;
   if (!msgs || msgs.length === 0) return undefined;
-  const base = Date.now();
+  const base = eventTime(asRecord(call).startedAt) ?? Date.now();
   const out: Transcript = [];
   for (const m of msgs) {
     const role = m.role?.toLowerCase();
@@ -265,6 +271,8 @@ function parseVapiTranscript(call: VapiCall): Transcript | undefined {
       role: role === "user" ? "target" : "agent",
       text,
       startedAt: eventTime(m.time, base) ?? base + (m.secondsFromStart ?? 0) * 1000,
+      audioStartMs: typeof m.secondsFromStart === "number" ? Math.max(0, m.secondsFromStart * 1000)
+        : eventTime(m.time, base) !== undefined ? Math.max(0, eventTime(m.time, base)! - base) : undefined,
       meta: { ...m },
     });
   }

@@ -21,6 +21,8 @@ export interface Utterance {
   text: string;
   /** Unix ms when the utterance started. */
   startedAt: number;
+  /** Milliseconds from the beginning of the call audio, when supplied by the provider. */
+  audioStartMs?: number;
   /** Unix ms when the utterance finished, if known. */
   endedAt?: number;
   /**

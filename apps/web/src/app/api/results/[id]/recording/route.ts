@@ -17,8 +17,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!run.context?.account && run.recording?.status !== "available") {
     const body = await req.json().catch(() => ({}));
     const account = typeof body.accountId === "string" ? getAccountRaw(body.accountId) : undefined;
-    if (!account || account.provider !== "bland") return NextResponse.json({ error: "Select the Bland account that placed this older call." }, { status: 400 });
-    saveResult({ ...run, recordingSource: { provider: "bland", accountId: account.id } });
+    if (!account) return NextResponse.json({ error: "Select the provider account that placed this older call." }, { status: 400 });
+    saveResult({ ...run, recordingSource: { provider: account.provider, accountId: account.id } });
   }
   await downloadRunRecording(id);
   const recording = getResult(id)?.recording;
@@ -41,6 +41,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     "accept-ranges": "bytes", "cache-control": "private, no-store", "x-content-type-options": "nosniff",
   };
   if (rangeHeader) headers["content-range"] = `bytes ${range.start}-${range.end}/${file.size}`;
-  if (req.nextUrl.searchParams.has("download")) headers["content-disposition"] = `attachment; filename="recording.${run.recording.contentType?.includes("wav") ? "wav" : "mp3"}"`;
+  if (req.nextUrl.searchParams.has("download")) headers["content-disposition"] = `attachment; filename="recording.${run.recording.contentType?.includes("wav") ? "wav" : run.recording.contentType?.includes("mp4") ? "m4a" : "mp3"}"`;
   return new Response(Readable.toWeb(createReadStream(path, range)) as ReadableStream, { status: rangeHeader ? 206 : 200, headers });
 }

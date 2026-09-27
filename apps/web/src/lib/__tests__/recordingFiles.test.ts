@@ -14,9 +14,14 @@ test("downloads atomically, rejects non-audio and oversized streams, and isolate
     const metadata = await persistRecording("run1", new Response(bytes, { headers: { "content-type": "audio/wav" } }));
     assert.equal(metadata.bytes, bytes.length);
     assert.deepEqual(await readFile(recordingPath("run1")), Buffer.from(bytes));
+    const opaqueWav = Buffer.from("RIFF0000WAVEdata");
+    const opaque = await persistRecording("run1", new Response(opaqueWav, { headers: { "content-type": "application/octet-stream" } }));
+    assert.equal(opaque.contentType, "audio/wav");
     assert.equal(dirname(recordingPath("../../secrets.key")), join(dir, "recordings"));
     await assert.rejects(persistRecording("run1", new Response('{"errors":[]}', { headers: { "content-type": "application/json" } })), /not returned an audio recording/);
-    assert.deepEqual(await readFile(recordingPath("run1")), Buffer.from(bytes), "failed replacement preserves original audio");
+    assert.deepEqual(await readFile(recordingPath("run1")), opaqueWav, "failed replacement preserves original audio");
+    await assert.rejects(persistRecording("run1", new Response('not audio', { headers: { "content-type": "application/octet-stream" } })), /not returned an audio recording/);
+    assert.deepEqual(await readFile(recordingPath("run1")), opaqueWav);
     await assert.rejects(persistRecording("too-big", new Response(bytes, { headers: { "content-type": "audio/wav" } }), 3), /limit/);
     await assert.rejects(persistRecording("empty", new Response(new Uint8Array(), { headers: { "content-type": "audio/wav" } })), /empty/);
     assert.equal((await readdir(join(dir, "recordings"))).length, 1, "partial downloads are cleaned up");
