@@ -213,7 +213,9 @@ export class VapiIntegration implements VoiceProviderIntegration {
     for (const r of rows as Array<Record<string, unknown>>) {
       const id = String(r.id ?? "").trim();
       if (!id) continue;
-      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent" });
+      const mode = asText(r.firstMessageMode);
+      const firstMessage = mode === "assistant-waits-for-user" ? undefined : asText(r.firstMessage);
+      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent", ...(firstMessage ? { firstMessage } : {}) });
     }
     return out;
   }

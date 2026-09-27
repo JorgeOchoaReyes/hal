@@ -14,6 +14,10 @@
     "./transcript": {
       "types": "./dist/transcript.d.ts",
       "default": "./dist/transcript.js"
+    },
+    "./structured": {
+      "types": "./dist/simulation/structured.d.ts",
+      "default": "./dist/simulation/structured.js"
     }
   },
   "files": ["dist"],

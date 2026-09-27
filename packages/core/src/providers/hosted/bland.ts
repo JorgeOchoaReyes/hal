@@ -428,7 +428,8 @@ export class BlandIntegration implements VoiceProviderIntegration {
       const id = String(r.id ?? r.pathway_id ?? r._id ?? "").trim();
       if (!id) continue;
       const name = String(r.name ?? r.pathway_name ?? id).trim();
-      out.push({ id, name, kind: "pathway" });
+      const firstMessage = asText(r.first_sentence);
+      out.push({ id, name, kind: "pathway", ...(firstMessage ? { firstMessage } : {}) });
     }
     return out;
   }
@@ -578,7 +579,7 @@ function mapStatus(call: BlandCall): HostedCallStatus {
  * would make the judge see only one side of the call.
  */
 function parseTranscript(call: BlandCall, events: Record<string, unknown>[] = []): Transcript | undefined {
-  const knownStart = eventTime(asRecord(call).start_at ?? asRecord(call).created_at);
+  const knownStart = eventTime(asRecord(call).started_at ?? asRecord(call).start_at ?? asRecord(call).created_at);
   const firstSpeech = [...events.map((event) => event.created_at), ...(call.transcripts ?? []).map((turn) => turn.start_at ?? turn.created_at)]
     .map((value) => eventTime(value)).filter((value): value is number => value !== undefined).sort((a, b) => a - b)[0];
   const callStart = knownStart ?? firstSpeech;

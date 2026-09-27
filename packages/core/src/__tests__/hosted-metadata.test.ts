@@ -28,6 +28,17 @@ test("Bland preserves full details and pathway events, including per-message nod
   assert.equal(state.trace?.[0]?.kind, "tool-call");
 });
 
+test("Bland audio offsets start when the call starts, not when its record was created", async () => {
+  const call = new BlandIntegration(fetchFor({
+    "https://api.bland.ai/v1/calls/call-start": { completed: true, created_at: "2026-01-01T00:00:00Z",
+      started_at: "2026-01-01T00:00:03Z", transcripts: [{ user: "assistant", text: "Hello" }] },
+    "https://api.bland.ai/v1/pathway_calls/call-start?v=2": [
+      { event_type: "transcript.assistant", payload: { text: "Hello" }, created_at: "2026-01-01T00:00:05Z" },
+    ],
+  }));
+  assert.equal((await call.getCall(account, "call-start")).transcript?.[0]?.audioStartMs, 2000);
+});
+
 test("Bland keeps all call transcript turns when pathway events are delayed", async () => {
   const integration = new BlandIntegration(fetchFor({
     "https://api.bland.ai/v1/calls/call-2": { completed: true, transcripts: [

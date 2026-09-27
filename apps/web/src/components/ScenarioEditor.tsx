@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Scenario } from "@hal/core";
 import { StepEditor, StructuredEditor } from "./ScenarioFields";
+import OpeningMessageWarning from "./OpeningMessageWarning";
 
-export default function ScenarioEditor({ testCaseId, initial }: { testCaseId: string; initial: Scenario }) {
+export default function ScenarioEditor({ testCaseId, initial, mainMessage }: { testCaseId: string; initial: Scenario; mainMessage?: string }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(initial);
@@ -33,6 +34,7 @@ export default function ScenarioEditor({ testCaseId, initial }: { testCaseId: st
         <label className="field full-width"><span className="field-label">Scenario description</span><textarea rows={2} value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
       </div>
       {draft.structured ? <StructuredEditor test={draft.structured} setTest={(structured) => setDraft({ ...draft, structured })} /> : <StepEditor steps={draft.steps} setSteps={(steps) => setDraft({ ...draft, steps })} />}
+      <OpeningMessageWarning scenario={draft} mainMessage={mainMessage} />
       <div className="action-bar"><span className="muted">Save before starting a new run.</span><div className="button-row"><button className="secondary" onClick={() => { setEditing(false); setMessage(""); }}>Cancel</button><button onClick={save}>{busy ? "Saving…" : "Save scenario"}</button></div></div>
     </fieldset> : <div className="card">
       <h3>{initial.persona.name}</h3><p className="muted">{initial.persona.systemPrompt}</p>

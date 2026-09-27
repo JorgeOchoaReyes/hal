@@ -605,6 +605,9 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-right { grid-column: 2; border-right: 3px solid var(--target); }
 .activity-wide { grid-column: 1 / -1; }
 .activity-who { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.activity-speech-button { display: block; width: 100%; padding: 0; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 4px; }
+.activity-speech-button:hover, .activity-speech-button:focus-visible { background: var(--accent-dim); filter: none; }
+.activity-time { display: inline-block; margin-top: 8px; color: var(--muted); font-size: 12px; }
 .activity-left .activity-who { color: var(--agent); }
 .activity-right .activity-who { color: var(--target); }
 .activity-active { border-color: var(--accent); background: var(--accent-dim); }
@@ -612,6 +615,8 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-message-meta > summary { font-size: 12px; color: var(--muted); }
 .hal-check-list { display: grid; gap: 10px; }
 .hal-check-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.opening-warning { border-color: var(--warn); background: var(--panel-2); }
+.opening-warning p { margin-bottom: 0; }
 @media (max-width: 900px) { .run-agents, .judge-cards { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .activity-row { display: block; } .activity-entry { margin-bottom: 8px; } .activity-left { margin-right: 10%; } .activity-right { margin-left: 10%; } }
 

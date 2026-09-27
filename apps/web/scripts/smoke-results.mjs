@@ -89,7 +89,7 @@ try {
   assert.deepEqual(storedCase.judge, tc.judge); assert.deepEqual(storedCase.target, tc.target);
   assert.equal(storedCase.scenario.steps[0].text, "Updated script");
   const simulationHtml = await (await fetch(base + "/simulations/tc1")).text();
-  for (const text of ["Edit scenario", "Updated script", 'aria-label="Test channel"', ">Chat</button>"]) assert(simulationHtml.includes(text), text);
+  for (const text of ["Edit scenario", "Updated script", 'aria-label="Test channel"', ">Chat</button>", "Both agents are set to speak first"]) assert(simulationHtml.includes(text), text);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: "missing", pathwayId: "fixture" })).status, 400);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: account.account.id })).status, 400);
   child.kill(); await once(child, "exit");

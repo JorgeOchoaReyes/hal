@@ -315,6 +315,8 @@ export interface TargetAgent {
   name: string;
   /** Provider voice ID used by this agent; fallback when HAL cannot read its remote configuration. */
   voiceId?: string;
+  /** Opening line configured on the main agent, used to detect competing openers in simulations. */
+  firstMessage?: string;
   target: Target;
   description?: string;
   /**

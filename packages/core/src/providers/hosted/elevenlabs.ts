@@ -192,7 +192,9 @@ export class ElevenLabsIntegration implements VoiceProviderIntegration {
     for (const r of rows as Array<Record<string, unknown>>) {
       const id = String(r.agent_id ?? "").trim();
       if (!id) continue;
-      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent" });
+      const config = asRecord(r.conversation_config);
+      const firstMessage = asText(asRecord(config.agent).first_message);
+      out.push({ id, name: String(r.name ?? id).trim(), kind: "agent", ...(firstMessage ? { firstMessage } : {}) });
     }
     return out;
   }
