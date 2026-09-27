@@ -5,6 +5,7 @@ import type { TestingAgentSpec } from "@hal/core";
 import AgentOutboundKey, { type OutboundKeyValue } from "./AgentOutboundKey";
 import NumberPicker from "./NumberPicker";
 import Modal from "./Modal";
+import ImportTestingAgent from "./ImportTestingAgent";
 
 interface Account {
   id: string;
@@ -13,6 +14,7 @@ interface Account {
   createdAt: number;
 }
 interface Agent {
+  imported?: boolean;
   spec?: TestingAgentSpec;
   hasEncryptedKey?: boolean;
   byotKeyId?: string;
@@ -31,6 +33,7 @@ export default function TestingAgentsManager() {
   const [error, setError] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [provisionOpen, setProvisionOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const [a, g] = await Promise.all([
@@ -57,13 +60,13 @@ export default function TestingAgentsManager() {
         <div className="muted" style={{ fontSize: 13 }}>
           {agents.length} testing agent{agents.length === 1 ? "" : "s"}
         </div>
-        <button
+        <div className="button-row"><button className="secondary" disabled={accounts.length === 0} onClick={() => setImportOpen(true)}>Import existing testing agent</button><button
           onClick={() => setProvisionOpen(true)}
           disabled={accounts.length === 0}
           title={accounts.length === 0 ? "Connect a provider account first" : "Create a testing agent"}
         >
           + New testing agent
-        </button>
+        </button></div>
       </div>
 
       {accounts.length === 0 && (
@@ -82,7 +85,8 @@ export default function TestingAgentsManager() {
         </div>
       )}
 
-      {editingAgent && <Modal open onClose={() => setEditingAgent(null)} title="Edit testing agent" wide><ProvisionAgent key={editingAgent.id} existing={editingAgent} accounts={accounts} onCancel={() => setEditingAgent(null)} onDone={() => { setEditingAgent(null); refresh(); }} /></Modal>}
+      {editingAgent && <Modal open onClose={() => setEditingAgent(null)} title="Edit testing agent" wide>{editingAgent.imported ? <ImportTestingAgent existing={editingAgent} accounts={accounts} onCancel={() => setEditingAgent(null)} onDone={() => { setEditingAgent(null); refresh(); }} /> : <ProvisionAgent key={editingAgent.id} existing={editingAgent} accounts={accounts} onCancel={() => setEditingAgent(null)} onDone={() => { setEditingAgent(null); refresh(); }} />}</Modal>}
+      {importOpen && <Modal open onClose={() => setImportOpen(false)} title="Import existing testing agent" wide><ImportTestingAgent accounts={accounts} onCancel={() => setImportOpen(false)} onDone={() => { setImportOpen(false); refresh(); }} /></Modal>}
       <Modal
         open={provisionOpen}
         onClose={() => setProvisionOpen(false)}
@@ -395,6 +399,7 @@ function AgentRow({ agent, account, onEdit }: { agent: Agent; account?: Account;
       <div className="card-row">
         <div>
           <strong>{agent.name}</strong> <span className="pill telephony">{agent.provider}</span>
+          {agent.imported && <span className="tag">Imported</span>}
           <div className="muted mono" style={{ fontSize: 12 }}>
             agent {agent.externalAgentId} · {account?.label ?? agent.accountId}
           </div>

@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     if (!body.configureInbound || !integration.configureInbound) {
       return NextResponse.json({ error: "Confirm that HAL may configure the dedicated inbound test number. This provider must support inbound configuration." }, { status: 400 });
     }
-    if (account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
+    if (!chosen?.imported && account.provider === "bland" && !testCase.scenario.structured && !testCase.scenario.steps?.length) {
       return NextResponse.json({ error: "Inbound Bland testing requires a structured simulation so HAL can assign its pathway to the test number." }, { status: 400 });
     }
     if (!targetAgent.externalAgentId) {
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
   };
 
   // Validate before provisioning so unsupported steps cannot become a persona-only call.
-  if (spec.steps?.length) {
+  if (!chosen?.imported && spec.steps?.length) {
     if (account.provider !== "bland") return NextResponse.json({ error: "Hosted linear scripts currently require Bland. Use a structured simulation for this provider. No call was placed." }, { status: 400 });
     try { integration.buildFlowConfig(spec); }
     catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }
@@ -148,14 +148,13 @@ export async function POST(req: NextRequest) {
   }
   if (inboundKey) inboundRuns.add(inboundKey);
   try {
-    // The testing agent side is always reconfigured to match this simulation
-    // before the call — whether it's the one waiting or the one dialing.
-    const { externalAgentId } = await integration.createTestingAgent(account, spec);
-    const agent: HostedTestingAgent = {
+    // Linked testers retain their provider configuration. Only HAL-managed
+    // testers are provisioned from the simulation's saved script.
+    const agent: HostedTestingAgent = chosen?.imported ? chosen : {
       id: chosen?.id ?? id("agent"),
       accountId: account.id,
       provider: account.provider,
-      externalAgentId,
+      externalAgentId: (await integration.createTestingAgent(account, spec)).externalAgentId,
       name: spec.name,
       createdAt: chosen?.createdAt ?? Date.now(),
       spec,
@@ -163,7 +162,7 @@ export async function POST(req: NextRequest) {
       byotKeyId: chosen?.byotKeyId,
       byotAccountId: chosen?.byotAccountId,
     };
-    upsertAgent(agent);
+    if (!chosen?.imported) upsertAgent(agent);
 
     if (outboundIsTarget) await integration.configureInbound!(account, agent, body.phoneNumber);
 

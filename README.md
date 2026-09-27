@@ -143,3 +143,12 @@ return them in agent lists. Only the agent placing a phone call supplies its key
 an inbound agent’s key is ignored. Dispatch overrides take precedence, followed
 by the outbound agent’s setting and the provider account default. A removed saved
 key produces an actionable error when its assigned agent next calls outbound.
+
+Use **Import existing testing agent** on Testing agents to add a tester you
+already built. Choose a provider account and an existing agent (a pathway for
+Bland), or paste its ID, then give it a name in HAL. Importing only saves a local
+reference; it does not create or modify the provider agent. Duplicate imports on
+the same account are rejected. Imported testers retain their provider configuration
+for direct and simulation calls. Simulation judges still score the call, but the
+saved simulation script does not replace the imported tester. Edit its behavior
+on the provider; use **Edit agent** in HAL for its name, ID, or outbound credentials.

@@ -64,6 +64,8 @@ export interface TestingAgentSpec {
 }
 
 export interface HostedTestingAgent {
+  /** Linked provider agent: dispatch must reuse it rather than provision a new one. */
+  imported?: boolean;
   byotKeyId?: string;
   byotAccountId?: string;
   id: string; // HAL id

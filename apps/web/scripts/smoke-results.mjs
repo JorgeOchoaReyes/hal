@@ -55,7 +55,17 @@ try {
   assert.equal((await post("/api/byot-keys", { accountId: account.account.id, name: "Main Twilio", encryptedKey: secret })).status, 409);
   assert.deepEqual((await (await fetch(base + `/api/byot-keys?accountId=${account2.account.id}`)).json()).keys, []);
   assert.equal((await fetch(base + `/api/byot-keys?accountId=${account2.account.id}&id=${key.id}`, { method: "DELETE" })).status, 404);
-  // Importing an existing pathway does not call the provider; exercise agent editing locally.
+  // Explicit import saves only a local reference and never provisions remotely.
+  const importBody = { importExisting: true, accountId: account.account.id, name: "Imported tester", externalAgentId: "existing-tester-pathway" };
+  const linkedResponse = await post("/api/testing-agents", importBody);
+  assert.equal(linkedResponse.status, 201);
+  const linked = (await linkedResponse.json()).agent;
+  assert.equal(linked.imported, true);
+  assert.equal(linked.spec.pathwayId, importBody.externalAgentId);
+  assert.equal((await post("/api/testing-agents", importBody)).status, 409);
+  assert.equal((await post("/api/testing-agents", { ...importBody, agentId: linked.id, name: "Renamed imported tester" })).status, 200);
+  assert((await (await fetch(base + "/testing-agents")).text()).includes("Import existing testing agent"));
+  // The legacy pathway field also works; exercise agent editing locally.
   const imported = await post("/api/testing-agents", { accountId: account.account.id, name: "Editable tester", systemPrompt: "Tester", pathwayId: "fixture-pathway", encryptedKey: secret });
   assert.equal(imported.status, 201);
   const importedText = await imported.text(); assert(!importedText.includes(secret));
@@ -106,6 +116,11 @@ try {
   const reversed = await post("/api/run-hosted-sim", { ...dispatch, byotKeyId: undefined, inboundAgent: { kind: "testing", id: "" }, outboundAgent: { kind: "target", id: "t1" }, configureInbound: true });
   assert.equal(reversed.status, 400); assert.match((await reversed.json()).error, /saved BYOT key was removed/);
   const agentList = await (await fetch(base + "/api/testing-agents")).text(); assert(!agentList.includes(secret)); assert(agentList.includes("Renamed tester"));
+  const linkedAfterRestart = JSON.parse(agentList).agents.find((a) => a.id === linked.id);
+  assert.equal(linkedAfterRestart.imported, true);
+  assert.equal(linkedAfterRestart.name, "Renamed imported tester");
+  assert.equal(linkedAfterRestart.externalAgentId, importBody.externalAgentId);
+  console.log("PASS: existing tester import, duplicate rejection, editing and restart persistence without provider provisioning");
   console.log("PASS: editable scenarios and agents persist, secrets are redacted, only the outbound caller key is required, and Bland chat validates inputs");
   console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();

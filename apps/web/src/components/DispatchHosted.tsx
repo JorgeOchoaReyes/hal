@@ -11,6 +11,7 @@ interface Account {
   label: string;
 }
 interface TestingAgentLite {
+  imported?: boolean;
   accountId: string;
   id: string;
   name: string;
@@ -247,10 +248,11 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
             </div>}
             {keyError && <p role="alert" className="error-text">{keyError}</p>}
           </details>}
-          {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with this scenario. This replaces its current pathway and stays set after the run.</span></label>}
+          {chosenTesting?.imported && <p className="field-help">This imported tester uses its existing provider configuration. The saved scenario script is not applied; this simulation’s judges still score the call.</p>}
+          {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with {chosenTesting?.imported ? "the imported tester’s pathway" : "this scenario"}. This replaces its current pathway and stays set after the run.</span></label>}
           {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
         </fieldset>
-        <div className="action-bar"><span className="field-help">Uses the saved scenario below. This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
+        <div className="action-bar"><span className="field-help">{chosenTesting?.imported ? "Uses the imported tester." : "Uses the saved scenario below."} This places a real phone call.</span><button onClick={dispatch} disabled={busy || keyBusy || keysLoading || !phone.trim() || invalidPair || (callerIdMode === "custom" && !fromPhone.trim()) || (outboundIsTarget && !configureInbound)}>{busy ? "Call in progress…" : "Place test call"}</button></div>
       </>}
       {mode === "call" && err && <div className="muted" style={{ color: "var(--fail)", marginTop: 8 }}>{err}</div>}
       {mode === "call" && result && (
