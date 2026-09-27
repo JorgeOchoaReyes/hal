@@ -16,7 +16,8 @@ export function SyncSavedRun({ runId }: { runId: string }) {
       const response = await fetch(`/api/results/${encodeURIComponent(runId)}/sync`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not sync this call.");
-      setMessage(data.receiverWarning ?? (data.state === "ended" ? "Provider details, transcript, and recording checked." : "Provider details updated. The call is still active or processing."));
+      setMessage([data.state === "ended" ? "Provider details and transcript updated." : "Provider details updated. The call is still active or processing.",
+        data.recordingWarning, data.receiverWarning].filter(Boolean).join(" "));
       router.refresh();
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }

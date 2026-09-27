@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getIntegration, type TestResult, type ProviderAccount } from "@hal/core";
+import { computeMetrics, deriveLabels, getIntegration, type TestResult, type ProviderAccount } from "@hal/core";
 import { getAccountRaw, getResult, listAccounts, saveResult } from "@/lib/store";
 import { downloadRunRecording } from "@/lib/runRecordings";
 
@@ -37,6 +37,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       updated.transcript = dispatchedSide === "targetAgent"
         ? primary.transcript.map((turn) => ({ ...turn, role: turn.role === "agent" ? "target" as const : turn.role === "target" ? "agent" as const : turn.role }))
         : primary.transcript;
+      if (updated.metrics) {
+        updated.metrics = computeMetrics(updated);
+        updated.labels = deriveLabels(updated.metrics);
+      }
     }
     const receiver = run.context?.[otherSide];
     const known = run.providerCalls?.[otherSide];
@@ -69,9 +73,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       } catch (error) { receiverWarning = `Receiving call could not be refreshed: ${(error as Error).message}`; }
     }
     saveResult(updated);
+    const previousAudio = updated.recording?.downloadedAt;
     if (primary.status === "ended" && integration.getRecording) await downloadRunRecording(id, true);
     const latest = getResult(id)!;
-    return NextResponse.json({ state: primary.status, recording: latest.recording, receiverWarning, result: latest });
+    const recordingWarning = primary.status === "ended" && integration.getRecording
+      && latest.recording?.downloadedAt === previousAudio
+      ? "The provider has no newer recording yet. Any previously saved audio was kept." : undefined;
+    return NextResponse.json({ state: primary.status, recording: latest.recording, receiverWarning, recordingWarning, result: latest });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 502 });
   } finally { active.delete(id); }

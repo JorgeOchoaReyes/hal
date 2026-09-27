@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 test("history sync refreshes both calls and audio while preserving the original verdict", async () => {
   const verdict = { passed: false, summary: "Original evaluation", score: 0, checks: [] };
   let saved: any = { id: "run1", status: "failed", externalCallId: "outbound", startedAt: 1000,
-    transcript: [{ role: "agent", text: "old", startedAt: 1000 }], verdict, evaluations: [{ id: "judge2" }],
+    transcript: [{ role: "agent", text: "old", startedAt: 1000 }], verdict, metrics: { agentTurns: 1 }, evaluations: [{ id: "judge2" }],
     trace: [{ side: "testingAgent", kind: "event", label: "old" }],
     context: { account: { id: "vapi-account", provider: "vapi" },
       testingAgent: { direction: "outbound", phoneNumber: "+14155550101" },
@@ -30,7 +30,9 @@ test("history sync refreshes both calls and audio while preserving the original 
   const context = { exports: {} as { POST: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response> },
     require: (name: string) => {
       if (name === "next/server") return { NextResponse: Response };
-      if (name === "@hal/core") return { getIntegration: (id: string) => integrations[id] };
+      if (name === "@hal/core") return { getIntegration: (id: string) => integrations[id],
+        computeMetrics: (run: any) => ({ agentTurns: run.transcript.length, latestText: run.transcript[0].text }),
+        deriveLabels: (metrics: any) => [{ text: metrics.latestText }] };
       if (name === "@/lib/store") return { getResult: () => saved, saveResult: (value: unknown) => { saved = value; },
         listAccounts: () => [{ id: "retell-account", provider: "retell" }],
         getAccountRaw: (id: string) => ({ id, provider: id === "vapi-account" ? "vapi" : "retell" }) };
@@ -45,6 +47,8 @@ test("history sync refreshes both calls and audio while preserving the original 
   assert.equal(saved.evaluations.length, 1);
   assert.equal(saved.transcript[0].text, "new");
   assert.equal(saved.transcript[0].audioStartMs, 700);
+  assert.equal(saved.metrics.latestText, "new");
+  assert.equal(saved.labels[0].text, "new");
   assert.equal(saved.providerCalls.testingAgent.details.metadata.final, true);
   assert.equal(saved.providerCalls.targetAgent.details.analysis.success, true);
   assert.equal(saved.trace.map((event: any) => event.side).join(","), "testingAgent,targetAgent");
