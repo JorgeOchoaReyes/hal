@@ -240,7 +240,8 @@ export class RetellIntegration implements VoiceProviderIntegration {
     for (const r of rows as Array<Record<string, unknown>>) {
       const id = String(r.agent_id ?? "").trim();
       if (!id) continue;
-      out.push({ id, name: String(r.agent_name ?? id).trim(), kind: "agent" });
+      const firstMessage = asText(r.begin_message);
+      out.push({ id, name: String(r.agent_name ?? id).trim(), kind: "agent", ...(firstMessage ? { firstMessage } : {}) });
     }
     return out;
   }

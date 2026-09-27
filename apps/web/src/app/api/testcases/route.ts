@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listTestCases, upsertTestCase } from "@/lib/store";
+import { getSimulationFolder, listTestCases, upsertTestCase } from "@/lib/store";
 import type { TestCase } from "@hal/core";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   if (!body?.id || !body?.scenario || !body?.target || !body?.judge) {
     return NextResponse.json({ error: "Invalid test case" }, { status: 400 });
   }
+  if (body.folderId && !getSimulationFolder(body.folderId)) return NextResponse.json({ error: "Unknown simulation folder" }, { status: 400 });
   upsertTestCase({ ...body, createdAt: body.createdAt ?? Date.now() });
   return NextResponse.json({ testCase: body }, { status: 201 });
 }

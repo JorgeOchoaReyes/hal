@@ -18,10 +18,12 @@ const env = { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", NODE_EN
 for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "DEEPGRAM_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"]) delete env[key];
 const judge = { id: "j1", name: "Booking checker", kind: "code", createdAt: 0, spec: { mode: "rules-only", rules: [{ kind: "regex", role: "target", pattern: "booked" }] } };
 const secondJudge = { id: "j2", name: "Courtesy checker", kind: "code", createdAt: 0, spec: { mode: "rules-only", rules: [{ kind: "transcript-contains", needle: "please" }] } };
-const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [] };
+const csatMetric = { id: "csat", name: "CSAT", description: "Customer satisfaction", outputType: "rating" };
+const csatJudge = { id: "j3", name: "CSAT judge", kind: "llm", createdAt: 0, spec: { metrics: [csatMetric] } };
+const originalVerdict = { passed: true, score: 1, summary: "Original verdict", checks: [], metricResults: [{ id: "csat", name: "CSAT", outputType: "rating", value: 82, passed: null, reasoning: "Helpful response" }] };
 const fixture = { id: "run1", testCaseId: "tc1", status: "passed", startedAt: 0, endedAt: 1000, externalCallId: "fixture-call", transcript: [{ role: "target", text: "Your appointment is booked.", startedAt: 1, audioStartMs: 0 }], liveChecks: [], verdict: originalVerdict,
   recording: { status: "available", contentType: "audio/wav", bytes: 76, downloadedAt: 1 },
-  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: judge.spec, judges: [judge, secondJudge] } };
+  context: { simulationName: "Historical simulation", transport: "bland", testingAgent: { name: "Historical tester", provider: "bland", pathwayId: "tester-pathway-fixture", pathwaySource: "dispatch", executionMode: "pathway", configuration: { steps: [{ kind: "say", text: "Hi" }, { kind: "hangup" }] } }, targetAgent: { name: "Historical target", provider: "bland", pathwayId: "inbound-pathway-fixture", pathwaySource: "inbound-number" }, judge: { mode: "all", rules: [...judge.spec.rules, ...secondJudge.spec.rules], metrics: [csatMetric] }, judges: [judge, secondJudge, csatJudge] } };
 const tc = { id: "tc1", name: "Current simulation", target: { name: "Mock target", transport: "mock", mock: { systemPrompt: "Say hello", greeting: "Hello" } }, scenario: { id: "s1", name: "Test", persona: { name: "New tester", systemPrompt: "Say hello" }, steps: [{ kind: "say", text: "Hello" }], maxTurns: 2 }, judge: { mode: "rules-only", rules: [{ kind: "min-turns", count: 1 }] } };
 await writeFile(join(data, "results.json"), JSON.stringify([fixture]));
 await writeFile(join(data, "judges.json"), JSON.stringify([judge]));
@@ -78,6 +80,16 @@ try {
   const patchTarget = await fetch(base + "/api/targets/t1", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Editable main agent", encryptedKey: secret, byotKeyId: key.id, byotAccountId: account.account.id, externalAgentId: "fixture-target-pathway" }) });
   assert.equal(patchTarget.status, 200); assert(!(await patchTarget.text()).includes(secret));
   assert(!(await readFile(join(data, "targets.json"), "utf8")).includes(secret));
+  const folderResponse = await post("/api/simulation-folders", { name: "Support calls" });
+  assert.equal(folderResponse.status, 201);
+  const folder = (await folderResponse.json()).folder;
+  assert.equal((await post("/api/simulation-folders", { name: "support calls" })).status, 409);
+  const moveToFolder = await fetch(base + "/api/testcases/tc1", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ folderId: folder.id }) });
+  assert.equal(moveToFolder.status, 200);
+  assert.equal((await (await fetch(base + "/api/testcases/tc1")).json()).testCase.folderId, folder.id);
+  const renamedFolder = await fetch(base + `/api/simulation-folders/${folder.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Priority support" }) });
+  assert.equal(renamedFolder.status, 200);
+  assert.equal((await renamedFolder.json()).folder.name, "Priority support");
   const editedScenario = { ...tc.scenario, steps: [{ kind: "say", text: "Updated script" }, { kind: "hangup" }] };
   const patchScenario = (body) => fetch(base + "/api/testcases/tc1", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   assert.equal((await patchScenario({ scenario: editedScenario, expectedScenario: tc.scenario })).status, 200);
@@ -86,8 +98,9 @@ try {
   const storedCase = JSON.parse(await readFile(join(data, "testcases.json"), "utf8")).find((r) => r.id === "tc1");
   assert.deepEqual(storedCase.judge, tc.judge); assert.deepEqual(storedCase.target, tc.target);
   assert.equal(storedCase.scenario.steps[0].text, "Updated script");
+  assert.equal(storedCase.folderId, folder.id);
   const simulationHtml = await (await fetch(base + "/simulations/tc1")).text();
-  for (const text of ["Edit scenario", "Updated script", 'aria-label="Test channel"', ">Chat</button>"]) assert(simulationHtml.includes(text), text);
+  for (const text of ["Edit scenario", "Updated script", 'aria-label="Test channel"', ">Chat</button>", "Both agents are set to speak first"]) assert(simulationHtml.includes(text), text);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: "missing", pathwayId: "fixture" })).status, 400);
   assert.equal((await post("/api/run-bland-chat", { testCaseId: "tc1", accountId: account.account.id })).status, 400);
   child.kill(); await once(child, "exit");
@@ -99,6 +112,12 @@ try {
     if (Date.now() > restartDeadline || child.exitCode !== null) throw new Error("Restart failed: " + logs);
     await new Promise((r) => setTimeout(r, 100));
   }
+  assert.equal((await (await fetch(base + "/api/simulation-folders")).json()).folders[0].name, "Priority support");
+  assert.equal((await (await fetch(base + "/api/testcases/tc1")).json()).testCase.folderId, folder.id);
+  const deleteFolder = await fetch(base + `/api/simulation-folders/${folder.id}`, { method: "DELETE" });
+  assert.equal(deleteFolder.status, 200);
+  assert.equal((await (await fetch(base + "/api/testcases/tc1")).json()).testCase.folderId, undefined);
+  assert.equal((await (await fetch(base + "/api/simulation-folders")).json()).folders.length, 0);
   const afterRestart = await (await fetch(base + `/api/byot-keys?accountId=${account.account.id}`)).text();
   assert(!afterRestart.includes(secret)); assert.equal(JSON.parse(afterRestart).keys[0].id, key.id);
   const dispatch = { testCaseId: "tc1", accountId: account.account.id, phoneNumber: "+14155550123", byotKeyId: key.id, inboundAgent: { kind: "target", id: "t1" }, outboundAgent: { kind: "testing", id: "" } };
@@ -125,11 +144,16 @@ try {
   assert.equal(linkedAfterRestart.externalAgentId, importBody.externalAgentId);
   console.log("PASS: existing tester import, duplicate rejection, editing and restart persistence without provider provisioning");
   console.log("PASS: editable scenarios and agents persist, secrets are redacted, only the outbound caller key is required, and Bland chat validates inputs");
+  console.log("PASS: folders persist, simulations move between folders, and deleting a folder keeps its simulations");
   console.log("PASS: saved BYOT keys are encrypted, redacted, account-scoped, persistent across restart, and removable");
   const html = await (await fetch(base + "/results/run1")).text();
-  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Courtesy checker", "Original verdict", "Apply additional judges", "Sync latest call data", "Transcript and activity", "Expected message match", "Provider metadata JSON", "Metadata to view", "HAL testing agent", "Main agent", "Both agents and full run", "Copy JSON", "/api/results/run1/recording"]) assert(html.includes(value), value);
+  for (const value of ["Historical tester", "Historical target", "tester-pathway-fixture", "inbound-pathway-fixture", "Bland pathway ID", "Booking checker", "Courtesy checker", "CSAT judge", "Original verdict", "Apply additional judges", "Sync latest call data", "Transcript and activity", "Expected message match", "Provider metadata JSON", "Metadata to view", "HAL testing agent", "Main agent", "Both agents and full run", "Copy JSON", "/api/results/run1/recording"]) assert(html.includes(value), value);
   assert(html.includes('class="judge-cards"'));
-  assert.equal((html.match(/<article class="card"><p class="field-label">Attached judge/g) ?? []).length, 2);
+  assert.equal((html.match(/<article class="card"><p class="field-label">Attached judge/g) ?? []).length, 3);
+  const overallCard = html.split("<h3>Overall verdict</h3>")[1].split("</article>")[0];
+  const csatCard = html.split("<h3>CSAT judge</h3>")[1].split("</article>")[0];
+  assert(!overallCard.includes("Helpful response"));
+  assert(csatCard.includes("Helpful response"));
   assert(!html.includes('aria-label="Audio transcript"'));
   assert.equal((await fetch(base + "/results/missing")).status, 404);
   const range = await fetch(base + "/api/results/run1/recording", { headers: { range: "bytes=0-3" } });

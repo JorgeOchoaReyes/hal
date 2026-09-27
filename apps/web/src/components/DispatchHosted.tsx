@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { Scenario } from "@hal/core";
+import { testingOpeningMessage } from "@/lib/openingMessages";
 import HostedChatRun from "./HostedChatRun";
 import NumberPicker from "./NumberPicker";
+import OpeningMessageWarning from "./OpeningMessageWarning";
 import { useSecretVisibility } from "./SecretVisibilityContext";
 
 interface Account {
@@ -29,6 +32,8 @@ interface TestingAgentLite extends CallerCredential {
 interface TargetAgentLite extends CallerCredential {
   id: string;
   name: string;
+  provider?: string;
+  firstMessage?: string;
   externalAgentId?: string;
   target: { transport: string; phoneNumber?: string };
 }
@@ -60,7 +65,7 @@ function parse(value: string): { kind: AgentKind; id: string } {
  * testing agent (the one HAL manages and judges through) and the other a
  * saved agent under test.
  */
-export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
+export default function DispatchHosted({ testCaseId, scenario }: { testCaseId: string; scenario: Scenario }) {
   const router = useRouter();
   const { visible: credentialsVisible } = useSecretVisibility();
   const [mode, setMode] = useState<"call" | "chat">("call");
@@ -68,6 +73,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const [accountId, setAccountId] = useState("");
   const [testingAgents, setTestingAgents] = useState<TestingAgentLite[]>([]);
   const [targets, setTargets] = useState<TargetAgentLite[]>([]);
+  const [remoteOpeners, setRemoteOpeners] = useState<Record<string, string>>({});
   const [inbound, setInbound] = useState<AgentValue>("target:");
   const [outbound, setOutbound] = useState<AgentValue>(AUTO);
   const [phone, setPhone] = useState("");
@@ -126,6 +132,8 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const inboundParsed = parse(inbound);
   const outboundParsed = parse(outbound);
   const inboundTarget = inboundParsed.kind === "target" ? targets.find((t) => t.id === inboundParsed.id) : undefined;
+  const selectedTarget = targets.find((t) => t.id === (inboundParsed.kind === "target" ? inboundParsed.id : outboundParsed.id));
+  const mainMessage = selectedTarget?.firstMessage || (selectedTarget?.externalAgentId ? remoteOpeners[`${selected}:${selectedTarget.externalAgentId}`] : undefined);
 
 
   // The phone field is always the INBOUND agent's own number — the one the
@@ -153,6 +161,18 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
   const invalidPair = sameAgent || bothTesting || bothTarget || accountMismatch;
   const selectedAccount = accounts.find((a) => a.id === selected);
   const isBland = selectedAccount?.provider === "bland";
+  useEffect(() => {
+    if (!selected || !testingOpeningMessage(scenario) || !selectedTarget?.externalAgentId || selectedTarget.firstMessage ||
+      (selectedTarget.provider && selectedTarget.provider !== selectedAccount?.provider)) return;
+    let live = true;
+    fetch(`/api/testing-agents/remote?accountId=${encodeURIComponent(selected)}`)
+      .then((response) => response.json())
+      .then((data: { agents?: Array<{ id: string; firstMessage?: string }> }) => {
+        if (live) setRemoteOpeners(Object.fromEntries((data.agents ?? []).filter((agent) => agent.firstMessage).map((agent) => [`${selected}:${agent.id}`, agent.firstMessage!])));
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [selected, scenario, selectedTarget?.externalAgentId, selectedTarget?.firstMessage, selectedTarget?.provider, selectedAccount?.provider]);
   const outboundIsTarget = outboundParsed.kind === "target";
   const caller = outboundIsTarget
     ? targets.find((a) => a.id === outboundParsed.id)
@@ -291,6 +311,7 @@ export default function DispatchHosted({ testCaseId }: { testCaseId: string }) {
             </section>
           </div>
           {chosenTesting && <p className="field-help">HAL applies this simulation’s script and personality to the selected tester before the call. Its provider graph keeps the new script afterward. This simulation’s judges score the call.</p>}
+          <OpeningMessageWarning scenario={scenario} mainMessage={mainMessage} />
           {outboundIsTarget && <label className="confirmation-row"><input type="checkbox" checked={configureInbound} onChange={(e) => setConfigureInbound(e.target.checked)} /><span>Configure the dedicated receiving test number with {chosenTesting?.imported ? "the imported tester’s pathway" : "this scenario"}. This replaces its current pathway and stays set after the run.</span></label>}
           {invalidPair && <p role="alert" className="error-text">Choose one testing agent from this account and one agent under test.</p>}
         </fieldset>

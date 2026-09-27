@@ -33,6 +33,7 @@ interface TargetAgent {
   byotAccountId?: string;
   externalAgentId?: string;
   voiceId?: string;
+  firstMessage?: string;
   target: {
     transport: Transport;
     name: string;
@@ -162,6 +163,7 @@ interface RemoteAgent {
   id: string;
   name: string;
   kind: string;
+  firstMessage?: string;
 }
 
 function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
@@ -175,6 +177,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
   const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState("");
   const [voiceId, setVoiceId] = useState("");
+  const [firstMessage, setFirstMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -230,6 +233,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
     setName(agent.name);
     setDescription(`Imported ${agent.kind} "${agent.name}" (${agent.id}) from ${acct?.label ?? acct?.provider}.`);
     setExternalAgentId(agent.id);
+    setFirstMessage(agent.firstMessage ?? "");
   }
 
   /** Attach a dialable number from the same account — the address to call. */
@@ -259,6 +263,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
           ...outboundKey,
           externalAgentId: externalAgentId.trim() || undefined,
           voiceId: voiceId.trim() || undefined,
+          firstMessage: firstMessage.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -270,6 +275,7 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
       setOutboundKey({});
       setExternalAgentId("");
       setVoiceId("");
+      setFirstMessage("");
       onDone();
     } catch (e) {
       setErr((e as Error).message);
@@ -456,6 +462,11 @@ function AddTarget({ onDone, onClose }: { onDone: () => void; onClose: () => voi
         <input value={voiceId} onChange={(e) => setVoiceId(e.target.value)} placeholder="Voice ID used by this agent" className="mono" />
       </div>
       <div className="field">
+        <span className="field-label">Main agent opening message (if configured)</span>
+        <input value={firstMessage} onChange={(e) => setFirstMessage(e.target.value)} placeholder="Leave blank if this agent waits for the caller" />
+        <span className="muted" style={{ fontSize: 12 }}>HAL checks this against the simulation’s opening line before a run.</span>
+      </div>
+      <div className="field">
         <span className="field-label">Description (optional)</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Production booking bot" />
       </div>
@@ -546,6 +557,7 @@ function EditTargetModal({
   const [outboundKey, setOutboundKey] = useState<OutboundKeyValue>({});
   const [externalAgentId, setExternalAgentId] = useState(target.externalAgentId ?? "");
   const [voiceId, setVoiceId] = useState(target.voiceId ?? "");
+  const [firstMessage, setFirstMessage] = useState(target.firstMessage ?? "");
   const [judges, setJudges] = useState<SavedJudge[]>([]);
   const [judgeIds, setJudgeIds] = useState<Set<string>>(new Set(target.judgeIds ?? []));
   const [busy, setBusy] = useState(false);
@@ -584,6 +596,7 @@ function EditTargetModal({
           ...outboundKey,
           externalAgentId: externalAgentId.trim(),
           voiceId: voiceId.trim(),
+          firstMessage: firstMessage.trim(),
         }),
       });
       const data = await res.json();
@@ -690,6 +703,11 @@ function EditTargetModal({
         <div className="field">
           <span className="field-label">Agent voice ID (if HAL cannot read it from the provider)</span>
           <input value={voiceId} onChange={(e) => setVoiceId(e.target.value)} placeholder="Voice ID used by this agent" className="mono" />
+        </div>
+        <div className="field">
+          <span className="field-label">Main agent opening message (if configured)</span>
+          <input value={firstMessage} onChange={(e) => setFirstMessage(e.target.value)} placeholder="Leave blank if this agent waits for the caller" />
+          <span className="muted" style={{ fontSize: 12 }}>HAL checks this against the simulation’s opening line before a run.</span>
         </div>
         <div className="field">
           <span className="field-label">Description (optional)</span>

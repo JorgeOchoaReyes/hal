@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTestCase, listResults } from "@/lib/store";
+import { getSimulationFolder, getTestCase, getTarget, listResults } from "@/lib/store";
+import { mainOpeningMessage } from "@/lib/openingMessages";
+import OpeningMessageWarning from "@/components/OpeningMessageWarning";
 import ScenarioEditor from "@/components/ScenarioEditor";
 import RunPanel from "@/components/RunPanel";
 import DispatchHosted from "@/components/DispatchHosted";
@@ -18,6 +20,8 @@ export default async function TestDetailPage({
   const tc = getTestCase(id);
   if (!tc) notFound();
   const results = listResults(id).slice(0, 10);
+  const folder = tc.folderId ? getSimulationFolder(tc.folderId) : undefined;
+  const mainMessage = mainOpeningMessage(tc.target, tc.targetAgentId ? getTarget(tc.targetAgentId) : undefined);
 
   return (
     <>
@@ -26,14 +30,16 @@ export default async function TestDetailPage({
         <div className="card-row">
           <h1 style={{ margin: 0 }}>{tc.name}</h1>
           <span className={`pill ${tc.target.transport}`}>{tc.target.transport}</span>
+          {folder && <span className="pill">▸ {folder.name}</span>}
         </div>
         <p className="sub">{tc.scenario.description}</p>
       </header>
 
       <h2>Run this simulation</h2>
+      {tc.target.transport === "mock" && <OpeningMessageWarning scenario={tc.scenario} mainMessage={mainMessage} />}
       <RunPanel testCaseId={tc.id} />
       <div style={{ marginTop: 12 }}>
-        <DispatchHosted testCaseId={tc.id} />
+        <DispatchHosted testCaseId={tc.id} scenario={tc.scenario} />
       </div>
 
       <h2>Judges</h2>
@@ -82,7 +88,7 @@ export default async function TestDetailPage({
         </div>
       </div>
 
-      <ScenarioEditor testCaseId={tc.id} initial={tc.scenario} />
+      <ScenarioEditor testCaseId={tc.id} initial={tc.scenario} mainMessage={mainMessage} />
 
       <h2>Pass criteria</h2>
       <div className="card">

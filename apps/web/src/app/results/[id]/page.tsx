@@ -7,6 +7,7 @@ import MetadataJsonViewer from "@/components/MetadataJsonViewer";
 import RunActivityTimeline from "@/components/RunActivityTimeline";
 import HalMessageCheck from "@/components/HalMessageCheck";
 import { halMessageCheck } from "@/lib/halMessageCheck";
+import { judgeResultGroups, type JudgeSignals } from "@/lib/judgeResultGroups";
 
 export const dynamic = "force-dynamic";
 
@@ -27,20 +28,31 @@ function callFacts(details: Record<string, unknown>): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
-function Verdict({ verdict }: { verdict: JudgeVerdict }) {
+function VerdictAssessment({ verdict }: { verdict: JudgeVerdict }) {
   return <>
     <div className="card-row"><span className={`pill ${verdict.passed ? "passed" : "failed"}`}>{verdict.passed ? "Passed" : "Failed"}</span><strong>{Math.round(verdict.score * 100)}% score</strong></div>
     <p>{verdict.summary}</p>
-    {verdict.checks.map((c, i) => <div key={`${c.id}-${i}`} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+  </>;
+}
+
+function VerdictSignals({ signals }: { signals: JudgeSignals }) {
+  return <>
+    {signals.checks.map((c, i) => <div key={`${c.id}-${i}`} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
       <span className={`label label-${c.passed ? "pass" : "fail"}`}>{c.passed ? "PASS" : "FAIL"}</span> {c.description}
       {c.detail && <p className="muted" style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{c.detail}</p>}
     </div>)}
-    {(verdict.metricResults ?? []).map((m, i) => <div key={`${m.id}-${i}`} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+    {signals.metrics.map((m, i) => <div key={`${m.id}-${i}`} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
       <strong>{m.name}: {String(m.value)}</strong> <span className={`label label-${m.passed === null ? "neutral" : m.passed ? "pass" : "fail"}`}>{m.passed === null ? "Informational" : m.passed ? "PASS" : "FAIL"}</span>
       {m.reasoning && <p className="muted">{m.reasoning}</p>}
     </div>)}
   </>;
 }
+
+function Verdict({ verdict }: { verdict: JudgeVerdict }) {
+  return <><VerdictAssessment verdict={verdict} /><VerdictSignals signals={{ checks: verdict.checks, metrics: verdict.metricResults ?? [] }} /></>;
+}
+
+const hasSignals = (signals: JudgeSignals) => signals.checks.length > 0 || signals.metrics.length > 0;
 
 function JudgeConfiguration({ spec }: { spec: JudgeSpec }) {
   return <details style={{ marginTop: 12 }}><summary>Judge configuration and criteria</summary>
@@ -73,6 +85,7 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
   const run = getResult(id);
   if (!run) notFound();
   const context = run.context;
+  const judgeSignals = run.verdict ? judgeResultGroups(run.verdict, context) : undefined;
   const retryJudgeError = run.status === "failed" && Boolean(run.verdict?.summary.startsWith("Judge LLM error:"));
   const canDownload = Boolean(context?.transport !== "bland-chat" && run.externalCallId);
   const primarySide = context?.targetAgent.direction === "outbound" ? "targetAgent" : "testingAgent";
@@ -114,11 +127,11 @@ export default async function RunDetailsPage({ params }: { params: Promise<{ id:
     {context?.transport !== "bland-chat" && <RunAudio runId={id} recording={run.recording} canDownload={canDownload} needsAccount={!context?.account && !run.recordingSource && !primaryCall && run.recording?.status !== "available"} accounts={recordingAccounts} />}
     <section><h2>Agents used for this run</h2>{context ? <div className="run-agents"><Agent title="Testing agent" agent={context.testingAgent} /><Agent title="Main agent" agent={context.targetAgent} /></div> : <p className="card muted">Agent snapshots were not captured for this older run. Current agent settings may differ from those used at the time.</p>}</section>
     <section><h2>Judges</h2><div className="judge-cards">
-      <article className="card"><p className="field-label">Original evaluation</p><h3>Overall verdict</h3>{run.verdict ? <Verdict verdict={run.verdict} /> : <p className="muted">{run.status === "running" ? "The call will be evaluated when its transcript is ready." : "No original judge verdict was saved."}</p>}
-        {context ? <JudgeConfiguration spec={context.judge} /> : <p className="muted">The original judge configuration was not captured on this older run.</p>}
-        {run.liveChecks.length > 0 && <details><summary>Live checks ({run.liveChecks.length})</summary>{run.liveChecks.map((c, i) => <p key={i}>{c.passed ? "PASS" : "FAIL"} · {c.description}{c.detail ? ` — ${c.detail}` : ""}</p>)}</details>}
-      </article>
-      {context?.judges.map((judge, index) => <article className="card" key={`${judge.id}-${index}`}><p className="field-label">Attached judge · {judge.kind}</p><h3>{judge.name}</h3>{judge.description && <p>{judge.description}</p>}<p className="muted">Included in the overall verdict. This run did not save a separate verdict for this judge.</p><JudgeConfiguration spec={judge.spec} /></article>)}
+      <article className="card"><p className="field-label">Original evaluation</p><h3>Overall verdict</h3>{run.verdict ? <VerdictAssessment verdict={run.verdict} /> : <p className="muted">{run.status === "running" ? "The call will be evaluated when its transcript is ready." : "No original judge verdict was saved."}</p>}</article>
+      {context?.judges.map((judge, index) => <article className="card" key={`${judge.id}-${index}`}><p className="field-label">Attached judge · {judge.kind}</p><h3>{judge.name}</h3>{judge.description && <p>{judge.description}</p>}{judgeSignals && hasSignals(judgeSignals.attached[index]!) ? <><p className="muted">Checks and metrics from the original combined evaluation.</p><VerdictSignals signals={judgeSignals.attached[index]!} /></> : <p className="muted">{run.verdict ? "No original checks or metrics could be attributed to this judge." : "Results will appear when the call is evaluated."}</p>}<JudgeConfiguration spec={judge.spec} /></article>)}
+      {judgeSignals && hasSignals(judgeSignals.simulation) && <article className="card"><p className="field-label">Original evaluation</p><h3>Simulation checks</h3><VerdictSignals signals={judgeSignals.simulation} /></article>}
+      {judgeSignals && hasSignals(judgeSignals.unassigned) && <article className="card"><p className="field-label">Original evaluation</p><h3>Other checks and metrics</h3><p className="muted">These results could not be assigned to one saved judge from this run’s snapshot.</p><VerdictSignals signals={judgeSignals.unassigned} /></article>}
+      {run.liveChecks.length > 0 && <article className="card"><p className="field-label">During the call</p><h3>Live checks</h3>{run.liveChecks.map((check, index) => <p key={index}>{check.passed ? "PASS" : "FAIL"} · {check.description}{check.detail ? ` — ${check.detail}` : ""}</p>)}</article>}
       {[...(run.evaluations ?? [])].reverse().map((evaluation) => <article className="card" key={evaluation.id}><p className="field-label">Additional evaluation</p><h3>{evaluation.judge.name}</h3><p className="muted">{new Date(evaluation.createdAt).toLocaleString()} · {evaluation.provider || "Provider unavailable"} / {evaluation.model || "default"}</p>{evaluation.error && <p style={{ color: "var(--fail)" }}>{evaluation.error}</p>}{evaluation.verdict && <Verdict verdict={evaluation.verdict} />}<JudgeConfiguration spec={evaluation.judge.spec} /></article>)}
     </div></section>
     <ApplyRunJudges runId={id} judges={listJudges()} hasTranscript={run.transcript.length > 0} />

@@ -17,6 +17,7 @@ export { StructuredConductor } from "./simulation/structured-conductor.js";
 export {
   validateStructuredTest,
   renderFixedMessage,
+  firstMessageOf,
   compileStructuredToPrompt,
   FIRST_MESSAGE,
   type StructuredTest,

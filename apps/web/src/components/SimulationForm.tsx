@@ -50,11 +50,13 @@ interface ProviderAccount {
 
 export default function SimulationForm({
   fromCallId,
+  initialFolderId,
   onCreated,
   onCancel,
 }: {
   /** Prefill from a transcribed production call, e.g. when opened from its "→ Simulation" action. */
   fromCallId?: string;
+  initialFolderId?: string;
   /** Called with the new simulation's id once it's created. */
   onCreated: (id: string) => void;
   /** Called when the user cancels out of the form. */
@@ -65,6 +67,8 @@ export default function SimulationForm({
   // above, or by dispatching to a hosted provider when the simulation runs.
   const [mockTemplate, setMockTemplate] = useState<ProviderView | null>(null);
   const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState(initialFolderId ?? "");
+  const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [tags, setTags] = useState("");
   const [targetConfig, setTargetConfig] = useState<Record<string, string>>({});
   const [savedTargets, setSavedTargets] = useState<SavedTarget[]>([]);
@@ -128,6 +132,10 @@ export default function SimulationForm({
     fetch("/api/provider-accounts")
       .then((r) => r.json())
       .then((d: { accounts?: ProviderAccount[] }) => setAccounts(d.accounts ?? []))
+      .catch(() => undefined);
+    fetch("/api/simulation-folders")
+      .then((r) => r.json())
+      .then((d: { folders?: Array<{ id: string; name: string }> }) => setFolders(d.folders ?? []))
       .catch(() => undefined);
 
     if (fromCallId) {
@@ -211,6 +219,7 @@ export default function SimulationForm({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name,
+          folderId: folderId || undefined,
           providerId: "mock",
           targetConfig,
           targetAgentId: targetAgentId || undefined,
@@ -244,6 +253,12 @@ export default function SimulationForm({
         <h2 style={{ marginTop: 0 }}>Basics</h2>
         <Field label="Simulation name">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Booking — happy path" />
+        </Field>
+        <Field label="Folder">
+          <select value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+            <option value="">Unfiled</option>
+            {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+          </select>
         </Field>
         <Field label="Tags (comma-separated)">
           <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="booking, smoke" />

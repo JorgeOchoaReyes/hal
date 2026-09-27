@@ -1,4 +1,4 @@
-import { listTestCases } from "@/lib/store";
+import { listSimulationFolders, listTestCases } from "@/lib/store";
 import SimulationsTable, { type SimRow } from "@/components/SimulationsTable";
 import PageIntro from "@/components/PageIntro";
 import type { TestCase } from "@hal/core";
@@ -40,6 +40,7 @@ export default function DashboardPage() {
     steps: stepCount(tc),
     metrics: metricCount(tc),
     tags: tc.tags ?? [],
+    folderId: tc.folderId,
   }));
 
   return (
@@ -53,7 +54,7 @@ export default function DashboardPage() {
         persona and the metrics it should pass.
       </PageIntro>
 
-      <SimulationsTable rows={rows} />
+      <SimulationsTable rows={rows} folders={listSimulationFolders()} />
 
       <details className="card" style={{ marginTop: 18 }}>
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>How targeting works</summary>

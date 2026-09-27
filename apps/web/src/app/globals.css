@@ -363,6 +363,20 @@ input:focus, textarea:focus, select:focus {
 .metric-key { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
 /* data table (simulations list) */
+.simulation-library { display: grid; grid-template-columns: 218px minmax(0, 1fr); gap: 16px; align-items: start; }
+.simulation-folders { padding: 14px; margin-top: 16px; }
+.simulation-folders h3 { margin: 0 0 8px; font-size: 15px; }
+.simulation-list { min-width: 0; }
+.folder-item { margin-top: 2px; }
+.folder-choice { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; background: transparent; color: var(--text); border: 0; border-radius: 7px; text-align: left; font-size: 13px; font-weight: 500; }
+.folder-choice span { margin-left: auto; color: var(--muted); font-size: 12px; }
+.folder-choice:hover, .folder-choice.active { background: var(--panel-2); }
+.folder-choice.active { font-weight: 700; }
+.folder-create, .folder-edit { display: grid; gap: 6px; margin-top: 14px; }
+.folder-create input, .folder-edit input { min-width: 0; width: 100%; }
+.folder-create button { width: 100%; }
+.folder-actions { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 4px 8px; }
+.folder-select { width: 120px; max-width: 100%; font-size: 12px; padding: 5px 7px; }
 .toolbar {
   display: flex;
   align-items: center;
@@ -434,6 +448,8 @@ table.data tbody tr:hover { background: var(--hover); }
 .empty-row td { text-align: center; color: var(--muted); padding: 28px 14px; }
 
 @media (max-width: 820px) {
+  .simulation-library { grid-template-columns: 1fr; }
+  .simulation-folders { margin-bottom: 0; }
   .sidebar {
     position: static;
     width: 100%;
@@ -592,19 +608,31 @@ table.data tbody tr:hover { background: var(--hover); }
 .activity-head { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .activity-head strong:last-child { text-align: right; }
 .activity-feed { display: grid; gap: 10px; margin-top: 12px; }
+.activity-group { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.activity-group > summary { color: var(--muted); }
+.activity-group-feed { display: grid; gap: 8px; padding-top: 10px; }
 .activity-entry { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); overflow-wrap: anywhere; }
 .activity-row > .activity-entry { grid-row: 1; }
+.activity-collapsible { padding: 6px 12px; }
+.activity-collapsible > summary { margin: 0; line-height: 1.4; }
+.activity-collapsible[open] { background: var(--panel); }
+.activity-collapsible .run-json { max-height: 360px; overflow: auto; }
 .activity-left { grid-column: 1; border-left: 3px solid var(--agent); }
 .activity-right { grid-column: 2; border-right: 3px solid var(--target); }
 .activity-wide { grid-column: 1 / -1; }
 .activity-who { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.activity-speech-button { display: block; width: 100%; padding: 0; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 4px; }
+.activity-speech-button:hover, .activity-speech-button:focus-visible { background: var(--accent-dim); filter: none; }
+.activity-time { display: inline-block; margin-top: 8px; color: var(--muted); font-size: 12px; }
 .activity-left .activity-who { color: var(--agent); }
 .activity-right .activity-who { color: var(--target); }
 .activity-active { border-color: var(--accent); background: var(--accent-dim); }
 .activity-message-meta { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
-.activity-meta-source { margin: 0; font-size: 12px; color: var(--muted); }
+.activity-message-meta > summary { font-size: 12px; color: var(--muted); }
 .hal-check-list { display: grid; gap: 10px; }
 .hal-check-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.opening-warning { border-color: var(--warn); background: var(--panel-2); }
+.opening-warning p { margin-bottom: 0; }
 @media (max-width: 900px) { .run-agents, .judge-cards { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .activity-row { display: block; } .activity-entry { margin-bottom: 8px; } .activity-left { margin-right: 10%; } .activity-right { margin-left: 10%; } }
 

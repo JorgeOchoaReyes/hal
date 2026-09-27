@@ -132,6 +132,8 @@ export interface HostedRemoteAgent {
   id: string;
   /** Friendly name to show in the picker. */
   name: string;
+  /** Opening line, when included in the provider's agent listing. */
+  firstMessage?: string;
   /** What the id refers to, so the caller can wire it up correctly. */
   kind: "pathway" | "agent";
 }

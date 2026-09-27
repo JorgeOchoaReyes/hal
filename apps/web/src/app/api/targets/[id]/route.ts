@@ -28,6 +28,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     /** The provider's pathway/agent id for this agent (e.g. a Bland Pathway id). */
     externalAgentId?: string;
     voiceId?: string;
+    firstMessage?: string;
   };
   if (body.byotKeyId && (getAccountRaw(body.byotAccountId ?? "")?.provider !== "bland" || !resolveByotKey(body.byotAccountId ?? "", body.byotKeyId))) return NextResponse.json({ error: "Select a saved key from its Bland account" }, { status: 400 });
   const updated = {
@@ -44,6 +45,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     externalAgentId:
       body.externalAgentId !== undefined ? body.externalAgentId.trim() || undefined : existing.externalAgentId,
     voiceId: body.voiceId !== undefined ? body.voiceId.trim() || undefined : existing.voiceId,
+    firstMessage: body.firstMessage !== undefined ? body.firstMessage.trim() || undefined : existing.firstMessage,
   };
   upsertTarget(updated);
   return NextResponse.json({ target: publicAgent(updated) });

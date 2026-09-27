@@ -18,7 +18,7 @@ export interface Persistence {
   remove(kind: string, id: string): boolean;
 }
 
-const KINDS = ["testcases", "results", "accounts", "agents", "targets", "byotkeys"] as const;
+const KINDS = ["testcases", "simulationfolders", "results", "accounts", "agents", "targets", "byotkeys"] as const;
 
 // --- SQLite backend ----------------------------------------------------------
 

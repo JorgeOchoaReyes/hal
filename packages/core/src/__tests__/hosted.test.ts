@@ -205,14 +205,14 @@ test("Bland listRemoteAgents normalizes pathway rows from any envelope", async (
   // Bare array.
   const arr = new BlandIntegration(fakeFetch({
     "GET https://api.bland.ai/v1/pathway": [
-      { id: "pw1", name: "Booking" },
+      { id: "pw1", name: "Booking", first_sentence: "Welcome" },
       { pathway_id: "pw2", name: "Support" },
       { name: "no id — skipped" },
     ],
   }));
   const list = await arr.listRemoteAgents(acc);
   assert.deepEqual(list, [
-    { id: "pw1", name: "Booking", kind: "pathway" },
+    { id: "pw1", name: "Booking", kind: "pathway", firstMessage: "Welcome" },
     { id: "pw2", name: "Support", kind: "pathway" },
   ]);
   // `data`-wrapped single object.
@@ -225,32 +225,32 @@ test("Bland listRemoteAgents normalizes pathway rows from any envelope", async (
 test("Vapi/Retell/ElevenLabs listRemoteAgents let My agents import a real agent", async () => {
   const vapi = new VapiIntegration(fakeFetch({
     "GET https://api.vapi.ai/assistant": [
-      { id: "a1", name: "Support Assistant" },
+      { id: "a1", name: "Support Assistant", firstMessage: "Hello" },
       { id: "a2" },
     ],
   }));
   assert.deepEqual(await vapi.listRemoteAgents(account), [
-    { id: "a1", name: "Support Assistant", kind: "agent" },
+    { id: "a1", name: "Support Assistant", kind: "agent", firstMessage: "Hello" },
     { id: "a2", name: "a2", kind: "agent" },
   ]);
 
   const retell = new RetellIntegration(fakeFetch({
     "GET https://api.retellai.com/list-agents": [
-      { agent_id: "r1", agent_name: "Booking Agent" },
+      { agent_id: "r1", agent_name: "Booking Agent", begin_message: "Hi there" },
       { agent_name: "no id — skipped" },
     ],
   }));
   assert.deepEqual(await retell.listRemoteAgents(account), [
-    { id: "r1", name: "Booking Agent", kind: "agent" },
+    { id: "r1", name: "Booking Agent", kind: "agent", firstMessage: "Hi there" },
   ]);
 
   // ElevenLabs wraps rows under `agents`.
   const el = new ElevenLabsIntegration(fakeFetch({
     "GET https://api.elevenlabs.io/v1/convai/agents": {
-      agents: [{ agent_id: "e1", name: "Front Desk" }],
+      agents: [{ agent_id: "e1", name: "Front Desk", conversation_config: { agent: { first_message: "Good morning" } } }],
     },
   }));
-  assert.deepEqual(await el.listRemoteAgents(account), [{ id: "e1", name: "Front Desk", kind: "agent" }]);
+  assert.deepEqual(await el.listRemoteAgents(account), [{ id: "e1", name: "Front Desk", kind: "agent", firstMessage: "Good morning" }]);
 });
 
 test("Bland sends a Bearer Authorization header", async () => {
